@@ -71,7 +71,7 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 
 - Classic V2 setup, desktop, Pinball gameplay/exit, Calculator arithmetic and Text Editor save/reopen were observed in Vita3K. Clock continuity survives restart. Not every bundled app has been tested.
 - Classic V1 reaches the stock desktop in Vita3K. Xtreme reaches the first-run setup dialog in Vita3K. App compatibility and performance are not yet validated for those two profiles.
-- A physical Vita install/data-folder issue was addressed in package metadata `01.03`; broader physical Vita/PSTV gameplay testing remains open. Performance varies; observed Pinball gameplay remains below 60 FPS.
+- Physical Vita install/data-folder blockers were addressed in package metadata `01.03`; `01.04` adds an audio pacing candidate for choppy physical-Vita playback. Broader physical Vita/PSTV gameplay testing remains open. Performance varies; observed Pinball gameplay remains below 60 FPS.
 - The exact original retail Classic launch bundle remains unverified.
 - Wireless chat/multiplayer, CyWIG, original PC synchronization and USB/MP3 accessories are not implemented end-to-end.
 - CPU timing is approximate; some instructions/peripheral modes remain incomplete. Classic external app installation is not implemented.

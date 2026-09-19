@@ -10,7 +10,7 @@
 | Physical Vita / PSTV | v0.1.3 fixed VPK and app folder staged over FTP to a physical Vita; launch/performance evidence still pending user confirmation |
 | Persistence | Setup, a created text document and clock continuity survive Vita3K restart; RAM/flash binding and corruption rejection tested on host |
 | Input | Touch setup and game launch observed; host tests cover controller/touch isolation, modifiers, focus release and layout switching |
-| Audio | Speaker core, suspend/resume tests and low-latency frontend queue bounds are covered; audible fidelity remains user-test territory |
+| Audio | Speaker core, suspend/resume tests and v0.1.4 low-latency/prebuffer frontend queue bounds are covered; audible fidelity remains user-test territory |
 | Radio / accessories | No end-to-end wireless, CyWIG, PC sync, USB or MP3 support |
 
 ## Classic bundle

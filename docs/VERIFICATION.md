@@ -1,5 +1,36 @@
 # Verification — 2026-09-19
 
+## v0.1.4-preview candidate
+
+Vita package metadata is `01.04`. Candidate VPK SHA-256:
+
+```text
+cab5dbc068378b842af5f9a88fd66feee8763a882fd6ef986878f7d57620de2b
+```
+
+Executable payload SHA-256:
+
+```text
+5795eaf5dc03b1b4106ea34a603e961aaf63dc03feebacdf894893964fab24ce
+```
+
+- The Vita frontend now prefers a 48 kHz signed 16-bit stereo SDL audio device,
+  with conversion from the core's 8-bit mono speaker samples. It falls back to
+  the previous 8-bit mono path if S16 stereo cannot be opened.
+- Queued audio now maintains one emulated frame of prebuffer and still caps
+  backlog to four emulated frames. This is intended to reduce physical-Vita
+  underrun crackle/choppiness without reintroducing long stale-audio lag.
+- Local verification: regular host C suite passed 12/12, frontend-enabled host
+  suite passed 13/13 with SDL dummy video/audio, and Python tests passed 7/7.
+- The 01.04 VPK passed ZIP integrity checks, all VPK entries are stored, and
+  package metadata reports `01.04`.
+- The fixed VPK was uploaded to the physical Vita at
+  `ux0:/VPK/VitaCybiko.vpk` and size-verified over FTP. The extracted app
+  folder was also updated at `ux0:/app/VCYB00001/` with 9/9 files verified.
+
+Audible quality on the physical Vita still requires user confirmation; this is
+an audio pacing candidate, not a completed audio-accuracy claim.
+
 ## v0.1.3-preview candidate
 
 Vita package metadata is `01.03`. Candidate VPK SHA-256:

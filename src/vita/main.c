@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -66,8 +67,10 @@
 #define MAX_PATH_CHARS      512
 #define AUTOSAVE_INTERVAL_MS 60000u
 #define AUDIO_DEVICE_SAMPLES 512
+#define AUDIO_FRAME_SAMPLES (SPEAKER_SAMPLE_RATE / CYBIKO_FPS)
+#define AUDIO_TARGET_QUEUE_FRAMES 1u
 #define AUDIO_MAX_QUEUE_FRAMES 4u
-#define AUDIO_MAX_QUEUE_BYTES ((SPEAKER_SAMPLE_RATE / CYBIKO_FPS) * AUDIO_MAX_QUEUE_FRAMES)
+#define AUDIO_CONVERT_MAX_SAMPLES 8192
 #define EMULATION_CATCHUP_MAX_FRAMES 2
 
 /* Defaults keep old host tests and the legacy Xtreme layout valid. Selection
@@ -273,6 +276,12 @@ typedef struct {
     SDL_Texture *portrait_target;
     SDL_Texture *lcd_texture;
     SDL_AudioDeviceID audio_dev;
+    SDL_AudioSpec audio_have;
+    Uint32 audio_frame_bytes;
+    Uint32 audio_target_queue_bytes;
+    Uint32 audio_max_queue_bytes;
+    uint8_t audio_silence_byte;
+    bool audio_s16_stereo;
     SDL_GameController *controller;
 
     input_state_t physical_input;
@@ -290,6 +299,7 @@ typedef struct {
     bool finger_down;
     SDL_FingerID finger_id;
     uint32_t lcd_pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    int16_t audio_s16_stereo_buf[AUDIO_CONVERT_MAX_SAMPLES * 2];
 
     bool keyboard_mode;
     int vk_row;
@@ -1162,17 +1172,45 @@ static void hal_audio_output(void *ctx_ptr, const uint8_t *samples, int count)
         return;
     }
 
-    Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
+    if (count > AUDIO_CONVERT_MAX_SAMPLES) {
+        samples += count - AUDIO_CONVERT_MAX_SAMPLES;
+        count = AUDIO_CONVERT_MAX_SAMPLES;
+    }
+
+    const void *payload = samples;
     Uint32 bytes = (Uint32)count;
-    if (queued > AUDIO_MAX_QUEUE_BYTES ||
-        queued + bytes > AUDIO_MAX_QUEUE_BYTES) {
+    if (ctx->audio_s16_stereo) {
+        for (int i = 0; i < count; ++i) {
+            int16_t value = (int16_t)(((int)samples[i] - 128) << 8);
+            ctx->audio_s16_stereo_buf[i * 2] = value;
+            ctx->audio_s16_stereo_buf[i * 2 + 1] = value;
+        }
+        payload = ctx->audio_s16_stereo_buf;
+        bytes = (Uint32)count * 2u * (Uint32)sizeof(int16_t);
+    }
+
+    Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
+    if (queued > ctx->audio_max_queue_bytes ||
+        queued + bytes > ctx->audio_max_queue_bytes) {
         SDL_ClearQueuedAudio(ctx->audio_dev);
+        queued = 0;
     }
-    if (bytes > AUDIO_MAX_QUEUE_BYTES) {
-        samples += bytes - AUDIO_MAX_QUEUE_BYTES;
-        bytes = AUDIO_MAX_QUEUE_BYTES;
+
+    if (queued < ctx->audio_target_queue_bytes) {
+        uint8_t silence[4096];
+        memset(silence, ctx->audio_silence_byte, sizeof(silence));
+        Uint32 padding = ctx->audio_target_queue_bytes - queued;
+        while (padding > 0) {
+            Uint32 chunk = padding < sizeof(silence) ? padding : (Uint32)sizeof(silence);
+            if (SDL_QueueAudio(ctx->audio_dev, silence, chunk) != 0) {
+                fprintf(stderr, "audio prebuffer failed: %s\n", SDL_GetError());
+                return;
+            }
+            padding -= chunk;
+        }
     }
-    if (SDL_QueueAudio(ctx->audio_dev, samples, bytes) != 0) {
+
+    if (SDL_QueueAudio(ctx->audio_dev, payload, bytes) != 0) {
         fprintf(stderr, "audio queue failed: %s\n", SDL_GetError());
     }
 }
@@ -1665,13 +1703,34 @@ static bool init_sdl(app_ctx_t *ctx)
     SDL_AudioSpec have;
     SDL_zero(want);
     want.freq = SPEAKER_SAMPLE_RATE;
-    want.format = AUDIO_U8;
-    want.channels = 1;
+    want.format = AUDIO_S16SYS;
+    want.channels = 2;
     want.samples = AUDIO_DEVICE_SAMPLES;
 
     ctx->audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (!ctx->audio_dev) {
+        SDL_zero(want);
+        want.freq = SPEAKER_SAMPLE_RATE;
+        want.format = AUDIO_U8;
+        want.channels = 1;
+        want.samples = AUDIO_DEVICE_SAMPLES;
+        ctx->audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+    }
+    if (!ctx->audio_dev) {
         fprintf(stderr, "audio disabled: %s\n", SDL_GetError());
+    } else {
+        ctx->audio_have = have;
+        ctx->audio_s16_stereo =
+            have.format == AUDIO_S16SYS && have.channels == 2;
+        unsigned bytes_per_sample =
+            (unsigned)(SDL_AUDIO_BITSIZE(have.format) / 8) *
+            (unsigned)have.channels;
+        ctx->audio_frame_bytes = AUDIO_FRAME_SAMPLES * bytes_per_sample;
+        ctx->audio_target_queue_bytes =
+            ctx->audio_frame_bytes * AUDIO_TARGET_QUEUE_FRAMES;
+        ctx->audio_max_queue_bytes =
+            ctx->audio_frame_bytes * AUDIO_MAX_QUEUE_FRAMES;
+        ctx->audio_silence_byte = have.format == AUDIO_U8 ? 128 : 0;
     }
 
     open_first_controller(ctx);

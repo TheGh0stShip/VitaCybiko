@@ -273,19 +273,26 @@ static void test_audio_queue_bounds_latency(void)
     TEST_ASSERT(init_sdl(ctx));
     if (ctx->audio_dev) {
         uint8_t frame[SPEAKER_SAMPLE_RATE / CYBIKO_FPS];
-        uint8_t stale[AUDIO_MAX_QUEUE_BYTES];
+        uint8_t stale[65536];
         memset(frame, 128, sizeof(frame));
         memset(stale, 128, sizeof(stale));
+        TEST_ASSERT(ctx->audio_frame_bytes > 0);
+        TEST_ASSERT(ctx->audio_max_queue_bytes <= sizeof(stale));
 
         SDL_ClearQueuedAudio(ctx->audio_dev);
         hal_audio_output(ctx, frame, (int)sizeof(frame));
+        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) ==
+                   ctx->audio_frame_bytes * (AUDIO_TARGET_QUEUE_FRAMES + 1u));
         hal_audio_output(ctx, frame, (int)sizeof(frame));
-        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) == sizeof(frame) * 2u);
+        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) ==
+                   ctx->audio_frame_bytes * (AUDIO_TARGET_QUEUE_FRAMES + 2u));
 
         SDL_ClearQueuedAudio(ctx->audio_dev);
-        TEST_ASSERT(SDL_QueueAudio(ctx->audio_dev, stale, sizeof(stale)) == 0);
+        TEST_ASSERT(SDL_QueueAudio(ctx->audio_dev, stale,
+                                   ctx->audio_max_queue_bytes) == 0);
         hal_audio_output(ctx, frame, (int)sizeof(frame));
-        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) == sizeof(frame));
+        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) ==
+                   ctx->audio_frame_bytes * (AUDIO_TARGET_QUEUE_FRAMES + 1u));
     }
     cleanup(ctx);
 }
