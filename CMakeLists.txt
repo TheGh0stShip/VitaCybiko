@@ -53,7 +53,7 @@ if(VITA)
 
   set(VITA_APP_NAME "VitaCybiko")
   set(VITA_TITLEID  "VCYB00001")
-  set(VITA_VERSION  "01.08")
+  set(VITA_VERSION  "01.09")
 
   add_executable(${PROJECT_NAME}
     src/vita/main.c
@@ -74,7 +74,10 @@ if(VITA)
     vitacybiko_input
     PkgConfig::SDL2_GFX
   )
-  target_compile_definitions(${PROJECT_NAME} PRIVATE VITA=1)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE
+    VITA=1
+    VITACYBIKO_VERSION="${VITA_VERSION}"
+  )
 
   vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
   vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self

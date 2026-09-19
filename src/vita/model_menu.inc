@@ -62,8 +62,9 @@ static void render_model_menu(app_ctx_t *ctx, int selected)
     SDL_SetRenderTarget(ctx->renderer, NULL);
     SDL_SetRenderDrawColor(ctx->renderer, 12, 17, 25, 255);
     SDL_RenderClear(ctx->renderer);
-    stringRGBA(ctx->renderer, 120, 45, "VitaCybiko / CHOOSE YOUR DEVICE", 230, 238, 245, 255);
+    stringRGBA(ctx->renderer, 120, 45, "VitaCybiko v" VITACYBIKO_VERSION " / CHOOSE YOUR DEVICE", 230, 238, 245, 255);
     stringRGBA(ctx->renderer, 120, 74, "Separate firmware and saves for each model. No firmware is bundled.", 150, 173, 190, 255);
+    stringRGBA(ctx->renderer, 760, 74, "VCYB00001", 95, 222, 245, 255);
     for (int row = 0; row < 3; ++row) {
         const cybiko_machine_t *m = cybiko_machine(menu_models[row]);
         int y = 120 + row * 100;

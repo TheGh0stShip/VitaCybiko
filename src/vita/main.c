@@ -18,6 +18,7 @@
 #ifdef VITA
 #include <psp2/ctrl.h>
 #include <psp2/power.h>
+#include <psp2/touch.h>
 #endif
 
 #include <SDL2/SDL.h>
@@ -27,6 +28,10 @@
 #include "core/emulator.h"
 #include "core/speaker.h"
 #include "frontend/input.h"
+
+#ifndef VITACYBIKO_VERSION
+#define VITACYBIKO_VERSION "dev"
+#endif
 
 #define SCREEN_WIDTH  960
 #define SCREEN_HEIGHT 544
@@ -1494,7 +1499,7 @@ static void render_landscape_cache(app_ctx_t *ctx)
                    skin->shell_r, skin->shell_g, skin->shell_b, 120);
     roundedRectangleRGBA(ctx->renderer, 12, 70, 508, 426, 20,
                          skin->glow_r, skin->glow_g, skin->glow_b, 200);
-    stringRGBA(ctx->renderer, 24, 30, "VitaCybiko", 232, 240, 246, 255);
+    stringRGBA(ctx->renderer, 24, 30, "VitaCybiko v" VITACYBIKO_VERSION, 232, 240, 246, 255);
     stringRGBA(ctx->renderer, 24, 48, cybiko_machine(ctx->model)->name, 155, 183, 199, 255);
     stringRGBA(ctx->renderer, 532, 86, "DEVICE KEYBOARD", 184, 211, 218, 255);
     render_virtual_keyboard(ctx);
@@ -1785,6 +1790,8 @@ static bool init_sdl(app_ctx_t *ctx)
     }
 #ifdef VITA
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, SCE_TOUCH_SAMPLING_STATE_STOP);
 #endif
 
     ctx->window = SDL_CreateWindow("VitaCybiko",

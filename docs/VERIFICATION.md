@@ -1,5 +1,38 @@
 # Verification — 2026-09-19
 
+## 01.09 physical Vita update
+
+Vita package metadata is `01.09`. Candidate VPK SHA-256:
+
+```text
+394d4843fbd0389b34663a58ce9875cbf8fca5d7840cef1c768f36d33de3eac3
+```
+
+Executable payload SHA-256:
+
+```text
+cb74c93e8e4101647f9a353273c61493d562ab3cb89f78f39c5f12f759b8cf49
+```
+
+- Rear touch is disabled through the native Vita touch API while front touch
+  stays enabled.
+- Classic battery ADC values now report a healthy channel spread so CyOS does
+  not enter low/critical-power auto-shutdown. A core regression test covers the
+  ADC values for Classic V1, Classic V2 and Xtreme.
+- LiveArea `bg.png` and `startup.png` were replaced with VitaCybiko-branded art
+  that includes version `01.09`; `content-rev` is now `9`.
+- The launch/model-selection screen and in-emulator landscape header display
+  `VitaCybiko v01.09`.
+- Local verification: regular host C suite passed 12/12, frontend-enabled host
+  suite passed 13/13 with SDL dummy video/audio, the Vita build completed, the
+  VPK passed ZIP integrity checks, and package metadata reports `01.09`.
+- The VPK was uploaded to the physical Vita at `ux0:/VPK/VitaCybiko.vpk`.
+  The extracted app folder was also updated at `ux0:/app/VCYB00001/`; FTP
+  readback verified the VPK, `eboot.bin`, `bg.png`, and `startup.png` hashes.
+
+Physical Vita behavior after the FTP update still requires user confirmation
+for rear-touch rejection, battery warning removal, and LiveArea cache refresh.
+
 ## v0.1.4-preview candidate
 
 Vita package metadata is `01.04`. Candidate VPK SHA-256:

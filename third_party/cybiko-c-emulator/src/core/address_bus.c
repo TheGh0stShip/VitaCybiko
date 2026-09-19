@@ -216,6 +216,29 @@ static void write_timer8(address_bus_t *bus, int bus_off, uint8_t value)
     if (ch) timer8_write(ch, reg_off, value);
 }
 
+static uint16_t adc_channel_value(const address_bus_t *bus, int channel)
+{
+    if (bus->machine->model == CYBIKO_XTREME) {
+        return 0xCC00;
+    }
+
+    /* Classic CyOS compares ADC channel 1 against channel 2 for the battery
+     * check. Keep a healthy spread so firmware never sees low/critical power
+     * and enters its auto-shutdown path. Values are left-aligned like the H8S
+     * ADC data registers. */
+    if (channel == 1) return 0x0300;
+    if (channel == 2) return 0x0100;
+    return 0x0200;
+}
+
+static uint8_t read_adc_data_byte(address_bus_t *bus, uint32_t address)
+{
+    int reg = (int)(address - 0xFFFF90);
+    int channel = reg / 2;
+    uint16_t value = adc_channel_value(bus, channel);
+    return (reg & 1) ? (uint8_t)value : (uint8_t)(value >> 8);
+}
+
 /* --- Init / Free --- */
 
 void bus_init(address_bus_t *bus)
@@ -453,10 +476,7 @@ static uint8_t read_on_chip8(address_bus_t *bus, uint32_t address)
     if (address >= 0xFFFF90 && address <= 0xFFFF99) {
         /* ADC data registers (0xFFFF90-0xFFFF97) */
         if (address <= 0xFFFF97) {
-            /* XT: even=0xCC, odd=0x00 */
-            if (bus->machine->model == CYBIKO_XTREME)
-                return (address % 2 == 0) ? 0xCC : 0x00;
-            return address == 0xFFFF93 ? 0x40 : 0;
+            return read_adc_data_byte(bus, address);
         }
         if (address == 0xFFFF98) return bus->adcsr;
         return bus->adcr;  /* 0xFFFF99 */

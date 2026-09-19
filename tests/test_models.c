@@ -116,6 +116,28 @@ static void test_model_address_maps(void)
         bus_free(&bus);
     }
 }
+
+static void test_battery_adc_stays_charged(void)
+{
+    for (int model = 0; model < CYBIKO_MODEL_COUNT; ++model) {
+        address_bus_t bus;
+        bus_init(&bus);
+        bus.machine = cybiko_machine((cybiko_model_t)model);
+        memory_init(&bus.on_chip_ram, 0x1000000 - bus.machine->on_chip_base, true);
+        uint16_t ch1 = bus_read16(&bus, 0xFFFF92);
+        uint16_t ch2 = bus_read16(&bus, 0xFFFF94);
+        if (model == CYBIKO_XTREME) {
+            TEST_CHECK(ch1 == 0xCC00);
+            TEST_CHECK(ch2 == 0xCC00);
+        } else {
+            TEST_CHECK(ch1 == 0x0300);
+            TEST_CHECK(ch2 == 0x0100);
+            TEST_CHECK(ch1 > ch2 + 0x00F0);
+        }
+        bus_free(&bus);
+    }
+}
+
 static void test_classic_spi_bus_and_dtc(void)
 {
     address_bus_t bus;
@@ -215,6 +237,7 @@ TEST_LIST = {
     {"classic_v2_escape_isolation", test_classic_v2_escape_isolation},
     {"serial_transmit_interrupts", test_serial_transmit_interrupts},
     {"classic_spi_bus_and_dtc", test_classic_spi_bus_and_dtc},
+    {"battery_adc_stays_charged", test_battery_adc_stays_charged},
     {"profiles_and_storage", test_profiles_and_storage},
     {"dataflash_protocol", test_dataflash_protocol},
     {"model_address_maps", test_model_address_maps},
