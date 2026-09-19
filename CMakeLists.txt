@@ -52,7 +52,7 @@ if(VITA)
 
   set(VITA_APP_NAME "VitaCybiko")
   set(VITA_TITLEID  "VCYB00001")
-  set(VITA_VERSION  "01.00")
+  set(VITA_VERSION  "01.01")
 
   add_executable(${PROJECT_NAME}
     src/vita/main.c

@@ -527,7 +527,75 @@ static void test_preferences_storage(void)
     TEST_CHECK(rmdir(temporary) == 0);
 }
 
+static void test_classic_ram_storage(void)
+{
+    char temporary[] = "/tmp/vitacybiko-ram-XXXXXX";
+    TEST_ASSERT(mkdtemp(temporary) != NULL);
+    snprintf(runtime_root, sizeof(runtime_root), "%s", temporary);
+    cybiko_hal_t hal = {0};
+    cybiko_emu_t *emu = cybiko_create_model(&hal, CYBIKO_CLASSIC_V2);
+    TEST_ASSERT(emu != NULL);
+    TEST_CHECK(load_classic_ram(emu)); /* Missing is a legacy/cold boot. */
+    size_t length;
+    const uint8_t *ram = cybiko_get_nvram(emu, &length);
+    uint8_t *pattern = malloc(length);
+    TEST_ASSERT(pattern != NULL);
+    memset(pattern, 0x5a, length);
+    TEST_CHECK(cybiko_load_nvram(emu, pattern, length));
+    TEST_CHECK(save_classic_ram(emu));
+    TEST_CHECK(save_classic_ram(emu));
+    memset(pattern, 0, length);
+    TEST_CHECK(cybiko_load_nvram(emu, pattern, length));
+    TEST_CHECK(load_classic_ram(emu));
+    TEST_CHECK(ram[0] == 0x5a && ram[length - 1] == 0x5a);
+    char path[MAX_PATH_CHARS]; TEST_ASSERT(classic_ram_path(path));
+    size_t size = 0; uint8_t *data = load_file(path, &size, false);
+    TEST_ASSERT(data && size == length + 24);
+    data[24] ^= 1;
+    TEST_CHECK(write_file(path, data, size));
+    TEST_CHECK(!load_classic_ram(emu)); /* Corrupt payload never changes SRAM. */
+    TEST_CHECK(ram[0] == 0x5a);
+    size_t unchanged_size; uint8_t *unchanged = load_file(path, &unchanged_size, false);
+    TEST_ASSERT(unchanged && unchanged_size == size);
+    TEST_CHECK(!memcmp(data, unchanged, size));
+    free(unchanged); free(data);
+    TEST_CHECK(save_classic_ram(emu));
+    uint8_t *flash = malloc(DATAFLASH_SIZE); TEST_ASSERT(flash != NULL);
+    memset(flash, 0x39, DATAFLASH_SIZE);
+    TEST_CHECK(cybiko_load_dataflash(emu, flash, DATAFLASH_SIZE));
+    TEST_CHECK(!load_classic_ram(emu)); /* Wrong flash checkpoint preserved. */
+    cybiko_emu_t *v1 = cybiko_create_model(&hal, CYBIKO_CLASSIC_V1);
+    TEST_ASSERT(v1 != NULL);
+    TEST_CHECK(!load_classic_ram(v1)); /* Model/size mismatch. */
+    cybiko_destroy(v1); cybiko_destroy(emu);
+    free(flash); free(pattern);
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(rmdir(temporary) == 0);
+    snprintf(runtime_root, sizeof(runtime_root), "%s", DATA_DIR);
+}
+
+static void test_classic_input_timing_after_reset(void)
+{
+    app_ctx_t ctx = {0};
+    ctx.model = CYBIKO_CLASSIC_V2;
+    release_all_inputs(&ctx);
+    TEST_CHECK(ctx.touch_input.classic && ctx.controller_input.classic);
+    TEST_CHECK(ctx.physical_input.classic && ctx.virtual_input.classic);
+    touch_key(&ctx, 4, 3, true); /* Esc, a deliberately very short tap. */
+    touch_key(&ctx, 4, 3, false);
+    for (int frame = 0; frame < 8; ++frame) {
+        TEST_CHECK(read_column(&ctx, 0) & 2);
+        tick_inputs(&ctx);
+    }
+    TEST_CHECK(!(read_column(&ctx, 0) & 2));
+    ctx.model = CYBIKO_XTREME;
+    release_all_inputs(&ctx);
+    TEST_CHECK(!ctx.touch_input.classic && !ctx.controller_input.classic);
+}
+
 TEST_LIST = {
+    {"classic_ram_storage", test_classic_ram_storage},
+    {"classic_input_timing_after_reset", test_classic_input_timing_after_reset},
     {"preferences_storage", test_preferences_storage},
     {"clock_storage", test_clock_storage},
     {"landscape_touch_and_rotation", test_landscape_touch_and_rotation},

@@ -16,8 +16,10 @@ typedef struct {
     input_key_t keys[CYBIKO_KEYBOARD_COLUMNS][16];
     input_key_t numbers[CYBIKO_KEYBOARD_COLUMNS][16];
     uint8_t fn_tail;
+    bool classic;
 } input_state_t;
 
+void input_reset(input_state_t *state, cybiko_model_t model);
 void input_key(input_state_t *state, int column, uint16_t mask, bool down);
 void input_number(input_state_t *state, int column, uint16_t mask, bool down);
 void input_tick(input_state_t *state);

@@ -983,9 +983,76 @@ static bool load_clock(cybiko_emu_t *emu)
     return ok;
 }
 
+/* Classic also retains SRAM while batteries are fitted. CyOS needs that saved
+ * calendar state as well as the RTC to preserve its displayed time on restart.
+ * Bind the sidecar to the flash checkpoint; never boot mismatched cached data. */
+static void put_u32le(uint8_t *p, uint32_t value)
+{
+    for (int i = 0; i < 4; ++i) p[i] = (uint8_t)(value >> (8*i));
+}
+
+static uint32_t get_u32le(const uint8_t *p)
+{
+    uint32_t value = 0;
+    for (int i = 0; i < 4; ++i) value |= (uint32_t)p[i] << (8*i);
+    return value;
+}
+
+static bool classic_ram_path(char path[MAX_PATH_CHARS])
+{
+    int n = snprintf(path, MAX_PATH_CHARS, "%s/ram.dat", runtime_root);
+    return n > 0 && n < MAX_PATH_CHARS;
+}
+
+static bool save_classic_ram(cybiko_emu_t *emu)
+{
+    cybiko_model_t model = cybiko_get_model(emu);
+    if (model == CYBIKO_XTREME) return true;
+    size_t size = 0, flash_size = 0;
+    const uint8_t *ram = cybiko_get_nvram(emu, &size);
+    const uint8_t *flash = cybiko_get_dataflash(emu, &flash_size);
+    char path[MAX_PATH_CHARS];
+    if (!ram || !flash || !classic_ram_path(path)) return false;
+    uint8_t *data = malloc(size + 24);
+    if (!data) return false;
+    memcpy(data, "VCRM\1\0\0\0", 8);
+    data[5] = (uint8_t)model;
+    put_u32le(data + 8, (uint32_t)size);
+    put_u32le(data + 12, cybiko_crc32(flash, flash_size));
+    put_u32le(data + 16, cybiko_crc32(ram, size));
+    put_u32le(data + 20, cybiko_crc32(data, 20));
+    memcpy(data + 24, ram, size);
+    bool ok = write_file(path, data, size + 24);
+    free(data);
+    return ok;
+}
+
+static bool load_classic_ram(cybiko_emu_t *emu)
+{
+    cybiko_model_t model = cybiko_get_model(emu);
+    if (model == CYBIKO_XTREME) return true;
+    char path[MAX_PATH_CHARS]; struct stat info;
+    if (!classic_ram_path(path)) return false;
+    if (stat(path, &info) != 0) return errno == ENOENT; /* Legacy/cold install. */
+    size_t size = 0, flash_size = 0;
+    const uint8_t *flash = cybiko_get_dataflash(emu, &flash_size);
+    uint8_t *data = load_file(path, &size, false);
+    size_t ram_size = cybiko_machine(model)->ram_size;
+    bool ok = data && flash && size == ram_size + 24 &&
+        !memcmp(data, "VCRM\1", 5) && data[5] == model && !data[6] && !data[7] &&
+        get_u32le(data + 8) == ram_size &&
+        get_u32le(data + 20) == cybiko_crc32(data, 20) &&
+        get_u32le(data + 12) == cybiko_crc32(flash, flash_size) &&
+        get_u32le(data + 16) == cybiko_crc32(data + 24, ram_size) &&
+        cybiko_load_nvram(emu, data + 24, ram_size);
+    free(data);
+    return ok;
+}
+
 static bool save_session(cybiko_emu_t *emu)
 {
     bool storage_ok = save_nvram(emu);
+    if (storage_ok) storage_ok = save_classic_ram(emu);
     bool clock_ok = save_clock(emu);
     return storage_ok && clock_ok;
 }
@@ -1353,10 +1420,10 @@ static void release_all_inputs(app_ctx_t *ctx)
 {
     release_touch_key(ctx);
     release_active_virtual_key(ctx);
-    memset(&ctx->physical_input, 0, sizeof(ctx->physical_input));
-    memset(&ctx->controller_input, 0, sizeof(ctx->controller_input));
-    memset(&ctx->touch_input, 0, sizeof(ctx->touch_input));
-    memset(&ctx->virtual_input, 0, sizeof(ctx->virtual_input));
+    input_reset(&ctx->physical_input, ctx->model);
+    input_reset(&ctx->controller_input, ctx->model);
+    input_reset(&ctx->touch_input, ctx->model);
+    input_reset(&ctx->virtual_input, ctx->model);
     memset(ctx->physical_down, 0, sizeof(ctx->physical_down));
     ctx->finger_down = false;
     ctx->touch_fn_latched = false;
@@ -1707,6 +1774,13 @@ select_model:
         goto select_model;
     }
 
+    if (!load_classic_ram(emu)) {
+        cybiko_destroy(emu);
+        message_loop(ctx, "Classic RAM checkpoint is invalid or mismatched",
+                     "Back up the model folder. Restore matching save.flash and ram.dat.",
+                     "Move ram.dat aside only for an intentional cold boot.");
+        goto select_model;
+    }
     if (!load_clock(emu)) {
         cybiko_destroy(emu);
         message_loop(ctx, "Clock save is invalid; original preserved",
@@ -1736,9 +1810,9 @@ select_model:
         if (ctx->save_requested ||
             (int32_t)(now - next_autosave) >= 0) {
             if (save_session(emu)) {
-                snprintf(ctx->status, sizeof(ctx->status), classic ? "Classic flash and clock saved" : "Xtreme NVRAM and clock saved");
+                snprintf(ctx->status, sizeof(ctx->status), classic ? "Classic flash, RAM and clock saved" : "Xtreme NVRAM and clock saved");
             } else {
-                snprintf(ctx->status, sizeof(ctx->status), "NVRAM save failed");
+                snprintf(ctx->status, sizeof(ctx->status), "Device save failed; check available storage");
             }
             ctx->save_requested = false;
             next_autosave = now + AUTOSAVE_INTERVAL_MS;

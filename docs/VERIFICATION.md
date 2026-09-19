@@ -1,6 +1,42 @@
 # Verification — 2026-09-19
 
-## Artifact
+## v0.1.1-preview follow-up
+
+Vita package metadata is now `01.01`. VPK SHA-256:
+
+```text
+a1da5712c3a856e1eb5df9fe4039a616be4401722c47d3fc682e598cb824d236
+```
+
+- Classic tap duration: a headless firmware run ignored a three-frame Esc press
+  and recognized eight frames. The frontend now guarantees eight emulated
+  frames for short Classic presses. In Windows Vita3K, 40 ms taps activate F4,
+  open Pinball's quit dialog and confirm a return to Games.
+- Text Editor: created `test.txt` with `vita 123`, accepted the guest save prompt,
+  exited, saved, closed Vita3K, launched the updated build and reopened it intact.
+- Clock: added the previously missing battery-backed Classic SRAM. A host run
+  preserving both SRAM and RTC booted with the expected 2:00 AM time. Windows
+  Vita3K showed 12:02 before a full process restart and 12:04 afterward, instead
+  of resetting its displayed clock. No guest firmware bytes were patched.
+- RAM sidecars validate model, size, header and payload CRCs and matching flash.
+  Host tests cover atomic replacement, corrupt contents, wrong flash and wrong
+  model, preserving original files and live RAM when validation fails.
+- All 13 ASan/UBSan suites and seven local Python tests pass after these changes.
+
+![Pinball quit dialog after a short Esc tap](vita3k-pinball-quit.png)
+
+![Text Editor document reopened after restart](vita3k-note-reopened.png)
+
+![Guest clock before restart](vita3k-clock-before.png)
+
+![Guest clock after restart](vita3k-clock-after.png)
+
+These follow-up captures are actual Windows Vita3K client-window captures.
+The older baseline below is retained as history; its clock-reset, short-tap and
+Text Editor acceptance gaps are superseded by the results above. Alarm modes,
+all-app coverage, physical Vita testing and full-speed gameplay remain open.
+
+## v0.1.0-preview baseline artifact
 
 Release preview `v0.1.0-preview`, title ID `VCYB00001` (Vita package metadata 01.00).
 

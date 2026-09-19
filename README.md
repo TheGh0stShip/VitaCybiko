@@ -35,6 +35,11 @@ Tap keys directly, including numbers, function keys and Backspace. Touch SH/FN l
 
 Each model has independent saves. Autosave runs every minute, on focus/background transitions and clean exit. Focus loss pauses emulation and releases held keys. Sudden termination can lose changes since the last save. Back up saves before upgrades.
 
+Classic keeps battery-backed SRAM in `ram.dat` as well as flash and RTC state.
+Keep the complete model folder together when backing up. Short Classic taps are
+held through the guest's keyboard scan window. In Calculator, Esc once clears
+and Esc twice exits; Pinball asks for quit confirmation.
+
 ## Build and test
 
 Vita: install [VitaSDK](https://vitasdk.org/) with SDL2 and SDL2_gfx packages.
@@ -60,7 +65,7 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 
 ## Known boundaries
 
-- Classic V2 setup, desktop and Pinball gameplay were observed in Vita3K. Not every bundled app has been tested.
+- Classic V2 setup, desktop, Pinball gameplay/exit, Calculator arithmetic and Text Editor save/reopen were observed in Vita3K. Clock continuity survives restart. Not every bundled app has been tested.
 - No physical Vita/PSTV test has been performed. Performance varies; observed Pinball gameplay remains below 60 FPS.
 - Classic V1/Xtreme boot verification and the exact original retail Classic launch bundle require matching images.
 - Wireless chat/multiplayer, CyWIG, original PC synchronization and USB/MP3 accessories are not implemented end-to-end.

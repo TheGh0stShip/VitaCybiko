@@ -86,7 +86,35 @@ static void test_classic_mapping_and_dedicated_numbers(void)
     TEST_CHECK(bounded[1] == 0xCAFE);
 }
 
+static void test_classic_scan_duration(void)
+{
+    input_state_t state;
+    input_reset(&state, CYBIKO_CLASSIC_V2);
+    input_key(&state, 5, 0x400, true); /* Esc */
+    input_key(&state, 5, 0x400, false);
+    input_number(&state, 3, 2, true); /* Dedicated 1 */
+    input_number(&state, 3, 2, false);
+    for (int frame = 0; frame < 8; ++frame) {
+        uint16_t matrix[CYBIKO_KEYBOARD_COLUMNS] = {0};
+        input_merge_classic(&state, matrix, CYBIKO_KEYBOARD_COLUMNS);
+        TEST_CHECK(matrix[0] == 2 && matrix[3] == 2);
+        TEST_CHECK(state.fn_tail == 0 && state.numbers[3][1].delay == 0);
+        input_tick(&state);
+    }
+    uint16_t matrix[CYBIKO_KEYBOARD_COLUMNS] = {0};
+    input_merge_classic(&state, matrix, CYBIKO_KEYBOARD_COLUMNS);
+    TEST_CHECK(matrix[0] == 0 && matrix[3] == 0);
+    input_key(&state, 5, 0x400, true);
+    input_reset(&state, CYBIKO_CLASSIC_V1); /* Focus loss cancels even held taps. */
+    memset(matrix, 0, sizeof(matrix));
+    input_merge_classic(&state, matrix, CYBIKO_KEYBOARD_COLUMNS);
+    TEST_CHECK(matrix[0] == 0 && state.classic);
+    input_reset(&state, CYBIKO_XTREME);
+    TEST_CHECK(!state.classic);
+}
+
 TEST_LIST = {
+    {"classic_scan_duration", test_classic_scan_duration},
     {"classic_mapping_and_dedicated_numbers", test_classic_mapping_and_dedicated_numbers},
     {"independent_sources", test_independent_sources},
     {"short_tap", test_short_tap},

@@ -12,11 +12,13 @@ ux0:data/VitaCybiko/
     roms/boot.bin       # cyrom112.bin, 32768 bytes
     roms/dataflash.bin  # flash_v1246.bin, 540672 bytes; OS + bundled apps
     save.flash          # created on save; never overwrites roms/dataflash.bin
+    ram.dat             # checksummed battery-backed RAM, bound to save.flash
   classic-v2/
     roms/boot.bin       # cyrom117.bin / C4PC emu_rom.bin, 32768 bytes
     roms/flash.bin      # cyos_v1358.bin / C4PC emu_cyos.bin, 262144 bytes
     roms/dataflash.bin  # flash_v1358.bin / C4PC emu_flash.bin, 540672 bytes
     save.flash          # this model's writable serial flash
+    ram.dat             # stock 256 KiB SRAM plus checkpoint header
   xtreme/
     roms/boot.bin       # cyrom150.bin, 32768 bytes
     roms/flash.bin      # cyos_v1508.bin, 524288 bytes
@@ -93,6 +95,17 @@ advances time while the app is closed. A corrupt clock file stops startup and
 is preserved; move it aside only if you intentionally want a clock reset.
 `preferences.dat` in the shared root remembers model, layout and shell color.
 Back up the entire model folder, not just its save file.
+
+Starting with v0.1.1-preview, Classic also restores its battery-backed SRAM.
+CyOS needs saved RAM calendar state as well as the RTC to preserve its displayed
+time; saving only flash and RTC is insufficient. `ram.dat` records the model, RAM length,
+header/payload CRCs and the matching flash CRC. A corrupt or mismatched pair
+stops loading instead of booting inconsistent cached data. Each file is replaced
+atomically, but the entire set is not one filesystem transaction: keep all three
+files together when backing up/restoring. After an interrupted multi-file save,
+restore a matching backup, or move `ram.dat` aside for an intentional cold boot
+that keeps flash documents but may reset the clock. An older installation without
+`ram.dat` likewise cold-boots once before creating its first RAM checkpoint.
 
 Reproduce the read-only V2 diagnostic without touching source firmware:
 

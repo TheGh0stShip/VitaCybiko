@@ -1,11 +1,20 @@
 #include "input.h"
+#include <string.h>
 
-enum { MIN_HOLD = 3, NUMBER_HOLD = 6, FN_FIRST_DELAY = 8, FN_NEXT_DELAY = 3, FN_TAIL = 10 };
+/* Real Classic CyOS missed 3-frame Esc/F-key taps in firmware tests. Eight
+ * emulated frames span its scan/debounce window even when host FPS is low. */
+enum { MIN_HOLD = 3, CLASSIC_HOLD = 8, NUMBER_HOLD = 6, FN_FIRST_DELAY = 8, FN_NEXT_DELAY = 3, FN_TAIL = 10 };
 
-static void set_key(input_key_t *key, bool down, int delay)
+void input_reset(input_state_t *state, cybiko_model_t model)
+{
+    memset(state, 0, sizeof(*state));
+    state->classic = model != CYBIKO_XTREME;
+}
+
+static void set_key(input_key_t *key, bool down, int delay, int hold)
 {
     if (down && !key->down) {
-        key->hold = MIN_HOLD;
+        key->hold = (uint8_t)hold;
         key->delay = (uint8_t)delay;
     }
     key->down = down;
@@ -28,22 +37,22 @@ void input_key(input_state_t *state, int column, uint16_t mask, bool down)
 {
     if (column < 0 || column >= CYBIKO_KEYBOARD_COLUMNS) return;
     for (int bit = 0; bit < 16; ++bit)
-        if (mask & (1u << bit)) set_key(&state->keys[column][bit], down, 0);
+        if (mask & (1u << bit)) set_key(&state->keys[column][bit], down, 0,
+                                      state->classic ? CLASSIC_HOLD : MIN_HOLD);
 }
 
 void input_number(input_state_t *state, int column, uint16_t mask, bool down)
 {
     if (column < 0 || column >= CYBIKO_KEYBOARD_COLUMNS) return;
     int delay = (numbers_active(state) || state->fn_tail) ? FN_NEXT_DELAY : FN_FIRST_DELAY;
+    if (state->classic) delay = 0;
     for (int bit = 0; bit < 16; ++bit) {
         if (mask & (1u << bit)) {
             input_key_t *key = &state->numbers[column][bit];
-            bool first_press = down && !key->down;
-            set_key(key, down, delay);
-            if (first_press) key->hold = NUMBER_HOLD;
+            set_key(key, down, delay, state->classic ? CLASSIC_HOLD : NUMBER_HOLD);
         }
     }
-    if (down) state->fn_tail = FN_TAIL;
+    if (down && !state->classic) state->fn_tail = FN_TAIL;
 }
 
 void input_tick(input_state_t *state)
@@ -57,7 +66,7 @@ void input_tick(input_state_t *state)
             else if (number->hold) --number->hold;
         }
     }
-    if (numbers_active(state)) state->fn_tail = FN_TAIL;
+    if (!state->classic && numbers_active(state)) state->fn_tail = FN_TAIL;
     else if (state->fn_tail) --state->fn_tail;
 }
 

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][int]$VitaProcessId, [Parameter(Mandatory=$true)][string]$OutputPath, [int[]]$Keys, [int]$Delay=300, [int]$TouchX=-1, [int]$TouchY=-1)
+param([Parameter(Mandatory=$true)][int]$VitaProcessId, [Parameter(Mandatory=$true)][string]$OutputPath, [int[]]$Keys, [int]$Delay=300, [int]$TouchX=-1, [int]$TouchY=-1, [ValidateRange(20,3000)][int]$Hold=180)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
@@ -62,7 +62,7 @@ if (-not [VitaWindowCapture]::ClientToScreen($handle, [ref]$origin)) { throw 'No
 if ($TouchX -ge 0 -and $TouchY -ge 0) {
     if ([VitaWindowCapture]::GetForegroundWindow() -ne $handle) { throw 'Game not foreground' }
     [void][VitaWindowCapture]::SetCursorPos($origin.X + $TouchX, $origin.Y + $TouchY)
-    try { [VitaWindowCapture]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 180 }
+    try { [VitaWindowCapture]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds $Hold }
     finally { [VitaWindowCapture]::mouse_event(4,0,0,0,[UIntPtr]::Zero) }
     Start-Sleep -Milliseconds $Delay
 }
