@@ -116,6 +116,7 @@ static void test_clear_on_compare_a(void) {
     for (int i = 0; i < 24; i++) timer8_tick(&t);
     /* Counter should clear on match */
     TEST_CHECK(t.tcnt == 0);
+    TEST_CHECK((t.tcsr & 0x20) == 0); /* Compare clear is not overflow. */
 }
 
 static void test_clear_on_compare_b(void) {
@@ -127,6 +128,7 @@ static void test_clear_on_compare_b(void) {
     timer8_write(&t, 6, 5); /* TCORB=5 */
     for (int i = 0; i < 40; i++) timer8_tick(&t);
     TEST_CHECK(t.tcnt == 0);
+    TEST_CHECK((t.tcsr & 0x20) == 0);
 }
 
 static void test_overflow_sets_flag(void) {

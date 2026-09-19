@@ -223,14 +223,7 @@ void timer16_set_enabled(timer16_t *t, bool enabled) {
     }
 }
 
-void timer16_tick(timer16_t *t) {
-    int divisor = t->cached_divisor;
-    if (divisor == 0) return; /* Stopped, external, or disabled */
-
-    t->prescale_counter++;
-    if (t->prescale_counter < divisor) return;
-    t->prescale_counter = 0;
-
+void timer16_counter_tick(timer16_t *t) {
     uint16_t prev_tcnt = t->tcnt;
     t->tcnt = (t->tcnt + 1) & 0xFFFF;
 

@@ -5,12 +5,12 @@
 | Model / feature | Evidence |
 | --- | --- |
 | Classic V2 / CyOS 1.3.58 | Genuine first-run setup, Main Desktop, Pinball gameplay/exit, Calculator 2 + 3 = 5, Text Editor save/reopen in Windows Vita3K |
-| Classic V1 / original stock | Profile, memory map, keyboard and DataFlash tests; matching firmware unavailable, boot unverified |
-| Xtreme / CyOS 1.5.08 | Profile and host core/CFS/import tests; matching firmware unavailable, boot unverified |
+| Classic V1 / original stock | Matching firmware staged; host smoke reaches desktop; Windows Vita3K reaches stock desktop, but app-by-app behavior and performance are not validated |
+| Xtreme / CyOS 1.5.08 | Matching firmware staged; host smoke reaches first-run setup; Windows Vita3K reaches setup, but performance is slow and app compatibility is not validated |
 | Physical Vita / PSTV | Cross-built VPK only; no physical-device run |
 | Persistence | Setup, a created text document and clock continuity survive Vita3K restart; RAM/flash binding and corruption rejection tested on host |
 | Input | Touch setup and game launch observed; host tests cover controller/touch isolation, modifiers, focus release and layout switching |
-| Audio | Speaker core and frontend suspend/resume tests; audible fidelity not verified |
+| Audio | Speaker core, suspend/resume tests and low-latency frontend queue bounds are covered; audible fidelity remains user-test territory |
 | Radio / accessories | No end-to-end wireless, CyWIG, PC sync, USB or MP3 support |
 
 ## Classic bundle
@@ -60,4 +60,7 @@ Short Classic taps previously missed the guest scan window. v0.1.1-preview holds
 them for eight emulated frames; a 40 ms Vita3K touch now opens Pinball's quit
 dialog. Confirm Quit to return to Games. Calculator intentionally uses one Esc
 to clear and two to exit. Start + Select remains the save/model-menu shortcut.
+v0.1.2-preview reduces queued-audio latency and allows limited emulation
+catch-up when rendering falls behind; it does not make the core cycle-accurate
+or guarantee full-speed Xtreme playback.
 See [verification](VERIFICATION.md) for the tested artifact and actual captures.

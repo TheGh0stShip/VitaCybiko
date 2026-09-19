@@ -92,7 +92,54 @@ static void test_sleep_does_not_stop_emulation(void)
     cybiko_destroy(emu);
 }
 
+/* Firmware can start a timer anywhere in a frame. The first ticks must not
+ * wait until the next 60 Hz frame boundary. No proprietary ROM is needed. */
+static void test_timer_starts_during_frame(void)
+{
+    for (int scenario = 0; scenario < 6; ++scenario) {
+        cybiko_model_t model = (cybiko_model_t)(scenario / 2);
+        bool timer16 = (scenario % 2) != 0;
+        cybiko_hal_t hal = {0};
+        cybiko_emu_t *emu = cybiko_create_model(&hal, model);
+        TEST_ASSERT(emu != NULL);
+        uint8_t *boot = calloc(CYBIKO_BOOT_ROM_SIZE, 1);
+        TEST_ASSERT(boot != NULL);
+        boot[2] = 1; /* Reset to 0x100. */
+        size_t p = 0x100;
+        boot[p++] = 0xf8; boot[p++] = 1;    /* MOV.B #1,R0L */
+        /* TMR0: /8 clock, or 16-bit channel 0: TSTR enable, /1 clock. */
+        boot[p++] = 0x38; boot[p++] = timer16 ? 0xc0 : 0xb0;
+        p += 64 * 2;                      /* 64 NOPs */
+        boot[p++] = 0x28; boot[p++] = timer16 ? 0xd7 : 0xb8;
+        uint32_t ram = cybiko_machine(model)->ram_base;
+        boot[p++] = 0x6a; boot[p++] = 0xa8; /* MOV.B R0L,@RAM:32 */
+        boot[p++] = 0; boot[p++] = ram >> 16;
+        boot[p++] = ram >> 8; boot[p++] = ram;
+        boot[p++] = 0xf8; boot[p++] = 0;
+        boot[p++] = 0x38; boot[p++] = timer16 ? 0xc0 : 0xb0;
+        p += 16 * 2;
+        boot[p++] = 0x28; boot[p++] = timer16 ? 0xd7 : 0xb8;
+        boot[p++] = 0x6a; boot[p++] = 0xa8;
+        boot[p++] = 0; boot[p++] = ram >> 16;
+        boot[p++] = ram >> 8; boot[p++] = 1;
+        boot[p++] = 0x01; boot[p++] = 0x80; /* SLEEP */
+        TEST_ASSERT(cybiko_load_boot_rom(emu, boot, CYBIKO_BOOT_ROM_SIZE));
+        cybiko_reset(emu);
+        cybiko_run_frame(emu);
+        size_t len;
+        const uint8_t *data = cybiko_get_nvram(emu, &len);
+        TEST_ASSERT(data && len >= 2);
+        TEST_CHECK_(data[0] == (timer16 ? 65 : 8),
+                    "model %d timer16=%d first-frame count %u", model, timer16, data[0]);
+        TEST_CHECK_(data[1] == (timer16 ? 68 : 8),
+                    "model %d timer16=%d stopped count %u", model, timer16, data[1]);
+        free(boot);
+        cybiko_destroy(emu);
+    }
+}
+
 TEST_LIST = {
+    { "timer_starts_during_frame", test_timer_starts_during_frame },
     { "sleep_keeps_emulation_running", test_sleep_does_not_stop_emulation },
     { "rom_sizes_are_validated", test_rom_sizes_are_validated },
     { "nvram_size_is_bounded",   test_nvram_size_is_bounded },

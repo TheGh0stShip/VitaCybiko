@@ -1,5 +1,51 @@
 # Verification — 2026-09-19
 
+## v0.1.2-preview candidate
+
+Vita package metadata is `01.02`. Candidate VPK SHA-256:
+
+```text
+f375f58afa85b0ce39a70bb0b1ea0b346b6690ad9ce96f7b58570ed5dabc39aa
+```
+
+Executable payload SHA-256:
+
+```text
+45fd818b706635556385e20b23d509ae0921f88d361f52c24fdd7ec860345df2
+```
+
+- Timer scheduling was corrected so timers started by guest firmware tick within
+  the same frame. A synthetic boot-ROM regression covers 8-bit and 16-bit timer
+  starts for Classic V1, Classic V2 and Xtreme.
+- The frontend now requests a smaller SDL audio device buffer, caps queued audio
+  to four emulated frames and drops stale queued sound. A bounded catch-up path
+  can advance up to two extra emulated frames before presenting when rendering
+  falls behind, improving audio freshness during slow gameplay. This is not a
+  full-speed guarantee.
+- User-supplied MAME-reference firmware was staged only into local Vita3K data
+  storage, not into the repository or VPK. The four newly staged images matched
+  the reference CRC32/SHA-1 values for `cyrom112.bin`, `flash_v1246.bin`,
+  `cyrom150.bin` and `cyos_v1508.bin`.
+- Host smoke boots now reach the Classic V1 desktop and Xtreme setup with LCD
+  activity and 480,000 generated audio samples over 600 frames:
+  Classic V1 `pc=21EE36`, Xtreme `pc=4A3C40`.
+- Windows Vita3K runtime captures from the actual installed 01.02 build show:
+  Classic V1 stock desktop, Classic V2 desktop, Classic V2 Pinball gameplay and
+  Xtreme first-run setup. Classic V1 and Xtreme are boot-verified, not yet
+  app-by-app verified. Xtreme and V1 are noticeably slower than Classic V2.
+- All 13 ASan/UBSan C suites and seven local Python tests passed after the
+  audio/timer changes. The long ASan firmware smoke was cancelled because it was
+  only a performance burden; the release host smoke was used for firmware boot
+  screen evidence.
+
+![Classic V1 desktop in Windows Vita3K](vita3k-classic-v1-desktop.png)
+
+![Classic V2 desktop in Windows Vita3K](vita3k-classic-desktop.png)
+
+![Classic V2 Pinball gameplay after audio queue changes](vita3k-pinball.png)
+
+![Xtreme first-run setup in Windows Vita3K](vita3k-xtreme-setup.png)
+
 ## v0.1.1-preview follow-up
 
 Vita package metadata is now `01.01`. VPK SHA-256:
@@ -73,11 +119,11 @@ screens. The emulator configuration was left unchanged.
 | Three-model selector | Displays V1, V2 and Xtreme; selected model survives process restart |
 | Classic V2 first boot | Welcome → date setup → synthetic nickname → Main Desktop |
 | Subsequent boot | Returns to desktop without repeating first-run setup |
-| Games / Pinball Pro | Game starts and renders gameplay; observed roughly 32–46 FPS in the optimized build |
+| Games / Pinball Pro | Game starts and renders gameplay; observed roughly 32–46 FPS in the optimized build before the v0.1.2 timing work; the v0.1.2 capture during play showed 17 FPS presentation in Vita3K |
 | Applications / Calculator | Numeric input and directional button selection compute 2 + 3 = 5 |
 | Save/model return | Start + Select saves and returns to the model menu |
 | RTC storage | Versioned clock file is written; host round-trip checks pass, but guest desktop time discrepancies remain |
-| Classic V1 / Xtreme | Missing matching firmware; guest boot not verified |
+| Classic V1 / Xtreme | Superseded by v0.1.2: matching firmware staged and boot verified, but app coverage/performance remain open |
 
 Desktop and Calculator generally showed about 60 FPS. The overlay is Vita3K's
 reported presentation rate, **not** a measured cycle-accuracy or hardware-speed
@@ -113,15 +159,17 @@ Capture helper:
 - Seven Python tests pass locally. Three CD integration tests require private
   source media and skip in a clean public checkout; the other four use synthetic
   fixtures. Proprietary fixtures are deliberately not distributed.
-- Firmware staging identifies all three supplied V2 images, reports missing
-  V1/Xtreme images and leaves saves untouched.
+- Firmware staging identifies all supplied model images by size/SHA-1, stages
+  recognized V1/V2/Xtreme ROMs without overwriting existing saves and reports
+  each missing profile individually.
 
 ## Open acceptance items
 
-Physical Vita/PSTV testing; V1/Xtreme boots; all original launch-bundle apps;
-user-created Notes/Organizer data save-and-reopen; reliable guest Esc/exit
-behavior across apps; audible fidelity; guest clock correctness; sustained
-full-speed games; wireless/accessory interoperability.
+Physical Vita/PSTV testing; V1/Xtreme app coverage and performance; all
+original launch-bundle apps; user-created Notes/Organizer data save-and-reopen;
+reliable guest Esc/exit behavior across apps; audible fidelity; guest clock
+correctness; sustained full-speed games; wireless/accessory interoperability.
 
-The release is a working **Classic V2 preview**, not completion of these items.
-See [compatibility](COMPATIBILITY.md) and [release goals](RELEASE-PLAN.md).
+The release remains a preview with the deepest app verification on Classic V2,
+not completion of these items. See [compatibility](COMPATIBILITY.md) and
+[release goals](RELEASE-PLAN.md).

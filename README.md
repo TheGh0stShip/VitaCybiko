@@ -2,7 +2,11 @@
 
 Cybiko handheld emulation for PlayStation Vita/PSTV, with selectable **Classic V1, Classic V2 and Xtreme** profiles.
 
-**Classic V2 boots to its real desktop and runs Pinball Pro in Windows Vita3K.** Classic V1 and Xtreme are implemented profiles but have not been boot-verified: matching firmware was unavailable for testing. This is a **preview**, not complete 1:1 hardware emulation.
+**Classic V2 boots to its real desktop and runs Pinball Pro in Windows Vita3K.**
+Classic V1 now reaches its stock desktop and Xtreme reaches first-run setup when
+matching firmware is supplied, but they are not yet app-by-app verified and are
+slower than Classic V2. This is a **preview**, not complete 1:1 hardware
+emulation.
 
 [Download the VPK](https://github.com/TheGh0stShip/VitaCybiko/releases) · [Setup](docs/MODELS.md) · [Compatibility](docs/COMPATIBILITY.md) · [Test evidence](docs/VERIFICATION.md)
 
@@ -66,8 +70,9 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 ## Known boundaries
 
 - Classic V2 setup, desktop, Pinball gameplay/exit, Calculator arithmetic and Text Editor save/reopen were observed in Vita3K. Clock continuity survives restart. Not every bundled app has been tested.
+- Classic V1 reaches the stock desktop in Vita3K. Xtreme reaches the first-run setup dialog in Vita3K. App compatibility and performance are not yet validated for those two profiles.
 - No physical Vita/PSTV test has been performed. Performance varies; observed Pinball gameplay remains below 60 FPS.
-- Classic V1/Xtreme boot verification and the exact original retail Classic launch bundle require matching images.
+- The exact original retail Classic launch bundle remains unverified.
 - Wireless chat/multiplayer, CyWIG, original PC synchronization and USB/MP3 accessories are not implemented end-to-end.
 - CPU timing is approximate; some instructions/peripheral modes remain incomplete. Classic external app installation is not implemented.
 

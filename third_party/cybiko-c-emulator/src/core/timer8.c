@@ -83,14 +83,9 @@ void timer8_write(timer8_t *t, int reg, uint8_t value) {
     }
 }
 
-void timer8_tick(timer8_t *t) {
-    int divisor = t->cached_divisor;
-    if (divisor == 0) return; /* Timer stopped */
-
-    if (++t->prescale_counter < divisor) return;
-    t->prescale_counter = 0;
-
+void timer8_counter_tick(timer8_t *t) {
     /* Increment counter */
+    uint8_t previous_count = t->tcnt;
     t->tcnt = (t->tcnt + 1) & 0xFF;
 
     /* Check compare match A */
@@ -120,7 +115,7 @@ void timer8_tick(timer8_t *t) {
     }
 
     /* Check overflow (only on natural wrap 0xFF -> 0x00) */
-    if (t->tcnt == 0 && !(t->tcsr & TCSR_OVF)) {
+    if (previous_count == 0xFF && t->tcnt == 0 && !(t->tcsr & TCSR_OVF)) {
         t->tcsr |= TCSR_OVF;
         if (t->tcr & TCR_OVIE) {
             h8s_cpu_request_interrupt(t->cpu, t->vec_ovi);

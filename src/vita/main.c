@@ -65,6 +65,10 @@
 #define MAX_APPS            64
 #define MAX_PATH_CHARS      512
 #define AUTOSAVE_INTERVAL_MS 60000u
+#define AUDIO_DEVICE_SAMPLES 512
+#define AUDIO_MAX_QUEUE_FRAMES 4u
+#define AUDIO_MAX_QUEUE_BYTES ((SPEAKER_SAMPLE_RATE / CYBIKO_FPS) * AUDIO_MAX_QUEUE_FRAMES)
+#define EMULATION_CATCHUP_MAX_FRAMES 2
 
 /* Defaults keep old host tests and the legacy Xtreme layout valid. Selection
  * replaces all paths together; Classic never uses the legacy Xtreme save. */
@@ -302,6 +306,7 @@ typedef struct {
     char status[128];
 } app_ctx_t;
 
+static void advance_emulated_frame(cybiko_emu_t *emu, app_ctx_t *ctx);
 static void cycle_skin(app_ctx_t *ctx, int direction);
 static void release_all_inputs(app_ctx_t *ctx);
 static void toggle_layout(app_ctx_t *ctx);
@@ -1127,10 +1132,28 @@ static void hal_audio_output(void *ctx_ptr, const uint8_t *samples, int count)
         return;
     }
 
-    if (SDL_GetQueuedAudioSize(ctx->audio_dev) > SPEAKER_SAMPLE_RATE / 2) {
+    Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
+    Uint32 bytes = (Uint32)count;
+    if (queued > AUDIO_MAX_QUEUE_BYTES ||
+        queued + bytes > AUDIO_MAX_QUEUE_BYTES) {
         SDL_ClearQueuedAudio(ctx->audio_dev);
     }
-    SDL_QueueAudio(ctx->audio_dev, samples, (Uint32)count);
+    if (bytes > AUDIO_MAX_QUEUE_BYTES) {
+        samples += bytes - AUDIO_MAX_QUEUE_BYTES;
+        bytes = AUDIO_MAX_QUEUE_BYTES;
+    }
+    if (SDL_QueueAudio(ctx->audio_dev, samples, bytes) != 0) {
+        fprintf(stderr, "audio queue failed: %s\n", SDL_GetError());
+    }
+}
+
+static void advance_emulated_frame(cybiko_emu_t *emu, app_ctx_t *ctx)
+{
+    cybiko_run_frame(emu);
+    input_tick(&ctx->physical_input);
+    input_tick(&ctx->controller_input);
+    input_tick(&ctx->touch_input);
+    input_tick(&ctx->virtual_input);
 }
 
 static void hal_keyboard_poll(void *ctx_ptr, uint16_t *matrix, int num_columns)
@@ -1614,7 +1637,7 @@ static bool init_sdl(app_ctx_t *ctx)
     want.freq = SPEAKER_SAMPLE_RATE;
     want.format = AUDIO_U8;
     want.channels = 1;
-    want.samples = 2048;
+    want.samples = AUDIO_DEVICE_SAMPLES;
 
     ctx->audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (!ctx->audio_dev) {
@@ -1828,15 +1851,22 @@ select_model:
             continue;
         }
 
-        cybiko_run_frame(emu);
-        input_tick(&ctx->physical_input);
-        input_tick(&ctx->controller_input);
-        input_tick(&ctx->touch_input);
-        input_tick(&ctx->virtual_input);
+        advance_emulated_frame(emu, ctx);
+
+        uint64_t frame_now = SDL_GetPerformanceCounter();
+        int catchup_frames = 0;
+        while (catchup_frames < EMULATION_CATCHUP_MAX_FRAMES &&
+               frame_now > frame_deadline + frame_interval) {
+            frame_deadline += frame_interval;
+            advance_emulated_frame(emu, ctx);
+            catchup_frames++;
+            frame_now = SDL_GetPerformanceCounter();
+        }
+
         render_frame(ctx);
 
         frame_deadline += frame_interval;
-        uint64_t frame_now = SDL_GetPerformanceCounter();
+        frame_now = SDL_GetPerformanceCounter();
         if (frame_now < frame_deadline) {
             uint64_t remaining_ms =
                 (frame_deadline - frame_now) * 1000u / perf_frequency;

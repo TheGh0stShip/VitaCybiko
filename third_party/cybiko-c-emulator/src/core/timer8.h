@@ -13,7 +13,15 @@ typedef struct {
 } timer8_t;
 
 void    timer8_init(timer8_t *t, int channel, h8s_cpu_t *cpu);
-void    timer8_tick(timer8_t *t);
+/* The prescaler is the hot path; keep the uncommon counter/IRQ work out of
+ * line without paying a function call on every emulated cycle. */
+void    timer8_counter_tick(timer8_t *t);
+static inline void timer8_tick(timer8_t *t) {
+    if (t->cached_divisor == 0) return;
+    if (++t->prescale_counter < t->cached_divisor) return;
+    t->prescale_counter = 0;
+    timer8_counter_tick(t);
+}
 uint8_t timer8_read(const timer8_t *t, int reg);
 void    timer8_write(timer8_t *t, int reg, uint8_t value);
 bool    timer8_is_running(const timer8_t *t);

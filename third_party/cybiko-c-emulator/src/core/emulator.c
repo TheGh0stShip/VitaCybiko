@@ -209,14 +209,6 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
         }
     }
 
-    /* Cache which timers are running to avoid per-cycle checks */
-    bool t8_0 = timer8_is_running(&emu->timer8[0]);
-    bool t8_1 = timer8_is_running(&emu->timer8[1]);
-    bool t16[6];
-    for (int i = 0; i < 6; i++) {
-        t16[i] = timer16_is_running(&emu->timer16[i]);
-    }
-
     /* Begin speaker frame (record start level, reset transitions) */
     speaker_begin_frame(&emu->speaker);
 
@@ -225,11 +217,12 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
         /* Track cycle position for speaker transition timestamps */
         emu->speaker.frame_cycle = cycle;
 
-        /* Tick timers */
-        if (t8_0) timer8_tick(&emu->timer8[0]);
-        if (t8_1) timer8_tick(&emu->timer8[1]);
+        /* Check the live prescalers: firmware can start/stop a timer during
+         * this frame, including immediately before entering SLEEP. */
+        timer8_tick(&emu->timer8[0]);
+        timer8_tick(&emu->timer8[1]);
         for (int i = 0; i < m->timer_channels; i++) {
-            if (t16[i]) timer16_tick(&emu->timer16[i]);
+            timer16_tick(&emu->timer16[i]);
         }
 
         /* CPU step */

@@ -266,6 +266,30 @@ static void test_focus_loss_and_mouse_buttons(void)
     cleanup(ctx);
 }
 
+static void test_audio_queue_bounds_latency(void)
+{
+    app_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    TEST_ASSERT(ctx != NULL);
+    TEST_ASSERT(init_sdl(ctx));
+    if (ctx->audio_dev) {
+        uint8_t frame[SPEAKER_SAMPLE_RATE / CYBIKO_FPS];
+        uint8_t stale[AUDIO_MAX_QUEUE_BYTES];
+        memset(frame, 128, sizeof(frame));
+        memset(stale, 128, sizeof(stale));
+
+        SDL_ClearQueuedAudio(ctx->audio_dev);
+        hal_audio_output(ctx, frame, (int)sizeof(frame));
+        hal_audio_output(ctx, frame, (int)sizeof(frame));
+        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) == sizeof(frame) * 2u);
+
+        SDL_ClearQueuedAudio(ctx->audio_dev);
+        TEST_ASSERT(SDL_QueueAudio(ctx->audio_dev, stale, sizeof(stale)) == 0);
+        hal_audio_output(ctx, frame, (int)sizeof(frame));
+        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) == sizeof(frame));
+    }
+    cleanup(ctx);
+}
+
 static void test_import_pack_and_library_paths(void)
 {
     const char *pack = getenv("VITACYBIKO_TEST_CD_PACK");
@@ -602,6 +626,7 @@ TEST_LIST = {
     {"model_menu_selection", test_model_menu_selection},
     {"model_storage_isolation", test_model_storage_isolation},
     {"focus_loss_and_mouse_buttons", test_focus_loss_and_mouse_buttons},
+    {"audio_queue_bounds_latency", test_audio_queue_bounds_latency},
     {"import_pack_and_library_paths", test_import_pack_and_library_paths},
     {"render_and_background_events", test_render_and_background_events},
     {"touch_hold_survives_controller_poll", test_touch_hold_survives_controller_poll},

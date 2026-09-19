@@ -1,8 +1,10 @@
 # Device selection and firmware
 
 Choose Classic V1, Classic V2, or Xtreme at startup. Classic V2 boots to the
-desktop with CyOS 1.3.58. V1 and Xtreme remain boot-unverified; selecting a
-profile is not proof of compatibility.
+desktop with CyOS 1.3.58 and has the deepest app-level Vita3K verification.
+Classic V1 reaches the stock desktop, and Xtreme reaches first-run setup when
+the matching images below are supplied. V1 and Xtreme remain experimental:
+selecting a profile is not proof that every app or workflow works.
 
 ## Independent storage
 
@@ -87,8 +89,9 @@ numbers and punctuation; number presses no longer synthesize Xtreme Fn chords.
 Observed V2 run: first-run setup, Main Desktop and Pinball Pro gameplay in
 Windows Vita3K. Setup survives restart. The previous startup stall was fixed
 by implementing SCI transmit interrupts; PC `11ED98` is a normal idle loop,
-not sufficient evidence of a stall. V1 and Xtreme firmware were unavailable,
-so their real boots remain unverified.
+not sufficient evidence of a stall. With matching MAME-reference firmware
+staged, V1 reaches its stock desktop and Xtreme reaches first-run setup in
+Windows Vita3K. V1/Xtreme performance and app coverage remain incomplete.
 
 Each model also stores `clock.dat`, a versioned/checksummed RTC sidecar. It
 advances time while the app is closed. A corrupt clock file stops startup and
@@ -113,5 +116,6 @@ Reproduce the read-only V2 diagnostic without touching source firmware:
 ./build-host/cybiko-smoke --classic-v2 emu_rom.bin emu_cyos.bin emu_flash.bin 3600 classic.pgm
 ```
 
-For V1 use `--classic-v1 cyrom112.bin - flash_v1246.bin`. The smoke tool reports
-LCD activity, not successful OS startup. Inspect its image and the guest UI.
+For V1 use `--classic-v1 cyrom112.bin - flash_v1246.bin`. For Xtreme omit the
+Classic flag and pass `cyrom150.bin cyos_v1508.bin`. The smoke tool reports LCD
+activity, not successful OS startup. Inspect its image and the guest UI.
