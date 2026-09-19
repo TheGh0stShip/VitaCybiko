@@ -671,16 +671,46 @@ static void update_controller_input(app_ctx_t *ctx, bool *running)
 
 static bool ensure_dir(const char *path)
 {
+    struct stat info;
+    if (stat(path, &info) == 0) {
+        return S_ISDIR(info.st_mode);
+    }
     if (mkdir(path, 0777) == 0) {
         return true;
     }
-    return errno == EEXIST;
+    if (errno == EEXIST && stat(path, &info) == 0) {
+        return S_ISDIR(info.st_mode);
+    }
+    return false;
+}
+
+static bool ensure_dir_tree(const char *path)
+{
+    if (!path || !*path) return false;
+    char tmp[MAX_PATH_CHARS];
+    int n = snprintf(tmp, sizeof(tmp), "%s", path);
+    if (n <= 0 || n >= (int)sizeof(tmp)) return false;
+
+    size_t len = strlen(tmp);
+    while (len > 1 && tmp[len - 1] == '/') {
+        tmp[--len] = '\0';
+    }
+
+    for (char *p = tmp + 1; *p; ++p) {
+        if (*p != '/') continue;
+        *p = '\0';
+        if (!ensure_dir(tmp)) {
+            *p = '/';
+            return false;
+        }
+        *p = '/';
+    }
+    return ensure_dir(tmp);
 }
 
 static bool ensure_runtime_dirs(void)
 {
-    return ensure_dir("ux0:data") && ensure_dir(DATA_DIR) &&
-           ensure_dir(ROM_DIR) && ensure_dir(APP_DIR);
+    return ensure_dir_tree(DATA_DIR);
 }
 
 static uint8_t *load_file(const char *path, size_t *out_size, bool quiet)
@@ -1084,8 +1114,8 @@ static bool select_model_paths(cybiko_model_t model)
     }
     char rom_dir[MAX_PATH_CHARS];
     int n = snprintf(rom_dir, sizeof(rom_dir), "%s/roms", runtime_root);
-    return n > 0 && n < MAX_PATH_CHARS && ensure_dir(runtime_root) &&
-           ensure_dir(rom_dir) && ensure_dir(runtime_app_dir);
+    return n > 0 && n < MAX_PATH_CHARS && ensure_dir_tree(runtime_root) &&
+           ensure_dir_tree(rom_dir) && ensure_dir_tree(runtime_app_dir);
 }
 
 static bool load_classic_storage(cybiko_emu_t *emu)

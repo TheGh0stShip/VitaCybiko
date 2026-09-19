@@ -33,6 +33,44 @@ C4PC's `emu_rom.bin`, `emu_cyos.bin` and `emu_flash.bin` are V2, not V1 or
 Xtreme. Rename copies according to the mapping above. No proprietary images
 are bundled in the VPK. Never rename a different model's ROM to bypass checks.
 
+## Archive.org reference links
+
+VitaCybiko does not download or distribute Cybiko firmware, commercial apps, or
+user saves. Use only files you are legally allowed to use. For preservation and
+hash verification, the Internet Archive MAME 0.221 merged set exposes one
+`cybikov1.zip` archive that contains every firmware image currently recognized
+by `tools/prepare_firmware.py`:
+
+- Complete archive:
+  <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip>
+- Browse archive contents:
+  <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip/>
+
+Direct member links:
+
+| VitaCybiko profile | Archive member | Direct link | Install as |
+| --- | --- | --- | --- |
+| Classic V1 | `cyrom112.bin` | <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip/cyrom112.bin> | `classic-v1/roms/boot.bin` |
+| Classic V1 | `flash_v1246.bin` | <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip/flash_v1246.bin> | `classic-v1/roms/dataflash.bin` |
+| Classic V2 | `cybikov2/cyrom117.bin` | <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip/cybikov2%2Fcyrom117.bin> | `classic-v2/roms/boot.bin` |
+| Classic V2 | `cybikov2/cyos_v1358.bin` | <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip/cybikov2%2Fcyos_v1358.bin> | `classic-v2/roms/flash.bin` |
+| Classic V2 | `cybikov2/flash_v1358.bin` | <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip/cybikov2%2Fflash_v1358.bin> | `classic-v2/roms/dataflash.bin` |
+| Xtreme | `cybikoxt/cyrom150.bin` | <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip/cybikoxt%2Fcyrom150.bin> | `xtreme/roms/boot.bin` |
+| Xtreme | `cybikoxt/cyos_v1508.bin` | <https://archive.org/download/mame-0.221-roms-merged/cybikov1.zip/cybikoxt%2Fcyos_v1508.bin> | `xtreme/roms/flash.bin` |
+
+The same MAME material is also available in split collections, including:
+
+- MAME 0.236 split directory:
+  <https://archive.org/download/mame-0.236-roms-split/MAME%200.236%20ROMs%20%28split%29/>
+- MAME 0.172 directory:
+  <https://archive.org/download/Mame172arcdcmplt>
+
+After extracting an archive, stage recognized files without hand-renaming:
+
+```sh
+python3 tools/prepare_firmware.py /path/to/extracted-cybiko-files /path/to/ux0/data/VitaCybiko --copy
+```
+
 The Classic app bundle is read from the supplied flash image. The current
 Xtreme app injector is **not** used on Classic's different CFS format; files
 placed in a Classic `apps/` directory are not imported yet. The v1.3.58 image
@@ -49,7 +87,7 @@ Content/checksum validation of modified Classic CFS pages is not implemented.
 Saves use a temporary file and rename. Back up saves before testing an
 experimental core: guest firmware can modify the emulated flash.
 
-## Accepted boot / parallel-flash identifiers
+## Accepted image identifiers
 
 To identify an extracted local collection without changing it, use:
 
@@ -61,11 +99,15 @@ Add `--copy` to copy recognized images. The helper matches size and SHA-1,
 refuses conflicting destinations, and never replaces saves. Missing profiles
 are reported individually. ZIP/CD extraction must be done separately.
 
-| Selection | Boot CRC32 | Parallel-flash CRC32 |
-| --- | --- | --- |
-| Classic V1 | `9e1f1a0f` | none |
-| Classic V2, CyOS v1.3.58 | `268da7bf` | `05ca4ece` |
-| Xtreme, CyOS v1.5.08 | `18b9b21f` | `f79400ba` |
+| Selection | Source filename | Size | CRC32 | SHA-1 |
+| --- | --- | ---: | --- | --- |
+| Classic V1 | `cyrom112.bin` | 32768 | `9e1f1a0f` | `6fc08de6b2c67d884ec78f748e4a4bad27ee8045` |
+| Classic V1 | `flash_v1246.bin` | 540672 | `3816d0ab` | `19be4fed8d95112568adf93219afe9406d7baecf` |
+| Classic V2, CyOS v1.3.58 | `cyrom117.bin` | 32768 | `268da7bf` | `135eaf9e3905e69582aabd9b06bc4de0a66780d5` |
+| Classic V2, CyOS v1.3.58 | `cyos_v1358.bin` | 262144 | `05ca4ece` | `eee329e8541e1e36c22acb1317378ce23ccd1e12` |
+| Classic V2, CyOS v1.3.58 | `flash_v1358.bin` | 540672 | `e485880f` | `e414d6d2f876c7c811946bcdfcb6212999412381` |
+| Xtreme, CyOS v1.5.08 | `cyrom150.bin` | 32768 | `18b9b21f` | `28868d6174eb198a6cec6c3c70b6e494517229b9` |
+| Xtreme, CyOS v1.5.08 | `cyos_v1508.bin` | 524288 | `f79400ba` | `537a88e238746b3944b0cdfd4b0a9396460b2977` |
 
 Reference: [MAME Cybiko hardware definitions](https://github.com/mamedev/mame/blob/master/src/mame/cybiko/cybiko.cpp).
 Hashes identify the supported revisions; they do not establish completed boot.

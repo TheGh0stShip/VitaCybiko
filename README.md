@@ -15,7 +15,7 @@ emulation.
 ## Install
 
 1. Install `VitaCybiko.vpk` using VitaShell, or Vita3K's **File → Install .zip, .vpk**.
-2. Supply your own legally obtained firmware using the [model-specific file layout](docs/MODELS.md). Firmware, commercial apps and user saves are **not** included.
+2. Supply your own legally obtained firmware using the [model-specific file layout and Archive.org reference links](docs/MODELS.md). Firmware, commercial apps and user saves are **not** included.
 3. Launch VitaCybiko and choose the matching model. C4PC's `emu_rom.bin`, `emu_cyos.bin`, and `emu_flash.bin` belong to **Classic V2**, not Xtreme.
 4. Complete Cybiko's first-run setup. The bundled Classic applications come from your serial-flash image.
 
@@ -71,7 +71,7 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 
 - Classic V2 setup, desktop, Pinball gameplay/exit, Calculator arithmetic and Text Editor save/reopen were observed in Vita3K. Clock continuity survives restart. Not every bundled app has been tested.
 - Classic V1 reaches the stock desktop in Vita3K. Xtreme reaches the first-run setup dialog in Vita3K. App compatibility and performance are not yet validated for those two profiles.
-- No physical Vita/PSTV test has been performed. Performance varies; observed Pinball gameplay remains below 60 FPS.
+- A physical Vita install/data-folder issue was addressed in package metadata `01.03`; broader physical Vita/PSTV gameplay testing remains open. Performance varies; observed Pinball gameplay remains below 60 FPS.
 - The exact original retail Classic launch bundle remains unverified.
 - Wireless chat/multiplayer, CyWIG, original PC synchronization and USB/MP3 accessories are not implemented end-to-end.
 - CPU timing is approximate; some instructions/peripheral modes remain incomplete. Classic external app installation is not implemented.

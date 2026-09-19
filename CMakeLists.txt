@@ -48,11 +48,12 @@ if(VITA)
 
   include("${VITASDK}/share/vita.cmake" REQUIRED)
   find_package(PkgConfig REQUIRED)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
   pkg_check_modules(SDL2_GFX REQUIRED IMPORTED_TARGET SDL2_gfx)
 
   set(VITA_APP_NAME "VitaCybiko")
   set(VITA_TITLEID  "VCYB00001")
-  set(VITA_VERSION  "01.02")
+  set(VITA_VERSION  "01.03")
 
   add_executable(${PROJECT_NAME}
     src/vita/main.c
@@ -86,6 +87,12 @@ if(VITA)
     FILE sce_sys/livearea/contents/bg.png sce_sys/livearea/contents/bg.png
     FILE sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
     FILE sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml
+  )
+  add_custom_command(TARGET ${PROJECT_NAME}.vpk-vpk POST_BUILD
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/repack_vpk_store.py
+            ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.vpk
+    COMMENT "Repacking VitaCybiko.vpk with stored ZIP entries for VitaShell"
+    VERBATIM
   )
 else()
   option(VITACYBIKO_FRONTEND_TESTS "Test Vita frontend using host SDL2" OFF)

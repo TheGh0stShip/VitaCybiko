@@ -7,7 +7,7 @@
 | Classic V2 / CyOS 1.3.58 | Genuine first-run setup, Main Desktop, Pinball gameplay/exit, Calculator 2 + 3 = 5, Text Editor save/reopen in Windows Vita3K |
 | Classic V1 / original stock | Matching firmware staged; host smoke reaches desktop; Windows Vita3K reaches stock desktop, but app-by-app behavior and performance are not validated |
 | Xtreme / CyOS 1.5.08 | Matching firmware staged; host smoke reaches first-run setup; Windows Vita3K reaches setup, but performance is slow and app compatibility is not validated |
-| Physical Vita / PSTV | Cross-built VPK only; no physical-device run |
+| Physical Vita / PSTV | v0.1.3 fixed VPK and app folder staged over FTP to a physical Vita; launch/performance evidence still pending user confirmation |
 | Persistence | Setup, a created text document and clock continuity survive Vita3K restart; RAM/flash binding and corruption rejection tested on host |
 | Input | Touch setup and game launch observed; host tests cover controller/touch isolation, modifiers, focus release and layout switching |
 | Audio | Speaker core, suspend/resume tests and low-latency frontend queue bounds are covered; audible fidelity remains user-test territory |

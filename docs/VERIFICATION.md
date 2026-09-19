@@ -1,5 +1,40 @@
 # Verification — 2026-09-19
 
+## v0.1.3-preview candidate
+
+Vita package metadata is `01.03`. Candidate VPK SHA-256:
+
+```text
+794c25200c699fac3fa38a5bbff8325006f6f95cf4b2397ed66979f9481d2819
+```
+
+Executable payload SHA-256:
+
+```text
+cae04e9dee6e5cded235f371a1d23427b9d26e124905cba94cbf769f9c194459
+```
+
+- LiveArea PNGs were converted to Vita-safe indexed PNGs. The Vita build now
+  runs `tools/repack_vpk_store.py` after `vita-pack-vpk`, so every VPK member is
+  stored instead of deflated. The resulting archive passed `zipfile.testzip()`.
+- Startup data-folder creation now uses recursive, stat-first directory
+  creation and only prepares `ux0:data/VitaCybiko` before the model selector.
+  Model-specific `roms/` and `apps/` folders are created after selection.
+- The frontend-enabled host suite passes 13/13, including
+  `runtime_dir_creation_on_prepared_storage`, using SDL's dummy video/audio
+  drivers. The regular host suite passes 12/12 and Python tests pass 7/7.
+- The fixed VPK was uploaded to the physical Vita at
+  `ux0:/VPK/VitaCybiko.vpk` and size-verified over FTP. The extracted app
+  folder was also updated at `ux0:/app/VCYB00001/` with 9/9 files verified, so
+  an existing bubble should launch the fixed executable. Runtime data in
+  `ux0:/data/VitaCybiko/` was rechecked with 28/28 files verified.
+- Archive.org direct member links for all seven recognized firmware files were
+  added to `docs/MODELS.md`; no firmware or save data is tracked in Git.
+
+Physical Vita launch behavior after the FTP update still requires user
+confirmation. This release fixes the reported install/data-folder blockers; it
+does not claim completed physical-device compatibility.
+
 ## v0.1.2-preview candidate
 
 Vita package metadata is `01.02`. Candidate VPK SHA-256:

@@ -617,9 +617,42 @@ static void test_classic_input_timing_after_reset(void)
     TEST_CHECK(!ctx.touch_input.classic && !ctx.controller_input.classic);
 }
 
+static void test_runtime_dir_creation_on_prepared_storage(void)
+{
+    char cwd[MAX_PATH_CHARS];
+    TEST_ASSERT(getcwd(cwd, sizeof(cwd)) != NULL);
+    char temporary[] = "/tmp/vitacybiko-runtime-dirs-XXXXXX";
+    TEST_ASSERT(mkdtemp(temporary) != NULL);
+    TEST_ASSERT(chdir(temporary) == 0);
+
+    struct stat info;
+    TEST_CHECK(ensure_runtime_dirs());
+    TEST_CHECK(stat(DATA_DIR, &info) == 0 && S_ISDIR(info.st_mode));
+    TEST_CHECK(stat(ROM_DIR, &info) != 0 && errno == ENOENT);
+    TEST_CHECK(stat(APP_DIR, &info) != 0 && errno == ENOENT);
+
+    TEST_CHECK(select_model_paths(CYBIKO_CLASSIC_V2));
+    TEST_CHECK(stat(DATA_DIR "/classic-v2/roms", &info) == 0 && S_ISDIR(info.st_mode));
+    TEST_CHECK(stat(DATA_DIR "/classic-v2/apps", &info) == 0 && S_ISDIR(info.st_mode));
+    snprintf(runtime_root, sizeof(runtime_root), "%s", DATA_DIR);
+
+    TEST_ASSERT(chdir(cwd) == 0);
+    char path[MAX_PATH_CHARS];
+    snprintf(path, sizeof(path), "%s/%s", temporary, DATA_DIR "/classic-v2/apps");
+    TEST_CHECK(rmdir(path) == 0);
+    snprintf(path, sizeof(path), "%s/%s", temporary, DATA_DIR "/classic-v2/roms");
+    TEST_CHECK(rmdir(path) == 0);
+    snprintf(path, sizeof(path), "%s/%s", temporary, DATA_DIR "/classic-v2");
+    TEST_CHECK(rmdir(path) == 0);
+    snprintf(path, sizeof(path), "%s/%s", temporary, DATA_DIR);
+    TEST_CHECK(rmdir(path) == 0);
+    TEST_CHECK(rmdir(temporary) == 0);
+}
+
 TEST_LIST = {
     {"classic_ram_storage", test_classic_ram_storage},
     {"classic_input_timing_after_reset", test_classic_input_timing_after_reset},
+    {"runtime_dir_creation_on_prepared_storage", test_runtime_dir_creation_on_prepared_storage},
     {"preferences_storage", test_preferences_storage},
     {"clock_storage", test_clock_storage},
     {"landscape_touch_and_rotation", test_landscape_touch_and_rotation},
