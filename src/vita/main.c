@@ -72,6 +72,7 @@
 #define AUDIO_TARGET_QUEUE_FRAMES 1u
 #define AUDIO_MAX_QUEUE_FRAMES 4u
 #define AUDIO_CONVERT_MAX_SAMPLES 8192
+#define LCD_INTERPOLATION_STEPS 2
 #ifdef VITA
 #define EMULATION_CATCHUP_MAX_FRAMES 0
 #else
@@ -305,6 +306,12 @@ typedef struct {
     bool finger_down;
     SDL_FingerID finger_id;
     uint32_t lcd_pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    uint32_t lcd_prev_pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    uint32_t lcd_present_pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    uint32_t lcd_next_pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    bool lcd_has_frame;
+    bool lcd_texture_dirty;
+    int lcd_interpolation_step;
     int16_t audio_s16_stereo_buf[AUDIO_CONVERT_MAX_SAMPLES * 2];
     bool ui_cache_valid;
     bool ui_cache_landscape;
@@ -1192,6 +1199,55 @@ static bool load_classic_storage(cybiko_emu_t *emu)
     return ok;
 }
 
+static uint32_t lcd_argb_from_gray(uint8_t g)
+{
+    uint8_t r = (uint8_t)(36 + (g * 174) / 255);
+    uint8_t gg = (uint8_t)(45 + (g * 176) / 255);
+    uint8_t b = (uint8_t)(38 + (g * 158) / 255);
+    return 0xff000000u |
+           ((uint32_t)r << 16) |
+           ((uint32_t)gg << 8) |
+           (uint32_t)b;
+}
+
+static uint32_t lcd_blend_argb(uint32_t a, uint32_t b, int num, int den)
+{
+    int inv = den - num;
+    uint32_t rb = ((((a & 0x00ff00ffu) * (uint32_t)inv) +
+                    ((b & 0x00ff00ffu) * (uint32_t)num)) /
+                   (uint32_t)den) & 0x00ff00ffu;
+    uint32_t g = ((((a & 0x0000ff00u) * (uint32_t)inv) +
+                   ((b & 0x0000ff00u) * (uint32_t)num)) /
+                  (uint32_t)den) & 0x0000ff00u;
+    return 0xff000000u | rb | g;
+}
+
+static void update_lcd_texture(app_ctx_t *ctx)
+{
+    if (!ctx->lcd_texture || !ctx->lcd_has_frame) {
+        return;
+    }
+
+    const uint32_t *upload_pixels = ctx->lcd_pixels;
+    if (ctx->lcd_interpolation_step < LCD_INTERPOLATION_STEPS) {
+        int num = ctx->lcd_interpolation_step + 1;
+        for (int i = 0; i < CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT; ++i) {
+            ctx->lcd_present_pixels[i] =
+                lcd_blend_argb(ctx->lcd_prev_pixels[i], ctx->lcd_pixels[i],
+                               num, LCD_INTERPOLATION_STEPS);
+        }
+        ctx->lcd_interpolation_step++;
+        upload_pixels = ctx->lcd_present_pixels;
+        ctx->lcd_texture_dirty = true;
+    } else if (!ctx->lcd_texture_dirty) {
+        return;
+    }
+
+    SDL_UpdateTexture(ctx->lcd_texture, NULL, upload_pixels,
+                      CYBIKO_LCD_WIDTH * (int)sizeof(uint32_t));
+    ctx->lcd_texture_dirty = false;
+}
+
 static void hal_render_frame(void *ctx_ptr, const uint8_t *pixels, int width, int height)
 {
     app_ctx_t *ctx = ctx_ptr;
@@ -1200,19 +1256,32 @@ static void hal_render_frame(void *ctx_ptr, const uint8_t *pixels, int width, in
         return;
     }
 
+    bool changed = !ctx->lcd_has_frame;
     for (int i = 0; i < width * height; i++) {
-        uint8_t g = pixels[i];
-        uint8_t r = (uint8_t)(36 + (g * 174) / 255);
-        uint8_t gg = (uint8_t)(45 + (g * 176) / 255);
-        uint8_t b = (uint8_t)(38 + (g * 158) / 255);
-        ctx->lcd_pixels[i] = 0xff000000u |
-                             ((uint32_t)r << 16) |
-                             ((uint32_t)gg << 8) |
-                             (uint32_t)b;
+        uint32_t converted = lcd_argb_from_gray(pixels[i]);
+        ctx->lcd_next_pixels[i] = converted;
+        if (ctx->lcd_has_frame && converted != ctx->lcd_pixels[i]) {
+            changed = true;
+        }
     }
 
-    SDL_UpdateTexture(ctx->lcd_texture, NULL, ctx->lcd_pixels,
-                      width * (int)sizeof(uint32_t));
+    if (!changed) {
+        return;
+    }
+
+    if (!ctx->lcd_has_frame) {
+        memcpy(ctx->lcd_pixels, ctx->lcd_next_pixels, sizeof(ctx->lcd_pixels));
+        memcpy(ctx->lcd_present_pixels, ctx->lcd_next_pixels,
+               sizeof(ctx->lcd_present_pixels));
+        ctx->lcd_has_frame = true;
+        ctx->lcd_interpolation_step = LCD_INTERPOLATION_STEPS;
+    } else {
+        memcpy(ctx->lcd_prev_pixels, ctx->lcd_present_pixels,
+               sizeof(ctx->lcd_prev_pixels));
+        memcpy(ctx->lcd_pixels, ctx->lcd_next_pixels, sizeof(ctx->lcd_pixels));
+        ctx->lcd_interpolation_step = 0;
+    }
+    ctx->lcd_texture_dirty = true;
 }
 
 static void hal_audio_output(void *ctx_ptr, const uint8_t *samples, int count)
@@ -1579,6 +1648,7 @@ static void update_ui_cache(app_ctx_t *ctx)
 static void render_landscape(app_ctx_t *ctx)
 {
     update_ui_cache(ctx);
+    update_lcd_texture(ctx);
     SDL_SetRenderTarget(ctx->renderer, NULL);
     SDL_Rect src = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
     SDL_Rect dst = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
@@ -1594,6 +1664,7 @@ static void render_frame(app_ctx_t *ctx)
     if (ctx->landscape) { render_landscape(ctx); return; }
 
     update_ui_cache(ctx);
+    update_lcd_texture(ctx);
     SDL_SetRenderTarget(ctx->renderer, ctx->portrait_target);
     SDL_Rect src = {0, 0, PORTRAIT_WIDTH, PORTRAIT_HEIGHT};
     SDL_Rect dst = {0, 0, PORTRAIT_WIDTH, PORTRAIT_HEIGHT};
@@ -1781,7 +1852,13 @@ static bool init_sdl(app_ctx_t *ctx)
         return false;
     }
 
-    ctx->renderer = SDL_CreateRenderer(ctx->window, -1, SDL_RENDERER_ACCELERATED);
+    ctx->renderer = SDL_CreateRenderer(ctx->window, -1,
+                                       SDL_RENDERER_ACCELERATED |
+                                       SDL_RENDERER_PRESENTVSYNC);
+    if (!ctx->renderer) {
+        ctx->renderer = SDL_CreateRenderer(ctx->window, -1,
+                                           SDL_RENDERER_ACCELERATED);
+    }
     if (!ctx->renderer) {
         ctx->renderer = SDL_CreateRenderer(ctx->window, -1, SDL_RENDERER_SOFTWARE);
     }
