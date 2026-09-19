@@ -91,21 +91,37 @@ static int choose_model(app_ctx_t *ctx)
     for (int i = 0; i < 3; ++i) if (menu_models[i] == ctx->model) menu.selected = i;
     open_first_controller(ctx);
     uint32_t previous = read_controller_buttons(ctx);
+    bool redraw = true;
     for (;;) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            int before = menu.selected;
+            bool was_suspended = ctx->backgrounded || ctx->focus_lost;
             int result = model_menu_event(ctx, &menu, &event);
             if (result) return result < 0 ? -1 : (int)menu_models[menu.selected];
+            if (menu.selected != before ||
+                was_suspended != (ctx->backgrounded || ctx->focus_lost)) {
+                redraw = true;
+            }
         }
         uint32_t buttons = read_controller_buttons(ctx);
         uint32_t pressed = buttons & ~previous;
         previous = buttons;
         if (ctx->backgrounded || ctx->focus_lost) { SDL_Delay(20); continue; }
         if (button_is_down(pressed, SDL_CONTROLLER_BUTTON_B)) return -1;
-        if (button_is_down(pressed, SDL_CONTROLLER_BUTTON_DPAD_UP)) menu.selected = (menu.selected + 2) % 3;
-        if (button_is_down(pressed, SDL_CONTROLLER_BUTTON_DPAD_DOWN)) menu.selected = (menu.selected + 1) % 3;
+        if (button_is_down(pressed, SDL_CONTROLLER_BUTTON_DPAD_UP)) {
+            menu.selected = (menu.selected + 2) % 3;
+            redraw = true;
+        }
+        if (button_is_down(pressed, SDL_CONTROLLER_BUTTON_DPAD_DOWN)) {
+            menu.selected = (menu.selected + 1) % 3;
+            redraw = true;
+        }
         if (button_is_down(pressed, SDL_CONTROLLER_BUTTON_A)) return (int)menu_models[menu.selected];
-        render_model_menu(ctx, menu.selected);
-        SDL_Delay(16);
+        if (redraw) {
+            render_model_menu(ctx, menu.selected);
+            redraw = false;
+        }
+        SDL_Delay(8);
     }
 }
