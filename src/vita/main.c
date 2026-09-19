@@ -16,6 +16,7 @@
 #include <time.h>
 
 #ifdef VITA
+#include <psp2/ctrl.h>
 #include <psp2/power.h>
 #endif
 
@@ -523,11 +524,42 @@ static bool button_is_down(uint32_t buttons, SDL_GameControllerButton button)
 
 static uint32_t read_controller_buttons(app_ctx_t *ctx)
 {
+    uint32_t buttons = 0;
+#ifdef VITA
+    SceCtrlData pad;
+    memset(&pad, 0, sizeof(pad));
+    if (sceCtrlPeekBufferPositive(0, &pad, 1) > 0) {
+        if (pad.buttons & SCE_CTRL_UP)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_DPAD_UP);
+        if (pad.buttons & SCE_CTRL_RIGHT)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+        if (pad.buttons & SCE_CTRL_DOWN)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+        if (pad.buttons & SCE_CTRL_LEFT)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+        if (pad.buttons & SCE_CTRL_CROSS)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_A);
+        if (pad.buttons & SCE_CTRL_CIRCLE)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_B);
+        if (pad.buttons & SCE_CTRL_SQUARE)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_X);
+        if (pad.buttons & SCE_CTRL_TRIANGLE)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_Y);
+        if (pad.buttons & SCE_CTRL_LTRIGGER)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+        if (pad.buttons & SCE_CTRL_RTRIGGER)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+        if (pad.buttons & SCE_CTRL_START)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_START);
+        if (pad.buttons & SCE_CTRL_SELECT)
+            buttons |= (1u << (uint32_t)SDL_CONTROLLER_BUTTON_BACK);
+    }
+#endif
+
     if (!ctx->controller) {
-        return 0;
+        return buttons;
     }
 
-    uint32_t buttons = 0;
     for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX && i < 31; i++) {
         if (SDL_GameControllerGetButton(ctx->controller,
                                         (SDL_GameControllerButton)i)) {
@@ -1865,6 +1897,7 @@ int main(int argc, char *argv[])
     (void)argv;
 
 #ifdef VITA
+    sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
     scePowerSetArmClockFrequency(444);
     scePowerSetBusClockFrequency(222);
     scePowerSetGpuClockFrequency(222);
