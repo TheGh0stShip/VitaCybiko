@@ -1,0 +1,78 @@
+# Verification — 2026-09-19
+
+## Artifact
+
+Release preview `v0.1.0-preview`, title ID `VCYB00001` (Vita package metadata 01.00).
+
+VPK SHA-256:
+
+```text
+24cd78ad5fb71d43f55588ec64c2fb9d40763c5215e21fc2bdc56b9008ea7c28
+```
+
+All nine ZIP entries passed integrity checks. Firmware and apps are not inside
+the package; licenses and the literal-device LiveArea artwork are included.
+
+## Real Windows Vita3K testing
+
+Vita3K 0.2.1, build 4095-84184a36, OpenGL, 960×544. Tests were performed by
+launching the actual VPK and operating its controls, not by substituting mock
+screens. The emulator configuration was left unchanged.
+
+| Test | Observed result |
+| --- | --- |
+| Three-model selector | Displays V1, V2 and Xtreme; selected model survives process restart |
+| Classic V2 first boot | Welcome → date setup → synthetic nickname → Main Desktop |
+| Subsequent boot | Returns to desktop without repeating first-run setup |
+| Games / Pinball Pro | Game starts and renders gameplay; observed roughly 32–46 FPS in the optimized build |
+| Applications / Calculator | Numeric input and directional button selection compute 2 + 3 = 5 |
+| Save/model return | Start + Select saves and returns to the model menu |
+| RTC storage | Versioned clock file is written; host round-trip checks pass, but guest desktop time discrepancies remain |
+| Classic V1 / Xtreme | Missing matching firmware; guest boot not verified |
+
+Desktop and Calculator generally showed about 60 FPS. The overlay is Vita3K's
+reported presentation rate, **not** a measured cycle-accuracy or hardware-speed
+benchmark. Pinball is not consistently full speed.
+
+![Model selector](vita3k-model-selector.png)
+
+![Classic V2 desktop](vita3k-classic-desktop.png)
+
+![Pinball Pro gameplay](vita3k-pinball.png)
+
+![Calculator showing the result of 2 + 3](vita3k-calculator.png)
+
+Desktop/selector/Pinball captures are from the final packaged build. Calculator
+was tested on the preceding build (VPK SHA-256
+`225772871e3ade2d4fd00eba50a60ac2dc3045465fb04731954661f05814a2a8`);
+the final build also isolates Classic V2's Esc sense line and adds licenses.
+Capture helper:
+`tools/capture_vita3k.ps1` (explicit process ID and output path required).
+
+## Automated checks
+
+- 13 C test suites pass with AddressSanitizer, leak detection and UBSan.
+- Actual SDL frontend tests cover input-source isolation, focus/background
+  handling, rendering, model selection, storage failures, save preservation,
+  clock corruption handling, preferences and layout switching.
+- Core regressions cover the packed CCR/PC interrupt frame, RTE/TRAPA,
+  long-displacement stores, instruction-memory mapping including self-modifying
+  code, serial TX interrupts, RTC I2C/calendar, Classic profiles and DataFlash.
+- A 1,200-frame run of the supplied Classic V2 firmware plus the test save passed
+  ASan/UBSan; LCD activity was observed in 1,195 frames. This headless metric
+  alone is not treated as boot proof.
+- Seven Python tests pass locally. Three CD integration tests require private
+  source media and skip in a clean public checkout; the other four use synthetic
+  fixtures. Proprietary fixtures are deliberately not distributed.
+- Firmware staging identifies all three supplied V2 images, reports missing
+  V1/Xtreme images and leaves saves untouched.
+
+## Open acceptance items
+
+Physical Vita/PSTV testing; V1/Xtreme boots; all original launch-bundle apps;
+user-created Notes/Organizer data save-and-reopen; reliable guest Esc/exit
+behavior across apps; audible fidelity; guest clock correctness; sustained
+full-speed games; wireless/accessory interoperability.
+
+The release is a working **Classic V2 preview**, not completion of these items.
+See [compatibility](COMPATIBILITY.md) and [release goals](RELEASE-PLAN.md).

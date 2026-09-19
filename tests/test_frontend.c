@@ -1,0 +1,544 @@
+/* Exercise the actual event and storage code with host SDL; no firmware needed. */
+#define main vita_frontend_main
+#define DATA_DIR "runtime"
+#include "../src/vita/main.c"
+#undef main
+#include "acutest.h"
+#include <unistd.h>
+
+static void tick_inputs(app_ctx_t *ctx)
+{
+    input_tick(&ctx->physical_input);
+    input_tick(&ctx->touch_input);
+    input_tick(&ctx->controller_input);
+    input_tick(&ctx->virtual_input);
+}
+
+static uint16_t read_column(app_ctx_t *ctx, int col)
+{
+    uint16_t matrix[CYBIKO_KEYBOARD_COLUMNS];
+    hal_keyboard_poll(ctx, matrix, CYBIKO_KEYBOARD_COLUMNS);
+    return matrix[col];
+}
+
+static void touch_key(app_ctx_t *ctx, int row, int col, bool down)
+{
+    SDL_Rect rect;
+    virtual_key_rect_layout(ctx->landscape, row, col, &rect);
+    handle_portrait_touch(ctx, rect.x + rect.w / 2, rect.y + rect.h / 2, down);
+}
+
+static void test_touch_hold_survives_controller_poll(void)
+{
+    app_ctx_t ctx = {0};
+    bool running = true;
+    TEST_ASSERT(SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) == 0);
+    touch_key(&ctx, 3, 9, true); /* Enter */
+    for (int frame = 0; frame < 30; ++frame) {
+        update_controller_input(&ctx, &running);
+        TEST_CHECK(read_column(&ctx, 4) & 8);
+        tick_inputs(&ctx);
+    }
+    touch_key(&ctx, 3, 9, false);
+    TEST_CHECK(!(read_column(&ctx, 4) & 8));
+    if (ctx.controller) SDL_GameControllerClose(ctx.controller);
+    SDL_Quit();
+}
+
+static void test_physical_alias_and_controller_release(void)
+{
+    app_ctx_t ctx = {0};
+    SDL_KeyboardEvent key = {0};
+    key.type = SDL_KEYDOWN;
+    key.keysym.scancode = SDL_SCANCODE_LSHIFT;
+    update_key_matrix_from_keyboard(&ctx, &key);
+    key.keysym.scancode = SDL_SCANCODE_RSHIFT;
+    update_key_matrix_from_keyboard(&ctx, &key);
+    for (int i = 0; i < 5; ++i) tick_inputs(&ctx);
+    key.type = SDL_KEYUP;
+    key.keysym.scancode = SDL_SCANCODE_LSHIFT;
+    update_key_matrix_from_keyboard(&ctx, &key);
+    release_controller_normal_keys(&ctx);
+    TEST_CHECK(read_column(&ctx, 8) == 0x8000);
+    key.keysym.scancode = SDL_SCANCODE_RSHIFT;
+    update_key_matrix_from_keyboard(&ctx, &key);
+    TEST_CHECK(read_column(&ctx, 8) == 0);
+}
+
+static void test_touch_modifiers_and_skin(void)
+{
+    app_ctx_t ctx = {0};
+    touch_key(&ctx, 4, 0, true); /* Fn */
+    touch_key(&ctx, 4, 0, false);
+    for (int i = 0; i < 8; ++i) tick_inputs(&ctx);
+    TEST_CHECK(read_column(&ctx, 7) == 0x8000);
+    touch_key(&ctx, 1, 0, true); /* Q */
+    TEST_CHECK(read_column(&ctx, 3) == 2);
+    TEST_CHECK(read_column(&ctx, 7) == 0x8000);
+    touch_key(&ctx, 1, 0, false);
+    touch_key(&ctx, 4, 0, true);
+    touch_key(&ctx, 4, 0, false);
+    TEST_CHECK(read_column(&ctx, 7) == 0);
+    for (int i = 0; i < 10; ++i)
+        handle_portrait_touch(&ctx, SKIN_BUTTON_X + 1, SKIN_BUTTON_Y + 1, true);
+    TEST_CHECK(ctx.skin_index == 1);
+}
+
+static void test_storage_preserves_existing_data(void)
+{
+    char cwd[MAX_PATH_CHARS];
+    TEST_ASSERT(getcwd(cwd, sizeof(cwd)) != NULL);
+    char temporary[] = "/tmp/vitacybiko-storage-XXXXXX";
+    TEST_ASSERT(mkdtemp(temporary) != NULL);
+    TEST_ASSERT(chdir(temporary) == 0);
+    TEST_ASSERT(ensure_dir(DATA_DIR));
+    TEST_ASSERT(ensure_dir(APP_DIR));
+    cybiko_hal_t hal = {0};
+    cybiko_emu_t *emu = cybiko_create(&hal);
+    TEST_ASSERT(emu != NULL);
+    char paths[MAX_APPS][MAX_PATH_CHARS] = {{0}};
+    static const uint8_t broken[] = {1, 2, 3, 4};
+    TEST_ASSERT(write_file(NVRAM_PATH, broken, sizeof(broken)));
+    TEST_CHECK(!load_nvram_and_apps(emu, paths, 0));
+    size_t length = 0;
+    uint8_t *saved = load_file(NVRAM_PATH, &length, false);
+    TEST_ASSERT(saved != NULL);
+    TEST_CHECK(length == sizeof(broken));
+    TEST_CHECK(memcmp(saved, broken, sizeof(broken)) == 0);
+    free(saved);
+
+    cfs_image_t *cfs = malloc(sizeof(*cfs));
+    TEST_ASSERT(cfs != NULL);
+    cfs_format(cfs);
+    cfs->data[CFS_PAGE_SIZE * CFS_BOOT_BLOCKS + 10] ^= 1;
+    TEST_ASSERT(write_file(NVRAM_PATH, cfs->data, CFS_IMAGE_SIZE));
+    TEST_CHECK(!load_nvram_and_apps(emu, paths, 0));
+    saved = load_file(NVRAM_PATH, &length, false);
+    TEST_ASSERT(saved != NULL);
+    TEST_CHECK(length == CFS_IMAGE_SIZE);
+    TEST_CHECK(memcmp(saved, cfs->data, CFS_IMAGE_SIZE) == 0);
+    free(saved);
+
+    cfs_format(cfs);
+    uint8_t *full = calloc(CYBIKO_NVRAM_SIZE, 1);
+    TEST_ASSERT(full != NULL);
+    memcpy(full, cfs->data, CFS_IMAGE_SIZE);
+    full[CYBIKO_NVRAM_SIZE - 1] = 0xA5;
+    TEST_ASSERT(write_file(NVRAM_PATH, full, CYBIKO_NVRAM_SIZE));
+    TEST_CHECK(load_nvram_and_apps(emu, paths, 0));
+    TEST_CHECK(cybiko_get_nvram(emu, NULL)[CYBIKO_NVRAM_SIZE - 1] == 0xA5);
+    TEST_ASSERT(save_nvram(emu));
+    TEST_ASSERT(save_nvram(emu)); /* Replacement path, not just first creation. */
+    snprintf(paths[0], sizeof(paths[0]), "%s/missing.app", APP_DIR);
+    TEST_CHECK(!load_nvram_and_apps(emu, paths, 1));
+    saved = load_file(NVRAM_PATH, &length, false);
+    TEST_ASSERT(saved != NULL);
+    TEST_CHECK(length == CYBIKO_NVRAM_SIZE);
+    TEST_CHECK(memcmp(saved, full, CYBIKO_NVRAM_SIZE) == 0);
+    free(saved);
+    free(full);
+    free(cfs);
+    cybiko_destroy(emu);
+    TEST_CHECK(remove(NVRAM_PATH) == 0);
+    TEST_CHECK(rmdir(APP_DIR) == 0);
+    TEST_CHECK(rmdir(DATA_DIR) == 0);
+    TEST_ASSERT(chdir(cwd) == 0);
+    TEST_CHECK(rmdir(temporary) == 0);
+}
+
+static void test_render_and_background_events(void)
+{
+    app_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    TEST_ASSERT(ctx != NULL);
+    TEST_ASSERT(init_sdl(ctx));
+    uint8_t pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    memset(pixels, 0xff, sizeof(pixels));
+    hal_render_frame(ctx, pixels, CYBIKO_LCD_WIDTH, CYBIKO_LCD_HEIGHT);
+    snprintf(ctx->status, sizeof(ctx->status), "Frontend test - no firmware loaded");
+    render_frame(ctx);
+    const char *screenshot = getenv("VITACYBIKO_TEST_SCREENSHOT");
+    if (screenshot) {
+        SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_ARGB8888);
+        TEST_ASSERT(surface != NULL);
+        TEST_CHECK(SDL_RenderReadPixels(ctx->renderer, NULL, surface->format->format,
+                                       surface->pixels, surface->pitch) == 0);
+        TEST_CHECK(SDL_SaveBMP(surface, screenshot) == 0);
+        SDL_FreeSurface(surface);
+    }
+    bool running = true;
+    touch_key(ctx, 4, 0, true);
+    SDL_Event event = {0};
+    event.type = SDL_APP_WILLENTERBACKGROUND;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(ctx->save_requested);
+    TEST_CHECK(ctx->backgrounded);
+    TEST_CHECK(!ctx->touch_fn_latched);
+    TEST_CHECK(read_column(ctx, 7) == 0);
+    event.type = SDL_APP_DIDENTERFOREGROUND;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(!ctx->backgrounded);
+    render_message_screen(ctx, "Cannot load save or app set",
+                          "Original save preserved. Check save and apps folder.",
+                          "Use at most 64 apps that fit the Cybiko filesystem.");
+    cleanup(ctx);
+}
+
+static void test_focus_loss_and_mouse_buttons(void)
+{
+    app_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    TEST_ASSERT(ctx != NULL);
+    TEST_ASSERT(init_sdl(ctx));
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+    bool running = true;
+    SDL_KeyboardEvent key = {0};
+    key.type = SDL_KEYDOWN;
+    key.keysym.scancode = SDL_SCANCODE_LSHIFT;
+    update_key_matrix_from_keyboard(ctx, &key);
+    touch_key(ctx, 4, 0, true);
+    apply_controller_normal_keys(ctx, 1u << SDL_CONTROLLER_BUTTON_A);
+    ctx->previous_buttons = 123;
+    const uint8_t silence[128] = {0};
+    if (ctx->audio_dev)
+        TEST_ASSERT(SDL_QueueAudio(ctx->audio_dev, silence, sizeof(silence)) == 0);
+
+    SDL_Event event = {0};
+    event.type = SDL_WINDOWEVENT;
+    event.window.event = SDL_WINDOWEVENT_FOCUS_LOST;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(ctx->focus_lost);
+    TEST_CHECK(ctx->save_requested);
+    TEST_CHECK(!ctx->touch_fn_latched);
+    TEST_CHECK(!ctx->physical_down[SDL_SCANCODE_LSHIFT]);
+    TEST_CHECK(ctx->previous_buttons == 0);
+    for (int col = 0; col < CYBIKO_KEYBOARD_COLUMNS; ++col)
+        TEST_CHECK(read_column(ctx, col) == 0);
+    if (ctx->audio_dev) {
+        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) == 0);
+        TEST_CHECK(SDL_GetAudioDeviceStatus(ctx->audio_dev) == SDL_AUDIO_PAUSED);
+    }
+
+    event.type = SDL_KEYDOWN;
+    event.key = key;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(read_column(ctx, 8) == 0);
+    /* Foreground notification must not override independent focus loss. */
+    event.type = SDL_APP_DIDENTERFOREGROUND;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(ctx->focus_lost);
+    update_controller_input(ctx, &running);
+    TEST_CHECK(running);
+    event.type = SDL_WINDOWEVENT;
+    event.window.event = SDL_WINDOWEVENT_FOCUS_GAINED;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(!ctx->focus_lost);
+    if (ctx->audio_dev)
+        TEST_CHECK(SDL_GetAudioDeviceStatus(ctx->audio_dev) == SDL_AUDIO_PLAYING);
+
+    SDL_Rect rect;
+    virtual_key_rect_layout(false, 3, 9, &rect); /* Enter */
+    event.type = SDL_MOUSEBUTTONDOWN;
+    event.button.x = SCREEN_WIDTH - 1 - (rect.y + rect.h / 2);
+    event.button.y = rect.x + rect.w / 2;
+    event.button.button = SDL_BUTTON_RIGHT;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(read_column(ctx, 4) == 0);
+    event.button.button = SDL_BUTTON_LEFT;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(read_column(ctx, 4) & 8);
+    event.type = SDL_MOUSEBUTTONUP;
+    event.button.button = SDL_BUTTON_RIGHT;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    for (int i = 0; i < 8; ++i) tick_inputs(ctx);
+    TEST_CHECK(read_column(ctx, 4) & 8);
+    event.button.button = SDL_BUTTON_LEFT;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(read_column(ctx, 4) == 0);
+    cleanup(ctx);
+}
+
+static void test_import_pack_and_library_paths(void)
+{
+    const char *pack = getenv("VITACYBIKO_TEST_CD_PACK");
+    char cwd[MAX_PATH_CHARS];
+    TEST_ASSERT(getcwd(cwd, sizeof(cwd)) != NULL);
+    char temporary[] = "/tmp/vitacybiko-pack-XXXXXX";
+    TEST_ASSERT(mkdtemp(temporary) != NULL);
+    TEST_ASSERT(chdir(temporary) == 0);
+    TEST_ASSERT(ensure_dir(DATA_DIR));
+    TEST_ASSERT(ensure_dir(APP_DIR));
+    TEST_ASSERT(ensure_dir(APP_DIR "/Libraries"));
+    if (pack) {
+        /* Point the importer at the real extracted CD files, without modifying them. */
+        TEST_ASSERT(rmdir(APP_DIR "/Libraries") == 0);
+        TEST_ASSERT(rmdir(APP_DIR) == 0);
+        TEST_ASSERT(symlink(pack, APP_DIR) == 0);
+    } else {
+        uint8_t data[] = {0x43, 0x79};
+        TEST_ASSERT(write_file(APP_DIR "/test.app", data, sizeof(data)));
+        TEST_ASSERT(write_file(APP_DIR "/email_dl.dl", data, sizeof(data)));
+        TEST_ASSERT(write_file(APP_DIR "/Libraries/sound.dl", data, sizeof(data)));
+    }
+    char paths[MAX_APPS][MAX_PATH_CHARS] = {{0}};
+    int count = discover_apps(paths);
+    TEST_CHECK(count == (pack ? 15 : 3));
+    cybiko_hal_t hal = {0};
+    cybiko_emu_t *emu = cybiko_create(&hal);
+    TEST_ASSERT(emu != NULL);
+    TEST_ASSERT(load_nvram_and_apps(emu, paths, count));
+    TEST_ASSERT(save_nvram(emu));
+    TEST_ASSERT(load_nvram_and_apps(emu, paths, count)); /* Reimport without duplicates. */
+    cfs_image_t *cfs = malloc(sizeof(*cfs));
+    TEST_ASSERT(cfs != NULL);
+    memcpy(cfs->data, cybiko_get_nvram(emu, NULL), CFS_IMAGE_SIZE);
+    TEST_CHECK(cfs_validate(cfs));
+    char names[MAX_APPS][64];
+    TEST_CHECK(cfs_list_files(cfs, names, MAX_APPS) == count);
+    bool found_library = false, found_email_library = false;
+    for (int i = 0; i < count; ++i) {
+        found_library |= strcmp(names[i], "Libraries/sound.dl") == 0;
+        found_email_library |= strcmp(names[i], "email_dl.dl") == 0;
+    }
+    TEST_CHECK(found_library);
+    TEST_CHECK(found_email_library);
+    free(cfs);
+    cybiko_destroy(emu);
+    if (pack) {
+        TEST_CHECK(unlink(APP_DIR) == 0); /* Only the test-created symlink. */
+    } else {
+        TEST_CHECK(remove(APP_DIR "/test.app") == 0);
+        TEST_CHECK(remove(APP_DIR "/email_dl.dl") == 0);
+        TEST_CHECK(remove(APP_DIR "/Libraries/sound.dl") == 0);
+        TEST_CHECK(rmdir(APP_DIR "/Libraries") == 0);
+        TEST_CHECK(rmdir(APP_DIR) == 0);
+    }
+    TEST_CHECK(remove(NVRAM_PATH) == 0);
+    TEST_CHECK(rmdir(DATA_DIR) == 0);
+    TEST_ASSERT(chdir(cwd) == 0);
+    TEST_CHECK(rmdir(temporary) == 0);
+}
+
+static void test_model_menu_selection(void)
+{
+    app_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    TEST_ASSERT(ctx != NULL);
+    TEST_ASSERT(init_sdl(ctx));
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+    model_menu_state_t menu = {.selected = 0, .pressed = -1};
+    SDL_Event event = {0};
+    event.type = SDL_KEYDOWN;
+    event.key.keysym.scancode = SDL_SCANCODE_DOWN;
+    TEST_CHECK(model_menu_event(ctx, &menu, &event) == 0);
+    TEST_CHECK(menu_models[menu.selected] == CYBIKO_CLASSIC_V2);
+    event.key.keysym.scancode = SDL_SCANCODE_RETURN;
+    TEST_CHECK(model_menu_event(ctx, &menu, &event) == 1);
+    event.type = SDL_MOUSEBUTTONDOWN;
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.x = 400; event.button.y = 350;
+    TEST_CHECK(model_menu_event(ctx, &menu, &event) == 0);
+    TEST_CHECK(menu_models[menu.selected] == CYBIKO_XTREME);
+    event.type = SDL_MOUSEBUTTONUP;
+    event.button.y = 410; /* Gap below the button cancels the press. */
+    TEST_CHECK(model_menu_event(ctx, &menu, &event) == 0);
+    TEST_CHECK(menu.pressed == -1);
+    event.type = SDL_MOUSEBUTTONDOWN;
+    event.button.y = 150;
+    TEST_CHECK(model_menu_event(ctx, &menu, &event) == 0);
+    event.type = SDL_MOUSEBUTTONUP;
+    TEST_CHECK(model_menu_event(ctx, &menu, &event) == 1);
+    TEST_CHECK(menu_models[menu.selected] == CYBIKO_CLASSIC_V1);
+    TEST_CHECK(model_menu_row(840, 120) == -1);
+    TEST_CHECK(model_menu_row(120, 420) == -1);
+    TEST_CHECK(model_menu_row(120, -1) == -1);
+    ctx->backgrounded = true;
+    event.type = SDL_KEYDOWN; event.key.keysym.scancode = SDL_SCANCODE_RETURN;
+    TEST_CHECK(model_menu_event(ctx, &menu, &event) == 0);
+    ctx->backgrounded = false;
+    ctx->model = CYBIKO_CLASSIC_V2;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    TEST_CHECK(choose_model(ctx) == CYBIKO_CLASSIC_V2);
+    render_model_menu(ctx, 1);
+    const char *screenshot = getenv("VITACYBIKO_TEST_MENU_SCREENSHOT");
+    if (screenshot) {
+        SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_ARGB8888);
+        TEST_ASSERT(surface != NULL);
+        TEST_CHECK(SDL_RenderReadPixels(ctx->renderer, NULL, surface->format->format, surface->pixels, surface->pitch) == 0);
+        TEST_CHECK(SDL_SaveBMP(surface, screenshot) == 0);
+        SDL_FreeSurface(surface);
+    }
+    SDL_KeyboardEvent key = {.type = SDL_KEYDOWN};
+    key.keysym.scancode = SDL_SCANCODE_BACKSPACE;
+    update_key_matrix_from_keyboard(ctx, &key);
+    TEST_CHECK(read_column(ctx, 6) == 4);
+    TEST_CHECK(read_column(ctx, 0) == 0);
+    cleanup(ctx);
+}
+
+static void test_model_storage_isolation(void)
+{
+    char cwd[MAX_PATH_CHARS];
+    TEST_ASSERT(getcwd(cwd, sizeof(cwd)) != NULL);
+    char temporary[] = "/tmp/vitacybiko-models-XXXXXX";
+    TEST_ASSERT(mkdtemp(temporary) != NULL);
+    TEST_ASSERT(chdir(temporary) == 0);
+    TEST_ASSERT(ensure_dir(DATA_DIR));
+    cybiko_hal_t hal = {0};
+    uint8_t *serial = malloc(DATAFLASH_SIZE);
+    TEST_ASSERT(serial != NULL);
+    memset(serial, 0x45, DATAFLASH_SIZE);
+    for (int model = 0; model < CYBIKO_MODEL_COUNT; ++model) {
+        TEST_ASSERT(select_model_paths((cybiko_model_t)model));
+        TEST_CHECK(strstr(runtime_save_path, cybiko_machine((cybiko_model_t)model)->directory) != NULL);
+        cybiko_emu_t *emu = cybiko_create_model(&hal, (cybiko_model_t)model);
+        TEST_ASSERT(emu != NULL);
+        if (model != CYBIKO_XTREME) {
+            TEST_CHECK(!load_classic_storage(emu));
+            TEST_ASSERT(write_file(runtime_dataflash_path, serial, DATAFLASH_SIZE));
+            TEST_CHECK(load_classic_storage(emu));
+            TEST_CHECK(save_nvram(emu));
+            /* Corrupt existing save must not fall back to the valid factory image. */
+            static const uint8_t bad[] = {1, 2, 3};
+            TEST_ASSERT(write_file(runtime_save_path, bad, sizeof(bad)));
+            TEST_CHECK(!load_classic_storage(emu));
+            size_t size = 0;
+            uint8_t *data = load_file(runtime_save_path, &size, false);
+            TEST_ASSERT(data != NULL);
+            TEST_CHECK(size == sizeof(bad));
+            TEST_CHECK(memcmp(data, bad, sizeof(bad)) == 0);
+            free(data);
+            TEST_CHECK(remove(runtime_save_path) == 0);
+            TEST_CHECK(remove(runtime_dataflash_path) == 0);
+        }
+        cybiko_destroy(emu);
+        TEST_CHECK(rmdir(runtime_app_dir) == 0);
+        char rom_dir[MAX_PATH_CHARS];
+        snprintf(rom_dir, sizeof(rom_dir), "%s/%s/roms", DATA_DIR, cybiko_machine((cybiko_model_t)model)->directory);
+        TEST_CHECK(rmdir(rom_dir) == 0);
+        TEST_CHECK(rmdir(runtime_root) == 0);
+    }
+    free(serial);
+    TEST_CHECK(rmdir(DATA_DIR) == 0);
+    TEST_ASSERT(chdir(cwd) == 0);
+    TEST_CHECK(rmdir(temporary) == 0);
+    /* Restore legacy defaults for the existing tests. */
+    snprintf(runtime_root, sizeof(runtime_root), "%s", DATA_DIR);
+    snprintf(runtime_app_dir, sizeof(runtime_app_dir), "%s", APP_DIR);
+    snprintf(runtime_save_path, sizeof(runtime_save_path), "%s", NVRAM_PATH);
+    snprintf(runtime_boot_path, sizeof(runtime_boot_path), "%s", BOOT_PATH);
+    snprintf(runtime_flash_path, sizeof(runtime_flash_path), "%s", FLASH_PATH);
+}
+
+static void test_landscape_touch_and_rotation(void)
+{
+    app_ctx_t ctx = {0};
+    ctx.landscape = true;
+    SDL_Rect rect;
+    virtual_key_rect_layout(true, 3, 9, &rect);
+    TEST_CHECK(rect.x >= 520 && rect.x + rect.w <= SCREEN_WIDTH);
+    handle_screen_touch(&ctx, rect.x + rect.w / 2, rect.y + rect.h / 2, true);
+    TEST_CHECK(read_column(&ctx, 4) & 8);
+    handle_screen_touch(&ctx, rect.x, rect.y, false);
+    for (int i = 0; i < 8; ++i) tick_inputs(&ctx);
+    TEST_CHECK(read_column(&ctx, 4) == 0);
+    ctx.finger_down = true; ctx.finger_id = 42;
+    handle_screen_touch(&ctx, 740, 35, true);
+    TEST_CHECK(!ctx.landscape);
+    TEST_CHECK(ctx.finger_down && ctx.finger_id == 42);
+    TEST_CHECK(ctx.touch_layout_down);
+    handle_screen_touch(&ctx, 740, 35, true); /* Drag cannot toggle twice. */
+    TEST_CHECK(!ctx.landscape);
+    handle_screen_touch(&ctx, 740, 35, false);
+    TEST_CHECK(!ctx.touch_layout_down);
+    TEST_CHECK(read_column(&ctx, 4) == 0);
+}
+
+static void test_clock_storage(void)
+{
+    char temporary[] = "/tmp/vitacybiko-clock-XXXXXX";
+    TEST_ASSERT(mkdtemp(temporary) != NULL);
+    snprintf(runtime_root, sizeof(runtime_root), "%s", temporary);
+    cybiko_hal_t hal = {0};
+    cybiko_emu_t *emu = cybiko_create_model(&hal, CYBIKO_CLASSIC_V2);
+    TEST_ASSERT(emu != NULL);
+    TEST_CHECK(load_clock(emu)); /* Missing is first install. */
+    uint8_t registers[16] = {0x80,0,0x12,0x34,0x15,0x59,0x09};
+    uint8_t restored[16];
+    TEST_CHECK(cybiko_load_clock(emu, registers, 16, 0));
+    TEST_CHECK(save_clock(emu));
+    TEST_CHECK(save_clock(emu)); /* Atomic replacement also works. */
+    memset(restored, 0, sizeof(restored));
+    TEST_CHECK(cybiko_load_clock(emu, restored, 16, 0));
+    TEST_CHECK(load_clock(emu));
+    cybiko_get_clock(emu, restored);
+    TEST_CHECK(memcmp(registers, restored, 16) == 0);
+    char path[MAX_PATH_CHARS]; TEST_CHECK(clock_path(path));
+    size_t size = 0; uint8_t *data = load_file(path, &size, false);
+    TEST_ASSERT(data && size == 36);
+    data[12] ^= 1; /* Data changed without updating checksum. */
+    TEST_CHECK(write_file(path, data, size));
+    TEST_CHECK(!load_clock(emu));
+    uint8_t *unchanged = load_file(path, &size, false);
+    TEST_ASSERT(unchanged && size == 36);
+    TEST_CHECK(memcmp(data, unchanged, size) == 0);
+    free(unchanged); free(data);
+    TEST_CHECK(remove(path) == 0);
+    TEST_CHECK(rmdir(temporary) == 0);
+    cybiko_destroy(emu);
+    snprintf(runtime_root, sizeof(runtime_root), "%s", DATA_DIR);
+}
+
+static void test_preferences_storage(void)
+{
+    char cwd[4096]; TEST_ASSERT(getcwd(cwd, sizeof(cwd)) != NULL);
+    char temporary[] = "/tmp/vitacybiko-preferences-XXXXXX";
+    TEST_ASSERT(mkdtemp(temporary) != NULL);
+    TEST_ASSERT(chdir(temporary) == 0);
+    TEST_ASSERT(mkdir(DATA_DIR, 0700) == 0);
+    app_ctx_t original = {0}, restored = {0};
+    original.preferences_enabled = true;
+    original.model = CYBIKO_CLASSIC_V2;
+    original.landscape = true;
+    original.skin_index = 2;
+    save_preferences(&original);
+    load_preferences(&restored);
+    TEST_CHECK(restored.model == original.model);
+    TEST_CHECK(restored.landscape && restored.skin_index == 2);
+    size_t size = 0;
+    uint8_t *data = load_file(DATA_DIR "/preferences.dat", &size, false);
+    TEST_ASSERT(data && size == 12);
+    data[6] ^= 1;
+    TEST_CHECK(write_file(DATA_DIR "/preferences.dat", data, size));
+    restored.skin_index = 1;
+    load_preferences(&restored);
+    TEST_CHECK(restored.skin_index == 1); /* Bad checksum leaves defaults intact. */
+    free(data);
+    TEST_CHECK(remove(DATA_DIR "/preferences.dat") == 0);
+    TEST_CHECK(rmdir(DATA_DIR) == 0);
+    TEST_ASSERT(chdir(cwd) == 0);
+    TEST_CHECK(rmdir(temporary) == 0);
+}
+
+TEST_LIST = {
+    {"preferences_storage", test_preferences_storage},
+    {"clock_storage", test_clock_storage},
+    {"landscape_touch_and_rotation", test_landscape_touch_and_rotation},
+    {"model_menu_selection", test_model_menu_selection},
+    {"model_storage_isolation", test_model_storage_isolation},
+    {"focus_loss_and_mouse_buttons", test_focus_loss_and_mouse_buttons},
+    {"import_pack_and_library_paths", test_import_pack_and_library_paths},
+    {"render_and_background_events", test_render_and_background_events},
+    {"touch_hold_survives_controller_poll", test_touch_hold_survives_controller_poll},
+    {"physical_alias_and_controller_release", test_physical_alias_and_controller_release},
+    {"touch_modifiers_and_skin", test_touch_modifiers_and_skin},
+    {"storage_preserves_existing_data", test_storage_preserves_existing_data},
+    {NULL, NULL}
+};

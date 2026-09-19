@@ -1,0 +1,71 @@
+# VitaCybiko
+
+Cybiko handheld emulation for PlayStation Vita/PSTV, with selectable **Classic V1, Classic V2 and Xtreme** profiles.
+
+**Classic V2 boots to its real desktop and runs Pinball Pro in Windows Vita3K.** Classic V1 and Xtreme are implemented profiles but have not been boot-verified: matching firmware was unavailable for testing. This is a **preview**, not complete 1:1 hardware emulation.
+
+[Download the VPK](https://github.com/TheGh0stShip/VitaCybiko/releases) · [Setup](docs/MODELS.md) · [Compatibility](docs/COMPATIBILITY.md) · [Test evidence](docs/VERIFICATION.md)
+
+![Classic V2 desktop captured in Windows Vita3K](docs/vita3k-classic-desktop.png)
+
+## Install
+
+1. Install `VitaCybiko.vpk` using VitaShell, or Vita3K's **File → Install .zip, .vpk**.
+2. Supply your own legally obtained firmware using the [model-specific file layout](docs/MODELS.md). Firmware, commercial apps and user saves are **not** included.
+3. Launch VitaCybiko and choose the matching model. C4PC's `emu_rom.bin`, `emu_cyos.bin`, and `emu_flash.bin` belong to **Classic V2**, not Xtreme.
+4. Complete Cybiko's first-run setup. The bundled Classic applications come from your serial-flash image.
+
+The upright landscape view has a 3× LCD and full touch keyboard. Portrait mode, shell colors, model selection and clock state are saved. The LiveArea icon depicts a literal Classic device; [artwork provenance](assets/README.md).
+
+## Controls
+
+| Vita control | Cybiko action |
+| --- | --- |
+| D-pad | Direction keys |
+| Cross / Circle | Enter / Esc |
+| Square / Triangle | Space / Del |
+| L / R | Shift / Fn |
+| Start | Tab |
+| Select | Toggle keyboard navigation |
+| Start + Select | Save and return to model selector |
+| Select + Triangle | Switch landscape/portrait |
+| Select + L or R | Change shell color |
+
+Tap keys directly, including numbers, function keys and Backspace. Touch SH/FN latch modifiers; tap again to release. In keyboard-navigation mode the D-pad moves the highlight and Cross presses that key; Circle or Select leaves this mode. Layout and skin also have touch buttons.
+
+Each model has independent saves. Autosave runs every minute, on focus/background transitions and clean exit. Focus loss pauses emulation and releases held keys. Sudden termination can lose changes since the last save. Back up saves before upgrades.
+
+## Build and test
+
+Vita: install [VitaSDK](https://vitasdk.org/) with SDL2 and SDL2_gfx packages.
+
+```sh
+export VITASDK=/usr/local/vitasdk
+export PATH="$VITASDK/bin:$PATH"
+cmake -S . -B build-vita -DCMAKE_BUILD_TYPE=Release
+cmake --build build-vita -j4
+# build-vita/VitaCybiko.vpk
+```
+
+Host tests (Ubuntu packages: build-essential, cmake, pkg-config, libsdl2-dev, libsdl2-gfx-dev, python3):
+
+```sh
+env -u VITASDK cmake -S . -B build-host -DVITACYBIKO_FRONTEND_TESTS=ON
+cmake --build build-host -j4
+ctest --test-dir build-host --output-on-failure
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+No firmware is needed for these tests. The host `cybiko-smoke` runner can also run legally supplied firmware; LCD activity alone is not evidence of a successful desktop boot.
+
+## Known boundaries
+
+- Classic V2 setup, desktop and Pinball gameplay were observed in Vita3K. Not every bundled app has been tested.
+- No physical Vita/PSTV test has been performed. Performance varies; observed Pinball gameplay remains below 60 FPS.
+- Classic V1/Xtreme boot verification and the exact original retail Classic launch bundle require matching images.
+- Wireless chat/multiplayer, CyWIG, original PC synchronization and USB/MP3 accessories are not implemented end-to-end.
+- CPU timing is approximate; some instructions/peripheral modes remain incomplete. Classic external app installation is not implemented.
+
+See the [release goals](docs/RELEASE-PLAN.md), not an implied promise of completed hardware equivalence.
+
+MIT-licensed frontend and modified portable core. [Third-party notices](THIRD_PARTY_NOTICES.md). Independent homebrew; not affiliated with Cybiko or Sony.
