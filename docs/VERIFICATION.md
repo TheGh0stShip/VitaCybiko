@@ -13,6 +13,13 @@ VPK SHA-256:
 All nine ZIP entries passed integrity checks. Firmware and apps are not inside
 the package; licenses and the literal-device LiveArea artwork are included.
 
+Published at [v0.1.0-preview](https://github.com/TheGh0stShip/VitaCybiko/releases/tag/v0.1.0-preview).
+The uploaded VPK was downloaded again, checked against the published SHA-256,
+and passed ZIP integrity verification. The installed Windows Vita3K executable
+matches the executable inside that package. Public
+[release-commit CI](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/35459876479)
+passed on a clean Ubuntu runner.
+
 ## Real Windows Vita3K testing
 
 Vita3K 0.2.1, build 4095-84184a36, OpenGL, 960×544. Tests were performed by
