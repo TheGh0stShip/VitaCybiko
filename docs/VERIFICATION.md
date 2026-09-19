@@ -22,6 +22,12 @@ a1da5712c3a856e1eb5df9fe4039a616be4401722c47d3fc682e598cb824d236
   Host tests cover atomic replacement, corrupt contents, wrong flash and wrong
   model, preserving original files and live RAM when validation fails.
 - All 13 ASan/UBSan suites and seven local Python tests pass after these changes.
+- [Release-commit GitHub CI](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/35461016270)
+  passes on a clean Ubuntu runner. The published VPK is available in the
+  [v0.1.1-preview release](https://github.com/TheGh0stShip/VitaCybiko/releases/tag/v0.1.1-preview).
+  Downloading that asset again reproduced the recorded SHA-256 and all nine ZIP
+  entries passed integrity verification. Its executable matches the installed
+  Windows Vita3K executable byte-for-byte.
 
 ![Pinball quit dialog after a short Esc tap](vita3k-pinball-quit.png)
 
