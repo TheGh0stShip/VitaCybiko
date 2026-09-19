@@ -171,6 +171,33 @@ static void test_register_roundtrips(void) {
     TEST_CHECK(timer8_read(&t, 8) == 0x99);
 }
 
+static void test_advance_matches_single_ticks(void) {
+    timer8_t stepped, advanced;
+    h8s_cpu_t cpu_stepped, cpu_advanced;
+    memset(&cpu_stepped, 0, sizeof(cpu_stepped));
+    memset(&cpu_advanced, 0, sizeof(cpu_advanced));
+    timer8_init(&stepped, 0, &cpu_stepped);
+    timer8_init(&advanced, 0, &cpu_advanced);
+
+    timer8_write(&stepped, 0, 0x61);  /* CMIEA + OVIE + /8 */
+    timer8_write(&advanced, 0, 0x61);
+    timer8_write(&stepped, 4, 3);
+    timer8_write(&advanced, 4, 3);
+    timer8_write(&stepped, 8, 0xFC);
+    timer8_write(&advanced, 8, 0xFC);
+
+    for (int i = 0; i < 43; ++i) timer8_tick(&stepped);
+    timer8_advance(&advanced, 17);
+    timer8_advance(&advanced, 26);
+
+    TEST_CHECK(advanced.tcnt == stepped.tcnt);
+    TEST_CHECK(advanced.tcsr == stepped.tcsr);
+    TEST_CHECK(advanced.prescale_counter == stepped.prescale_counter);
+    TEST_CHECK(cpu_advanced.pending_irq_count == cpu_stepped.pending_irq_count);
+    for (int i = 0; i < cpu_stepped.pending_irq_count; ++i)
+        TEST_CHECK(cpu_advanced.pending_irqs[i] == cpu_stepped.pending_irqs[i]);
+}
+
 TEST_LIST = {
     { "init_defaults",                  test_init_defaults },
     { "init_channel_vectors",           test_init_channel_vectors },
@@ -185,5 +212,6 @@ TEST_LIST = {
     { "overflow_sets_flag",             test_overflow_sets_flag },
     { "tcsr_write_zero_to_clear",       test_tcsr_write_zero_to_clear },
     { "register_roundtrips",            test_register_roundtrips },
+    { "advance_matches_single_ticks",   test_advance_matches_single_ticks },
     { NULL, NULL }
 };

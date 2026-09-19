@@ -75,6 +75,8 @@ void     bus_write16(address_bus_t *bus, uint32_t address, uint16_t value);
 void     bus_write32(address_bus_t *bus, uint32_t address, uint32_t value);
 
 void     bus_tick_dma_completion(address_bus_t *bus);
+int      bus_cycles_until_dma_completion(const address_bus_t *bus);
+void     bus_advance_dma_completion(address_bus_t *bus, int cycles);
 void     bus_tick_rtc(address_bus_t *bus);
 
 #endif

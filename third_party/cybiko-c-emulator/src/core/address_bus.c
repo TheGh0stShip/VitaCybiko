@@ -814,6 +814,57 @@ void bus_tick_dma_completion(address_bus_t *bus)
     }
 }
 
+int bus_cycles_until_dma_completion(const address_bus_t *bus)
+{
+    int next = 0;
+    for (int channel = 0; channel < 3; channel += 2) {
+        int delay = (int)bus->sci_tx_delay[channel];
+        if (delay > 0 && (next == 0 || delay < next)) next = delay;
+    }
+    if (bus->dtc_completion_delay > 0 &&
+        (next == 0 || bus->dtc_completion_delay < next))
+        next = bus->dtc_completion_delay;
+    if (bus->dma_completion_delay > 0 &&
+        (next == 0 || bus->dma_completion_delay < next))
+        next = bus->dma_completion_delay;
+    return next;
+}
+
+void bus_advance_dma_completion(address_bus_t *bus, int cycles)
+{
+    if (cycles <= 0) return;
+    for (int channel = 0; channel < 3; channel += 2) {
+        if (!bus->sci_tx_delay[channel]) continue;
+        if ((uint32_t)cycles < bus->sci_tx_delay[channel]) {
+            bus->sci_tx_delay[channel] -= (uint32_t)cycles;
+            continue;
+        }
+        bus->sci_tx_delay[channel] = 0;
+        bus->sci_tx_status[channel] |= SSR_TDRE | SSR_TEND;
+        uint8_t scr = memory_read8(&bus->on_chip_ram,
+            on_chip_offset(bus, 0xFFFF7A + 8 * (uint32_t)channel));
+        if (bus->cpu && (scr & 0xA0) == 0xA0)
+            h8s_cpu_request_interrupt(bus->cpu, 82 + 4 * channel);
+    }
+    if (bus->dtc_completion_delay > 0) {
+        if (cycles < bus->dtc_completion_delay) {
+            bus->dtc_completion_delay -= cycles;
+        } else {
+            bus->dtc_completion_delay = 0;
+            if (bus->cpu) h8s_cpu_request_interrupt(bus->cpu, 85);
+        }
+    }
+    if (bus->dma_completion_delay > 0) {
+        if (cycles < bus->dma_completion_delay) {
+            bus->dma_completion_delay -= cycles;
+        } else {
+            bus->dma_completion_delay = 0;
+            if (bus->cpu)
+                h8s_cpu_request_interrupt(bus->cpu, bus->dma_completion_vector);
+        }
+    }
+}
+
 void bus_tick_rtc(address_bus_t *bus)
 {
     if (bus->rtc) {

@@ -27,6 +27,9 @@ typedef struct {
 
 void     timer16_init(timer16_t *t, int channel, int tgr_count, int base_vector, h8s_cpu_t *cpu);
 void     timer16_counter_tick(timer16_t *t);
+int      timer16_cycles_until_counter_tick(const timer16_t *t);
+int      timer16_cycles_until_event(const timer16_t *t);
+void     timer16_advance(timer16_t *t, int cycles);
 static inline void timer16_tick(timer16_t *t) {
     if (t->cached_divisor == 0) return;
     if (++t->prescale_counter < t->cached_divisor) return;

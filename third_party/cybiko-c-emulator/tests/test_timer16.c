@@ -259,6 +259,40 @@ static void test_register_roundtrips(void) {
     TEST_CHECK(timer16_read8(&t, 4) == 0x13);
 }
 
+static void test_advance_matches_single_ticks(void) {
+    timer16_t stepped, advanced;
+    h8s_cpu_t cpu_stepped, cpu_advanced;
+    memset(&cpu_stepped, 0, sizeof(cpu_stepped));
+    memset(&cpu_advanced, 0, sizeof(cpu_advanced));
+    timer16_init(&stepped, 1, 2, 40, &cpu_stepped);
+    timer16_init(&advanced, 1, 2, 40, &cpu_advanced);
+
+    timer16_write8(&stepped, 2, 0x50);   /* IOB initial HIGH, clear on B */
+    timer16_write8(&advanced, 2, 0x50);
+    timer16_write8(&stepped, 0, 0x21);   /* clear on A, /4 on ch1 */
+    timer16_write8(&advanced, 0, 0x21);
+    timer16_write8(&stepped, 4, 0x13);   /* A/B/overflow IRQs */
+    timer16_write8(&advanced, 4, 0x13);
+    timer16_write16(&stepped, 8, 10);
+    timer16_write16(&advanced, 8, 10);
+    timer16_write16(&stepped, 0xA, 5);
+    timer16_write16(&advanced, 0xA, 5);
+    timer16_set_enabled(&stepped, true);
+    timer16_set_enabled(&advanced, true);
+
+    for (int i = 0; i < 73; ++i) timer16_tick(&stepped);
+    timer16_advance(&advanced, 19);
+    timer16_advance(&advanced, 54);
+
+    TEST_CHECK(advanced.tcnt == stepped.tcnt);
+    TEST_CHECK(advanced.tsr == stepped.tsr);
+    TEST_CHECK(advanced.prescale_counter == stepped.prescale_counter);
+    TEST_CHECK(advanced.output_b_level == stepped.output_b_level);
+    TEST_CHECK(cpu_advanced.pending_irq_count == cpu_stepped.pending_irq_count);
+    for (int i = 0; i < cpu_stepped.pending_irq_count; ++i)
+        TEST_CHECK(cpu_advanced.pending_irqs[i] == cpu_stepped.pending_irqs[i]);
+}
+
 TEST_LIST = {
     { "init_defaults",            test_init_defaults },
     { "init_vectors",             test_init_vectors },
@@ -275,5 +309,6 @@ TEST_LIST = {
     { "output_b_callback_fires",  test_output_b_callback_fires },
     { "channel_clock_divisors",   test_channel_clock_divisors },
     { "register_roundtrips",      test_register_roundtrips },
+    { "advance_matches_single_ticks", test_advance_matches_single_ticks },
     { NULL, NULL }
 };

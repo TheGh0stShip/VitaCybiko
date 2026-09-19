@@ -71,7 +71,11 @@
 #define AUDIO_TARGET_QUEUE_FRAMES 1u
 #define AUDIO_MAX_QUEUE_FRAMES 4u
 #define AUDIO_CONVERT_MAX_SAMPLES 8192
+#ifdef VITA
+#define EMULATION_CATCHUP_MAX_FRAMES 0
+#else
 #define EMULATION_CATCHUP_MAX_FRAMES 2
+#endif
 
 /* Defaults keep old host tests and the legacy Xtreme layout valid. Selection
  * replaces all paths together; Classic never uses the legacy Xtreme save. */
@@ -274,6 +278,7 @@ typedef struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *portrait_target;
+    SDL_Texture *ui_cache;
     SDL_Texture *lcd_texture;
     SDL_AudioDeviceID audio_dev;
     SDL_AudioSpec audio_have;
@@ -300,6 +305,19 @@ typedef struct {
     SDL_FingerID finger_id;
     uint32_t lcd_pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
     int16_t audio_s16_stereo_buf[AUDIO_CONVERT_MAX_SAMPLES * 2];
+    bool ui_cache_valid;
+    bool ui_cache_landscape;
+    bool ui_cache_keyboard_mode;
+    int ui_cache_skin_index;
+    int ui_cache_vk_row;
+    int ui_cache_vk_col;
+    cybiko_model_t ui_cache_model;
+    const virtual_key_t *ui_cache_active_vk;
+    const virtual_key_t *ui_cache_touch_vk;
+    bool ui_cache_active_vk_down;
+    bool ui_cache_touch_fn_latched;
+    bool ui_cache_touch_shift_latched;
+    char ui_cache_status[128];
 
     bool keyboard_mode;
     int vk_row;
@@ -1391,19 +1409,50 @@ static void render_layout_button(app_ctx_t *ctx)
     stringRGBA(ctx->renderer, x + 16, 37, ctx->landscape ? "PORTRAIT" : "LANDSCAPE", 232, 238, 232, 255);
 }
 
-static void render_landscape(app_ctx_t *ctx)
+static bool ui_cache_matches(const app_ctx_t *ctx)
+{
+    return ctx->ui_cache_valid &&
+           ctx->ui_cache_landscape == ctx->landscape &&
+           ctx->ui_cache_keyboard_mode == ctx->keyboard_mode &&
+           ctx->ui_cache_skin_index == ctx->skin_index &&
+           ctx->ui_cache_vk_row == ctx->vk_row &&
+           ctx->ui_cache_vk_col == ctx->vk_col &&
+           ctx->ui_cache_model == ctx->model &&
+           ctx->ui_cache_active_vk == ctx->active_vk &&
+           ctx->ui_cache_touch_vk == ctx->touch_vk &&
+           ctx->ui_cache_active_vk_down == ctx->active_vk_down &&
+           ctx->ui_cache_touch_fn_latched == ctx->touch_fn_latched &&
+           ctx->ui_cache_touch_shift_latched == ctx->touch_shift_latched &&
+           strcmp(ctx->ui_cache_status, ctx->status) == 0;
+}
+
+static void remember_ui_cache_state(app_ctx_t *ctx)
+{
+    ctx->ui_cache_valid = true;
+    ctx->ui_cache_landscape = ctx->landscape;
+    ctx->ui_cache_keyboard_mode = ctx->keyboard_mode;
+    ctx->ui_cache_skin_index = ctx->skin_index;
+    ctx->ui_cache_vk_row = ctx->vk_row;
+    ctx->ui_cache_vk_col = ctx->vk_col;
+    ctx->ui_cache_model = ctx->model;
+    ctx->ui_cache_active_vk = ctx->active_vk;
+    ctx->ui_cache_touch_vk = ctx->touch_vk;
+    ctx->ui_cache_active_vk_down = ctx->active_vk_down;
+    ctx->ui_cache_touch_fn_latched = ctx->touch_fn_latched;
+    ctx->ui_cache_touch_shift_latched = ctx->touch_shift_latched;
+    snprintf(ctx->ui_cache_status, sizeof(ctx->ui_cache_status), "%s", ctx->status);
+}
+
+static void render_landscape_cache(app_ctx_t *ctx)
 {
     const skin_t *skin = &skins[ctx->skin_index];
-    SDL_SetRenderTarget(ctx->renderer, NULL);
+    SDL_SetRenderTarget(ctx->renderer, ctx->ui_cache);
     SDL_SetRenderDrawColor(ctx->renderer, 12, 17, 23, 255);
     SDL_RenderClear(ctx->renderer);
     roundedBoxRGBA(ctx->renderer, 12, 70, 508, 426, 20,
                    skin->shell_r, skin->shell_g, skin->shell_b, 120);
     roundedRectangleRGBA(ctx->renderer, 12, 70, 508, 426, 20,
                          skin->glow_r, skin->glow_g, skin->glow_b, 200);
-    SDL_Rect lcd = {20, 96, 480, 300};
-    SDL_RenderCopy(ctx->renderer, ctx->lcd_texture, NULL, &lcd);
-    rectangleRGBA(ctx->renderer, 19, 95, 500, 396, 160, 182, 162, 255);
     stringRGBA(ctx->renderer, 24, 30, "VitaCybiko", 232, 240, 246, 255);
     stringRGBA(ctx->renderer, 24, 48, cybiko_machine(ctx->model)->name, 155, 183, 199, 255);
     stringRGBA(ctx->renderer, 532, 86, "DEVICE KEYBOARD", 184, 211, 218, 255);
@@ -1416,15 +1465,14 @@ static void render_landscape(app_ctx_t *ctx)
     stringRGBA(ctx->renderer, 24, 466, "Select: keyboard   Start+Select: save/menu", 180, 204, 213, 255);
     stringRGBA(ctx->renderer, 24, 486, "Select+Triangle: layout   Select+L/R: skin", 151, 177, 187, 255);
     stringRGBA(ctx->renderer, 24, 520, ctx->status, 154, 190, 178, 255);
-    SDL_RenderPresent(ctx->renderer);
+    remember_ui_cache_state(ctx);
 }
 
-static void render_frame(app_ctx_t *ctx)
+static void render_portrait_cache(app_ctx_t *ctx)
 {
-    if (ctx->landscape) { render_landscape(ctx); return; }
     const skin_t *skin = &skins[ctx->skin_index];
 
-    SDL_SetRenderTarget(ctx->renderer, ctx->portrait_target);
+    SDL_SetRenderTarget(ctx->renderer, ctx->ui_cache);
     SDL_SetRenderDrawColor(ctx->renderer, 12, 14, 15, 255);
     SDL_RenderClear(ctx->renderer);
 
@@ -1453,12 +1501,6 @@ static void render_frame(app_ctx_t *ctx)
                          LCD_X + LCD_W + 16, LCD_Y + LCD_H + 16,
                          18,
                          skin->glow_r, skin->glow_g, skin->glow_b, 190);
-
-    SDL_Rect lcd = { LCD_X, LCD_Y, LCD_W, LCD_H };
-    SDL_RenderCopy(ctx->renderer, ctx->lcd_texture, NULL, &lcd);
-    rectangleRGBA(ctx->renderer, LCD_X - 1, LCD_Y - 1,
-                  LCD_X + LCD_W + 1, LCD_Y + LCD_H + 1,
-                  205, 220, 198, 255);
 
     stringRGBA(ctx->renderer, 30, 30, cybiko_machine(ctx->model)->name, 230, 238, 232, 255);
     stringRGBA(ctx->renderer, 30, 44,
@@ -1490,6 +1532,45 @@ static void render_frame(app_ctx_t *ctx)
                166, 184, 180, 255);
     stringRGBA(ctx->renderer, 28, 896, ctx->status, 134, 154, 156, 255);
 
+    remember_ui_cache_state(ctx);
+}
+
+static void update_ui_cache(app_ctx_t *ctx)
+{
+    if (!ctx->ui_cache || ui_cache_matches(ctx)) {
+        return;
+    }
+    if (ctx->landscape) render_landscape_cache(ctx);
+    else render_portrait_cache(ctx);
+}
+
+static void render_landscape(app_ctx_t *ctx)
+{
+    update_ui_cache(ctx);
+    SDL_SetRenderTarget(ctx->renderer, NULL);
+    SDL_Rect src = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+    SDL_Rect dst = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+    SDL_RenderCopy(ctx->renderer, ctx->ui_cache, &src, &dst);
+    SDL_Rect lcd = {20, 96, 480, 300};
+    SDL_RenderCopy(ctx->renderer, ctx->lcd_texture, NULL, &lcd);
+    rectangleRGBA(ctx->renderer, 19, 95, 500, 396, 160, 182, 162, 255);
+    SDL_RenderPresent(ctx->renderer);
+}
+
+static void render_frame(app_ctx_t *ctx)
+{
+    if (ctx->landscape) { render_landscape(ctx); return; }
+
+    update_ui_cache(ctx);
+    SDL_SetRenderTarget(ctx->renderer, ctx->portrait_target);
+    SDL_Rect src = {0, 0, PORTRAIT_WIDTH, PORTRAIT_HEIGHT};
+    SDL_Rect dst = {0, 0, PORTRAIT_WIDTH, PORTRAIT_HEIGHT};
+    SDL_RenderCopy(ctx->renderer, ctx->ui_cache, &src, &dst);
+    SDL_Rect lcd = { LCD_X, LCD_Y, LCD_W, LCD_H };
+    SDL_RenderCopy(ctx->renderer, ctx->lcd_texture, NULL, &lcd);
+    rectangleRGBA(ctx->renderer, LCD_X - 1, LCD_Y - 1,
+                  LCD_X + LCD_W + 1, LCD_Y + LCD_H + 1,
+                  205, 220, 198, 255);
     present_portrait_target(ctx);
 }
 
@@ -1689,6 +1770,17 @@ static bool init_sdl(app_ctx_t *ctx)
     }
     SDL_SetTextureBlendMode(ctx->portrait_target, SDL_BLENDMODE_NONE);
 
+    ctx->ui_cache = SDL_CreateTexture(ctx->renderer,
+                                      SDL_PIXELFORMAT_ARGB8888,
+                                      SDL_TEXTUREACCESS_TARGET,
+                                      SCREEN_WIDTH,
+                                      PORTRAIT_HEIGHT);
+    if (!ctx->ui_cache) {
+        fprintf(stderr, "SDL_CreateTexture ui cache failed: %s\n", SDL_GetError());
+        return false;
+    }
+    SDL_SetTextureBlendMode(ctx->ui_cache, SDL_BLENDMODE_NONE);
+
     ctx->lcd_texture = SDL_CreateTexture(ctx->renderer,
                                          SDL_PIXELFORMAT_ARGB8888,
                                          SDL_TEXTUREACCESS_STREAMING,
@@ -1750,6 +1842,9 @@ static void cleanup(app_ctx_t *ctx)
     }
     if (ctx->lcd_texture) {
         SDL_DestroyTexture(ctx->lcd_texture);
+    }
+    if (ctx->ui_cache) {
+        SDL_DestroyTexture(ctx->ui_cache);
     }
     if (ctx->portrait_target) {
         SDL_DestroyTexture(ctx->portrait_target);

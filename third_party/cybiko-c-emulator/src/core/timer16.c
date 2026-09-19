@@ -272,6 +272,55 @@ void timer16_counter_tick(timer16_t *t) {
     }
 }
 
+int timer16_cycles_until_counter_tick(const timer16_t *t) {
+    if (t->cached_divisor == 0) return 0;
+    int remaining = t->cached_divisor - t->prescale_counter;
+    return remaining > 0 ? remaining : 1;
+}
+
+static int timer16_counter_distance(uint16_t from, uint16_t target) {
+    int distance = (int)((target - from) & 0xFFFF);
+    return distance == 0 ? 0x10000 : distance;
+}
+
+static int timer16_counter_ticks_until_event(const timer16_t *t) {
+    if (t->cached_divisor == 0) return 0;
+    int next = timer16_counter_distance(t->tcnt, t->tgra);
+    int dist = timer16_counter_distance(t->tcnt, t->tgrb);
+    if (dist < next) next = dist;
+    dist = timer16_counter_distance(t->tcnt, 0);
+    if (dist < next) next = dist;
+    return next;
+}
+
+int timer16_cycles_until_event(const timer16_t *t) {
+    int first_tick = timer16_cycles_until_counter_tick(t);
+    if (first_tick <= 0) return 0;
+    int ticks = timer16_counter_ticks_until_event(t);
+    return first_tick + (ticks - 1) * t->cached_divisor;
+}
+
+static void timer16_advance_no_event(timer16_t *t, int cycles) {
+    int total = t->prescale_counter + cycles;
+    int ticks = total / t->cached_divisor;
+    t->prescale_counter = total % t->cached_divisor;
+    t->tcnt = (uint16_t)(t->tcnt + ticks);
+}
+
+void timer16_advance(timer16_t *t, int cycles) {
+    while (cycles > 0 && t->cached_divisor != 0) {
+        int remaining = timer16_cycles_until_event(t);
+        if (remaining <= 0) return;
+        if (cycles < remaining) {
+            timer16_advance_no_event(t, cycles);
+            return;
+        }
+        cycles -= remaining;
+        if (remaining > 1) timer16_advance_no_event(t, remaining - 1);
+        timer16_tick(t);
+    }
+}
+
 bool timer16_is_running(const timer16_t *t) {
     return t->enabled && t->clock_divisors[t->tcr & 0x07] != 0;
 }

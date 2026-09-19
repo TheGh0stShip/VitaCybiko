@@ -123,6 +123,54 @@ void timer8_counter_tick(timer8_t *t) {
     }
 }
 
+int timer8_cycles_until_counter_tick(const timer8_t *t) {
+    if (t->cached_divisor == 0) return 0;
+    int remaining = t->cached_divisor - t->prescale_counter;
+    return remaining > 0 ? remaining : 1;
+}
+
+static int timer8_counter_ticks_until_event(const timer8_t *t) {
+    if (t->cached_divisor == 0) return 0;
+    uint8_t count = t->tcnt;
+    for (int ticks = 1; ticks <= 256; ++ticks) {
+        uint8_t previous = count;
+        count = (uint8_t)(count + 1);
+        if (count == t->tcora || count == t->tcorb ||
+            (previous == 0xFF && count == 0)) {
+            return ticks;
+        }
+    }
+    return 256;
+}
+
+int timer8_cycles_until_event(const timer8_t *t) {
+    int first_tick = timer8_cycles_until_counter_tick(t);
+    if (first_tick <= 0) return 0;
+    int ticks = timer8_counter_ticks_until_event(t);
+    return first_tick + (ticks - 1) * t->cached_divisor;
+}
+
+static void timer8_advance_no_event(timer8_t *t, int cycles) {
+    int total = t->prescale_counter + cycles;
+    int ticks = total / t->cached_divisor;
+    t->prescale_counter = total % t->cached_divisor;
+    t->tcnt = (uint8_t)(t->tcnt + ticks);
+}
+
+void timer8_advance(timer8_t *t, int cycles) {
+    while (cycles > 0 && t->cached_divisor != 0) {
+        int remaining = timer8_cycles_until_event(t);
+        if (remaining <= 0) return;
+        if (cycles < remaining) {
+            timer8_advance_no_event(t, cycles);
+            return;
+        }
+        cycles -= remaining;
+        if (remaining > 1) timer8_advance_no_event(t, remaining - 1);
+        timer8_tick(t);
+    }
+}
+
 bool timer8_is_running(const timer8_t *t) {
     return t->cached_divisor != 0;
 }

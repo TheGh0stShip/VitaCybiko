@@ -14,9 +14,12 @@
 #include "speaker.h"
 #include "keyboard.h"
 #include "cfs.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+
+#define HALT_FAST_FORWARD_MIN_CYCLES 32
 
 struct cybiko_emu {
     cybiko_hal_t hal;
@@ -189,6 +192,37 @@ void cybiko_reset(cybiko_emu_t *emu) {
 
 /* ---------- main frame loop ---------- */
 
+static void tick_peripherals(cybiko_emu_t *emu, int cycles)
+{
+    if (cycles <= 0) return;
+    timer8_advance(&emu->timer8[0], cycles);
+    timer8_advance(&emu->timer8[1], cycles);
+    const cybiko_machine_t *m = emu->bus.machine;
+    for (int i = 0; i < m->timer_channels; i++) {
+        timer16_advance(&emu->timer16[i], cycles);
+    }
+    bus_advance_dma_completion(&emu->bus, cycles);
+}
+
+static int cycles_until_next_peripheral_event(cybiko_emu_t *emu)
+{
+    int next = INT_MAX;
+    int t = timer8_cycles_until_event(&emu->timer8[0]);
+    if (t > 0 && t < next) next = t;
+    t = timer8_cycles_until_event(&emu->timer8[1]);
+    if (t > 0 && t < next) next = t;
+
+    const cybiko_machine_t *m = emu->bus.machine;
+    for (int i = 0; i < m->timer_channels; i++) {
+        t = timer16_cycles_until_event(&emu->timer16[i]);
+        if (t > 0 && t < next) next = t;
+    }
+
+    t = bus_cycles_until_dma_completion(&emu->bus);
+    if (t > 0 && t < next) next = t;
+    return next == INT_MAX ? 0 : next;
+}
+
 void cybiko_run_frame(cybiko_emu_t *emu) {
     const cybiko_machine_t *m = emu->bus.machine;
     int frame_cycles = (int)(m->clock_hz / CYBIKO_FPS);
@@ -212,8 +246,25 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
     /* Begin speaker frame (record start level, reset transitions) */
     speaker_begin_frame(&emu->speaker);
 
-    /* Execute one frame worth of CPU cycles */
-    for (int cycle = 0; cycle < frame_cycles; cycle++) {
+    /* Execute one frame worth of CPU cycles. While the guest CPU is in SLEEP,
+     * skip directly to the next timer/DMA event instead of calling the CPU
+     * halt fast path once per emulated cycle. */
+    for (int cycle = 0; cycle < frame_cycles;) {
+        if (m->model != CYBIKO_XTREME &&
+            emu->cpu.halted && emu->cpu.pending_irq_count == 0) {
+            int chunk = frame_cycles - cycle;
+            int next_event = cycles_until_next_peripheral_event(emu);
+            if (next_event > 0 && next_event < chunk) chunk = next_event;
+            if (chunk >= HALT_FAST_FORWARD_MIN_CYCLES) {
+                emu->speaker.frame_cycle = cycle + chunk - 1;
+                tick_peripherals(emu, chunk);
+                emu->cpu.cycle_count += (uint64_t)chunk;
+                emu->total_steps += (uint64_t)chunk;
+                cycle += chunk;
+                continue;
+            }
+        }
+
         /* Track cycle position for speaker transition timestamps */
         emu->speaker.frame_cycle = cycle;
 
@@ -232,6 +283,7 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
         bus_tick_dma_completion(&emu->bus);
 
         emu->total_steps++;
+        cycle++;
     }
 
     /* Render the frame via HAL */
