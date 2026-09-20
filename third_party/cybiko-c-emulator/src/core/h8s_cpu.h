@@ -64,9 +64,6 @@ typedef struct h8s_cpu {
      * self-modifying RAM remains immediately visible. I/O uses the slow bus. */
     const uint8_t *fetch_data;
     uint32_t fetch_base, fetch_end;
-    uint32_t prefetch_pc;
-    uint16_t prefetch_word;
-    bool prefetch_valid;
     bool fetch_immutable;
     uint32_t rom_block_base;
     uint16_t rom_block_words[H8S_ROM_FETCH_BLOCK_WORDS];

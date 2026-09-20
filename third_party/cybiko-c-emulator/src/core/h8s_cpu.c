@@ -499,7 +499,6 @@ static void cache_instruction_memory(h8s_cpu_t *cpu, uint32_t pc) {
     cpu->fetch_base = base;
     cpu->fetch_end = memory ? base + (uint32_t)memory->size : 0;
     cpu->fetch_immutable = memory == &b->boot_rom || memory == &b->flash_rom;
-    cpu->prefetch_valid = false;
     cpu->rom_block_valid = false;
     if (memory == &b->on_chip_ram && cpu->fetch_end > 0xFFFC00)
         cpu->fetch_end = 0xFFFC00;
@@ -515,12 +514,6 @@ static inline uint16_t fetch16(h8s_cpu_t *cpu) {
             cpu->pc = (pc + 2) & 0xffffff;
             return cpu->rom_block_words[index];
         }
-    }
-    if (CPU_LIKELY(cpu->prefetch_valid && cpu->prefetch_pc == pc)) {
-        uint16_t val = cpu->prefetch_word;
-        cpu->pc = (pc + 2) & 0xffffff;
-        cpu->prefetch_valid = false;
-        return val;
     }
     /* Firmware executes in long contiguous runs from ROM/RAM. Prefer the
      * validated region cache before looking up a 4 KiB bus page; peripheral
@@ -541,11 +534,6 @@ static inline uint16_t fetch16(h8s_cpu_t *cpu) {
                 cpu->rom_block_count = (uint8_t)count;
                 cpu->rom_block_valid = true;
             }
-        }
-        if (cpu->fetch_immutable && cpu->pc + 3 < cpu->fetch_end) {
-            cpu->prefetch_pc = cpu->pc;
-            cpu->prefetch_word = (uint16_t)((p[2] << 8) | p[3]);
-            cpu->prefetch_valid = true;
         }
         return val;
     }
@@ -629,9 +617,6 @@ CPU_INLINE bool execute_hot_plain_memory_4b(h8s_cpu_t *cpu, uint16_t op)
         return false;
 
     uint32_t saved_pc = cpu->pc;
-    uint32_t saved_prefetch_pc = cpu->prefetch_pc;
-    uint16_t saved_prefetch_word = cpu->prefetch_word;
-    bool saved_prefetch_valid = cpu->prefetch_valid;
 
     uint8_t lo = (uint8_t)op;
     uint16_t disp = fetch16(cpu);
@@ -674,9 +659,6 @@ CPU_INLINE bool execute_hot_plain_memory_4b(h8s_cpu_t *cpu, uint16_t op)
 
 restore_and_fallback:
     cpu->pc = saved_pc;
-    cpu->prefetch_pc = saved_prefetch_pc;
-    cpu->prefetch_word = saved_prefetch_word;
-    cpu->prefetch_valid = saved_prefetch_valid;
     return false;
 }
 
@@ -686,9 +668,6 @@ CPU_INLINE bool execute_hot_prefix0100_plain_memory(h8s_cpu_t *cpu, uint16_t op)
         return false;
 
     uint32_t saved_pc = cpu->pc;
-    uint32_t saved_prefetch_pc = cpu->prefetch_pc;
-    uint16_t saved_prefetch_word = cpu->prefetch_word;
-    bool saved_prefetch_valid = cpu->prefetch_valid;
 
     uint16_t op2 = fetch16(cpu);
     uint8_t hi2 = (uint8_t)(op2 >> 8);
@@ -752,9 +731,6 @@ CPU_INLINE bool execute_hot_prefix0100_plain_memory(h8s_cpu_t *cpu, uint16_t op)
 
 restore_and_fallback:
     cpu->pc = saved_pc;
-    cpu->prefetch_pc = saved_prefetch_pc;
-    cpu->prefetch_word = saved_prefetch_word;
-    cpu->prefetch_valid = saved_prefetch_valid;
     return false;
 }
 
@@ -2414,9 +2390,6 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->pending_irq_count = 0;
     cpu->fetch_data = NULL;
     cpu->fetch_base = cpu->fetch_end = 0;
-    cpu->prefetch_pc = 0;
-    cpu->prefetch_word = 0;
-    cpu->prefetch_valid = false;
     cpu->fetch_immutable = false;
     cpu->rom_block_base = 0;
     cpu->rom_block_count = 0;

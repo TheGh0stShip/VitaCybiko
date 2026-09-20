@@ -1670,6 +1670,24 @@ Rejected fetch/shift experiments from the same pass:
   isolated shift helpers without folding them into a broader decoded-block or
   cached-interpreter tier.
 
+Accepted fetch prefetch cleanup: the post-dispatch Xtreme callgrind sample
+showed the single-word prefetch cache was essentially dead (`prefetch_valid`
+checking cost tens of millions of instructions while producing only hundreds of
+hits in a 120-frame sample). The immutable ROM block cache remains in place,
+but the separate next-word prefetch state and rollback bookkeeping were removed.
+
+Validation:
+
+- focused H8S CPU tests passed;
+- scheduler equivalence tests passed;
+- three-model 600-frame smoke passed with Classic V1 1.065s, Classic V2 0.406s,
+  and Xtreme 1.779s in one direct run; three immediate Xtreme repeats measured
+  1.446s, 1.508s, and 1.839s, showing normal host timing variance rather than a
+  deterministic regression;
+- same-command Xtreme callgrind for 120 frames dropped from about 8.007B to
+  7.858B total guest-emulator instructions, and `fetch16` dropped from about
+  2.462B to 2.342B.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
