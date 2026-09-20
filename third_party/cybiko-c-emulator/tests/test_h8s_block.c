@@ -603,6 +603,50 @@ static void test_semantic_block_exit_rejects_calls_without_mutation(void)
     TEST_CHECK(edge_cache.misses == 0);
 }
 
+static void test_semantic_block_exit_executes_branch_only_bcc(void)
+{
+    const uint8_t rom[] = {
+        0x46, 0x04,       /* 0: BNE 6 */
+        0x54, 0x70,       /* 2: fall-through */
+        0x54, 0x70,       /* 4 */
+        0x0b, 0x01        /* 6: target */
+    };
+    h8s_block_t block;
+    h8s_branch_edge_cache_t edge_cache;
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    uint32_t next = 0;
+
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.instructions == 0);
+    TEST_CHECK(h8s_semantic_block_supported(&block));
+    h8s_branch_edge_cache_init(&edge_cache);
+    TEST_CHECK(h8s_execute_semantic_block_exit(&block, &edge_cache, &state, &next));
+    TEST_CHECK(next == 6);
+    TEST_CHECK(state.pc == 6);
+    TEST_CHECK(edge_cache.misses == 1);
+
+    state.pc = 0;
+    state.ccr = 0x04; /* Z set: BNE falls through. */
+    TEST_CHECK(h8s_execute_semantic_block_exit(&block, &edge_cache, &state, &next));
+    TEST_CHECK(next == 2);
+    TEST_CHECK(state.pc == 2);
+}
+
+static void test_semantic_block_exit_rejects_branch_only_return(void)
+{
+    const uint8_t rom[] = {0x54, 0x70};
+    h8s_block_t block;
+    h8s_block_cpu_state_t state = {.pc = 0};
+    uint32_t next = 0x123456;
+
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.instructions == 0);
+    TEST_CHECK(!h8s_semantic_block_supported(&block));
+    TEST_CHECK(!h8s_execute_semantic_block_exit(&block, NULL, &state, &next));
+    TEST_CHECK(next == 0x123456);
+    TEST_CHECK(state.pc == 0);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1465,6 +1509,8 @@ TEST_LIST = {
     { "chain_target_rejects_static_calls", test_chain_target_rejects_static_calls },
     { "semantic_block_exit_uses_updated_ccr", test_semantic_block_exit_uses_updated_ccr },
     { "semantic_block_exit_rejects_calls_without_mutation", test_semantic_block_exit_rejects_calls_without_mutation },
+    { "semantic_block_exit_executes_branch_only_bcc", test_semantic_block_exit_executes_branch_only_bcc },
+    { "semantic_block_exit_rejects_branch_only_return", test_semantic_block_exit_rejects_branch_only_return },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },

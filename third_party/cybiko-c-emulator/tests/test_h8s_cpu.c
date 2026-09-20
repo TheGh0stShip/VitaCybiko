@@ -409,6 +409,24 @@ static void test_semantic_rom_block_fast_path_executes_bcc(void) {
     teardown();
 }
 
+static void test_semantic_rom_block_fast_path_executes_branch_only_bcc(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0x40FE); /* BRA 0x8100 loop. */
+    bus_build_memory_map(&bus);
+
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+    int cycles = 0;
+    TEST_CHECK(h8s_cpu_try_execute_semantic_rom_block(&cpu, 1, &cycles));
+    TEST_CHECK(cycles == 1);
+    TEST_CHECK(cpu.pc == 0x8100);
+    TEST_CHECK(cpu.cycle_count == 1);
+    TEST_CHECK(cpu.semantic_fast_blocks == 1);
+    TEST_CHECK(cpu.semantic_fast_cycles == 1);
+    teardown();
+}
+
 static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     setup();
     write_code16(0, 0xF800);
@@ -430,7 +448,8 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 1, &cycles));
     TEST_CHECK(cpu.pc == 0x8100);
     TEST_CHECK(cpu.semantic_fast_rejects == 2);
-    TEST_CHECK(cpu.semantic_fast_reject_guard == 1);
+    TEST_CHECK(cpu.semantic_fast_reject_guard == 0);
+    TEST_CHECK(cpu.semantic_fast_reject_cycle_budget == 1);
 
     cpu.pending_irqs[0] = 12;
     cpu.pending_irq_count = 1;
@@ -879,6 +898,7 @@ TEST_LIST = {
     {"immutable_fetch_window_accepts_boot_and_flash", test_immutable_fetch_window_accepts_boot_and_flash},
     {"immutable_fetch_window_rejects_ram_and_io", test_immutable_fetch_window_rejects_ram_and_io},
     {"semantic_rom_block_fast_path_executes_bcc", test_semantic_rom_block_fast_path_executes_bcc},
+    {"semantic_rom_block_fast_path_executes_branch_only_bcc", test_semantic_rom_block_fast_path_executes_branch_only_bcc},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},
     {"cpu_run_fast_path_preserves_sync_boundary", test_cpu_run_fast_path_preserves_sync_boundary},

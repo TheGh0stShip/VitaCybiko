@@ -742,6 +742,37 @@ exit patterns. Do not broaden the semantic executor blindly; use the hot reject
 PC list to decide which unsupported exit or memory form will repay its
 correctness risk.
 
+`cybiko-block-scan` now has an `--inspect` mode for those exact PCs. Inspecting
+the Xtreme hot rejects showed several branch-only static blocks that were
+previously rejected solely because the semantic block predicate required at
+least one straight-line instruction:
+
+- `0x0076c0`: branch-only `BRA/Bcc8` to `0x0076b2` or fall-through
+  `0x0076c2`;
+- `0x0076b8`: branch-only `BCC/BHS d:8`;
+- `0x0061ee` on Classic V2: branch-only `BRA/Bcc8`;
+- `0x0015a0` on Classic V2: branch-only loop branch.
+
+The semantic fast path now accepts zero-instruction static Bcc/JMP blocks while
+still rejecting returns, calls, traps, sleeps, and indirect exits. One-cycle
+semantic block exits are allowed when the caller supplies enough cycle budget.
+Tests cover branch-only Bcc execution, return rejection, CPU-level branch-only
+fast-path execution, and the adjusted cycle-budget reject.
+
+Gate after branch-only static exit support:
+
+- focused `h8s_block` and `h8s_cpu` tests passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 0.93 s, Classic V2 0.40 s, Xtreme
+  4.28 s on the wrapper run;
+- direct Xtreme smoke: 4.385596 s with accepted semantic blocks rising from
+  51,191 to 71,141.
+
+The profile confirms the branch-only Bcc PCs fell out of the Xtreme top reject
+list, but `0x0076c2` became the dominant remaining cached reject because it is a
+return boundary. Do not fake returns; the next branch-aware tier must model
+call/return stack/link effects explicitly or keep returns as interpreter exits.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

@@ -941,7 +941,13 @@ bool h8s_semantic_instruction_supported(uint16_t op)
 
 bool h8s_semantic_block_supported(const h8s_block_t *block)
 {
-    if (!block || !block->executable || block->instructions == 0) return false;
+    if (!block || !block->executable) return false;
+    if (block->instructions == 0) {
+        return block->stop == H8S_BLOCK_STOP_BRANCH &&
+            (block->branch_kind == H8S_BLOCK_BRANCH_BCC8 ||
+             block->branch_kind == H8S_BLOCK_BRANCH_BCC16 ||
+             block->branch_kind == H8S_BLOCK_BRANCH_JMP_ABS24);
+    }
     for (unsigned i = 0; i < block->instructions; ++i) {
         if (!is_tier1_decoded_executable(block->decoded[i].op,
                                          block->decoded[i].imm,

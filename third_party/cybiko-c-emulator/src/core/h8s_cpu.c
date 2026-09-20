@@ -2180,7 +2180,7 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
 {
     if (!cpu || !cycles) return false;
     uint32_t start_pc = cpu->pc & 0xffffff;
-    if (limit <= 1 || cpu->halted || cpu->irq_deferred) {
+    if (limit <= 0 || cpu->halted || cpu->irq_deferred) {
         return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_guard,
                                     SEM_REJECT_GUARD, start_pc);
     }
@@ -2223,7 +2223,7 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     }
 
     int block_cycles = (int)block->instructions + 1; /* Include branch exit. */
-    if (block_cycles <= 1 || block_cycles > limit) {
+    if (block_cycles < 1 || block_cycles > limit) {
         return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_cycle_budget,
                                     SEM_REJECT_CYCLE_BUDGET, start_pc);
     }

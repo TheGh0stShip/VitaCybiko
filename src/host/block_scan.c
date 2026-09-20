@@ -120,6 +120,60 @@ static unsigned parse_uint(const char *text, unsigned fallback)
     return (unsigned)value;
 }
 
+static bool parse_pc(const char *text, uint32_t *pc)
+{
+    if (!text || !pc) return false;
+    char *end = NULL;
+    errno = 0;
+    unsigned long value = strtoul(text, &end, 0);
+    if (errno || !end || *end || value > 0xfffffful) return false;
+    *pc = (uint32_t)value;
+    return true;
+}
+
+static const char *yesno(bool value)
+{
+    return value ? "yes" : "no";
+}
+
+static void inspect_pc(const uint8_t *rom, size_t rom_size, unsigned max_instructions,
+                       uint32_t pc)
+{
+    h8s_block_t block;
+    printf("inspect_pc=0x%06x\n", pc);
+    if ((pc & 1u) != 0 || (size_t)pc + 1 >= rom_size ||
+        !h8s_analyze_rom_block(rom, rom_size, pc, max_instructions, &block)) {
+        printf("inspect_valid=no\n");
+        return;
+    }
+
+    printf("inspect_valid=yes start=0x%06x bytes=%u instructions=%u stop=%s stop_pc=0x%06x executable=%s semantic=%s executable_prefix=%u\n",
+           block.start, block.bytes, block.instructions, stop_name(block.stop),
+           block.stop_pc, yesno(block.executable),
+           yesno(h8s_semantic_block_supported(&block)),
+           block.executable_prefix_instructions);
+    if (block.stop == H8S_BLOCK_STOP_BRANCH) {
+        printf("inspect_branch kind=%s op=0x%04x bytes=%u conditional=%s cond=0x%x has_target=%s fallthrough=0x%06x target=0x%06x\n",
+               branch_kind_name(block.branch_kind), block.branch_op,
+               block.branch_bytes, yesno(block.branch_conditional),
+               block.branch_condition, yesno(block.branch_has_target),
+               block.branch_fallthrough, block.branch_target);
+    }
+    uint32_t insn_pc = block.start;
+    for (unsigned i = 0; i < block.instructions; ++i) {
+        const h8s_block_instruction_t *insn = &block.decoded[i];
+        bool supported = h8s_semantic_instruction_supported(insn->op);
+        if (insn->op == 0x01f0 && insn->bytes == 4) {
+            uint8_t hi2 = (uint8_t)(insn->imm >> 8);
+            supported = hi2 == 0x64 || hi2 == 0x65 || hi2 == 0x66;
+        }
+        printf("inspect_insn%02u pc=0x%06x op=0x%04x bytes=%u imm=0x%08x semantic=%s\n",
+               i + 1, insn_pc,
+               insn->op, insn->bytes, insn->imm, yesno(supported));
+        insn_pc += insn->bytes;
+    }
+}
+
 static uint8_t *load_file(const char *path, size_t *size_out)
 {
     FILE *file = fopen(path, "rb");
@@ -142,8 +196,8 @@ static uint8_t *load_file(const char *path, size_t *size_out)
 
 int main(int argc, char **argv)
 {
-    if (argc < 2 || argc > 3) {
-        fprintf(stderr, "usage: %s rom.bin [max_instructions]\n", argv[0]);
+    if (argc < 2) {
+        fprintf(stderr, "usage: %s rom.bin [max_instructions] [--inspect pc...]\n", argv[0]);
         return 2;
     }
 
@@ -154,7 +208,30 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    unsigned max_instructions = parse_uint(argc == 3 ? argv[2] : NULL, 32);
+    unsigned max_instructions = 32;
+    int argi = 2;
+    if (argi < argc && strcmp(argv[argi], "--inspect") != 0) {
+        max_instructions = parse_uint(argv[argi], 32);
+        argi++;
+    }
+    if (argi < argc && strcmp(argv[argi], "--inspect") == 0) {
+        if (++argi >= argc) {
+            fprintf(stderr, "--inspect requires at least one PC\n");
+            free(rom);
+            return 2;
+        }
+        for (; argi < argc; ++argi) {
+            uint32_t pc = 0;
+            if (!parse_pc(argv[argi], &pc)) {
+                fprintf(stderr, "invalid PC: %s\n", argv[argi]);
+                free(rom);
+                return 2;
+            }
+            inspect_pc(rom, rom_size, max_instructions, pc);
+        }
+        free(rom);
+        return 0;
+    }
     unsigned long long blocks = 0;
     unsigned long long instructions = 0;
     unsigned long long executable_blocks = 0;
