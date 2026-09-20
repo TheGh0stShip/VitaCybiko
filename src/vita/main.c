@@ -353,6 +353,7 @@ typedef struct {
     bool lcd_previous_valid;
     unsigned lcd_updates;
     int16_t audio_s16_stereo_buf[AUDIO_CONVERT_MAX_SAMPLES * 2];
+    uint8_t audio_repeat_buf[AUDIO_CONVERT_MAX_SAMPLES];
     uint8_t audio_last_frame[AUDIO_FRAME_SAMPLES];
     int audio_last_count;
     bool audio_last_valid;
@@ -1516,6 +1517,46 @@ static void queue_audio_locked(app_ctx_t *ctx, const uint8_t *samples, int count
     ctx->audio_ticks += SDL_GetPerformanceCounter() - started;
 }
 
+static void queue_audio_repeat_locked(app_ctx_t *ctx, Uint32 queued)
+{
+    if (!ctx->audio_dev || !ctx->audio_started ||
+        !ctx->audio_last_valid || ctx->audio_last_count <= 0 ||
+        queued >= ctx->audio_target_queue_bytes) {
+        return;
+    }
+
+    Uint32 bytes_per_input_sample =
+        ctx->audio_frame_bytes / (Uint32)AUDIO_FRAME_SAMPLES;
+    if (!bytes_per_input_sample) bytes_per_input_sample = 1;
+
+    Uint32 needed_bytes = ctx->audio_target_queue_bytes - queued;
+    Uint32 needed_samples =
+        (needed_bytes + bytes_per_input_sample - 1u) / bytes_per_input_sample;
+    Uint32 max_repeat_samples =
+        (Uint32)ctx->audio_last_count * AUDIO_MAX_QUEUE_FRAMES;
+    if (needed_samples > max_repeat_samples) {
+        needed_samples = max_repeat_samples;
+    }
+    if (needed_samples > AUDIO_CONVERT_MAX_SAMPLES) {
+        needed_samples = AUDIO_CONVERT_MAX_SAMPLES;
+    }
+    if (!needed_samples) {
+        return;
+    }
+
+    Uint32 written = 0;
+    while (written < needed_samples) {
+        Uint32 chunk = (Uint32)ctx->audio_last_count;
+        if (chunk > needed_samples - written) {
+            chunk = needed_samples - written;
+        }
+        memcpy(ctx->audio_repeat_buf + written, ctx->audio_last_frame, chunk);
+        written += chunk;
+    }
+
+    queue_audio_locked(ctx, ctx->audio_repeat_buf, (int)written);
+}
+
 static void queue_audio(app_ctx_t *ctx, const uint8_t *samples, int count)
 {
     SDL_LockMutex(ctx->audio_lock);
@@ -1538,17 +1579,8 @@ static void queue_guest_audio(app_ctx_t *ctx, guest_worker_t *worker)
         }
         queue_audio_locked(ctx, worker->audio, worker->audio_count);
         if (ctx->audio_last_valid && ctx->audio_last_count > 0 && ctx->audio_started) {
-            Uint32 frame_bytes = ctx->audio_frame_bytes;
             Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
-            unsigned guard = 0;
-            while (queued < ctx->audio_target_queue_bytes && guard++ < AUDIO_MAX_QUEUE_FRAMES)
-            {
-                queue_audio_locked(ctx, ctx->audio_last_frame, ctx->audio_last_count);
-                Uint32 next = SDL_GetQueuedAudioSize(ctx->audio_dev);
-                if (next <= queued) break;
-                queued = next;
-                if (!frame_bytes) break;
-            }
+            queue_audio_repeat_locked(ctx, queued);
         }
     }
     SDL_UnlockMutex(ctx->audio_lock);
@@ -1559,13 +1591,7 @@ static void service_audio_continuity(app_ctx_t *ctx)
     SDL_LockMutex(ctx->audio_lock);
     if (ctx->audio_started && ctx->audio_last_valid && ctx->audio_last_count > 0) {
         Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
-        unsigned guard = 0;
-        while (queued < ctx->audio_target_queue_bytes && guard++ < AUDIO_MAX_QUEUE_FRAMES) {
-            queue_audio_locked(ctx, ctx->audio_last_frame, ctx->audio_last_count);
-            Uint32 next = SDL_GetQueuedAudioSize(ctx->audio_dev);
-            if (next <= queued) break;
-            queued = next;
-        }
+        queue_audio_repeat_locked(ctx, queued);
     }
     SDL_UnlockMutex(ctx->audio_lock);
 }
