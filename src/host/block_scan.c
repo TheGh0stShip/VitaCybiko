@@ -16,6 +16,24 @@ static const char *stop_name(h8s_block_stop_t stop)
     return "unknown";
 }
 
+static const char *branch_kind_name(h8s_block_branch_kind_t kind)
+{
+    switch (kind) {
+    case H8S_BLOCK_BRANCH_NONE: return "none";
+    case H8S_BLOCK_BRANCH_BCC8: return "bcc8";
+    case H8S_BLOCK_BRANCH_BCC16: return "bcc16";
+    case H8S_BLOCK_BRANCH_BSR8: return "bsr8";
+    case H8S_BLOCK_BRANCH_BSR16: return "bsr16";
+    case H8S_BLOCK_BRANCH_JMP_ABS24: return "jmp_abs24";
+    case H8S_BLOCK_BRANCH_JSR_ABS24: return "jsr_abs24";
+    case H8S_BLOCK_BRANCH_INDIRECT: return "indirect";
+    case H8S_BLOCK_BRANCH_RETURN: return "return";
+    case H8S_BLOCK_BRANCH_TRAP: return "trap";
+    case H8S_BLOCK_BRANCH_SLEEP: return "sleep";
+    }
+    return "unknown";
+}
+
 static void print_top_semantic_gaps(const unsigned long long counts[256],
                                     unsigned long long total)
 {
@@ -57,6 +75,29 @@ static void print_top_semantic_opcode_gaps(const unsigned long long counts[65536
                rank + 1, best, best_count,
                total ? 100.0 * (double)best_count / (double)total : 0.0);
     }
+}
+
+static void print_top_branch_targets(const unsigned long long *counts,
+                                     size_t count, unsigned long long total)
+{
+    bool *printed = calloc(count ? count : 1, sizeof(*printed));
+    if (!printed) return;
+    for (unsigned rank = 0; rank < 12; ++rank) {
+        size_t best = 0;
+        unsigned long long best_count = 0;
+        for (size_t i = 0; i < count; ++i) {
+            if (!printed[i] && counts[i] > best_count) {
+                best_count = counts[i];
+                best = i;
+            }
+        }
+        if (!best_count) break;
+        printed[best] = true;
+        printf("branch_target_top%02u_pc=0x%06zx count=%llu share=%.2f%%\n",
+               rank + 1, best * 2, best_count,
+               total ? 100.0 * (double)best_count / (double)total : 0.0);
+    }
+    free(printed);
 }
 
 static unsigned parse_uint(const char *text, unsigned fallback)
@@ -116,6 +157,14 @@ int main(int argc, char **argv)
     unsigned long long semantic_gap_op[65536] = {0};
     unsigned long long bytes = 0;
     unsigned long long stops[H8S_BLOCK_STOP_UNSUPPORTED + 1] = {0};
+    unsigned long long branch_kinds[H8S_BLOCK_BRANCH_SLEEP + 1] = {0};
+    unsigned long long branch_conditional = 0;
+    unsigned long long branch_static_targets = 0;
+    unsigned long long branch_targets_in_rom = 0;
+    unsigned long long branch_targets_even = 0;
+    size_t target_slots = (rom_size + 1) / 2;
+    unsigned long long *branch_target_hits = calloc(target_slots ? target_slots : 1,
+                                                    sizeof(*branch_target_hits));
     unsigned longest = 0;
     uint32_t longest_pc = 0;
 
@@ -147,6 +196,22 @@ int main(int argc, char **argv)
         }
         bytes += block.bytes;
         if (block.stop <= H8S_BLOCK_STOP_UNSUPPORTED) stops[block.stop]++;
+        if (block.stop == H8S_BLOCK_STOP_BRANCH &&
+            block.branch_kind <= H8S_BLOCK_BRANCH_SLEEP) {
+            branch_kinds[block.branch_kind]++;
+            if (block.branch_conditional) branch_conditional++;
+            if (block.branch_has_target) {
+                branch_static_targets++;
+                if ((size_t)block.branch_target < rom_size) {
+                    branch_targets_in_rom++;
+                    if ((block.branch_target & 1u) == 0) {
+                        branch_targets_even++;
+                        if (branch_target_hits)
+                            branch_target_hits[block.branch_target / 2]++;
+                    }
+                }
+            }
+        }
         if (block.instructions > longest) {
             longest = block.instructions;
             longest_pc = pc;
@@ -170,6 +235,14 @@ int main(int argc, char **argv)
     printf("longest_block_pc=0x%06x longest_instructions=%u\n", longest_pc, longest);
     for (unsigned i = 0; i <= H8S_BLOCK_STOP_UNSUPPORTED; ++i)
         printf("stop_%s=%llu\n", stop_name((h8s_block_stop_t)i), stops[i]);
+    printf("branch_conditional=%llu branch_static_targets=%llu branch_targets_in_rom=%llu branch_targets_even=%llu\n",
+           branch_conditional, branch_static_targets, branch_targets_in_rom, branch_targets_even);
+    for (unsigned i = 0; i <= H8S_BLOCK_BRANCH_SLEEP; ++i)
+        printf("branch_%s=%llu\n", branch_kind_name((h8s_block_branch_kind_t)i), branch_kinds[i]);
+    if (branch_target_hits) {
+        print_top_branch_targets(branch_target_hits, target_slots, branch_targets_even);
+        free(branch_target_hits);
+    }
 
     free(rom);
     return 0;

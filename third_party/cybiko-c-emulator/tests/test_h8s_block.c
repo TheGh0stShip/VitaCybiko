@@ -226,12 +226,89 @@ static void test_stops_before_branch(void)
     TEST_CHECK(block.bytes == 4);
     TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
     TEST_CHECK(block.stop_pc == 4);
+    TEST_CHECK(block.branch_kind == H8S_BLOCK_BRANCH_BCC8);
+    TEST_CHECK(block.branch_op == 0x4002);
+    TEST_CHECK(block.branch_bytes == 2);
+    TEST_CHECK(block.branch_conditional);
+    TEST_CHECK(block.branch_condition == 0);
+    TEST_CHECK(block.branch_has_target);
+    TEST_CHECK(block.branch_fallthrough == 6);
+    TEST_CHECK(block.branch_target == 8);
     TEST_CHECK(block.executable);
     TEST_CHECK(block.executable_prefix_instructions == 2);
     TEST_CHECK(block.decoded[0].op == 0x0b00);
     TEST_CHECK(block.decoded[0].bytes == 2);
     TEST_CHECK(block.decoded[1].op == 0x0b81);
     TEST_CHECK(block.decoded[1].bytes == 2);
+}
+
+static void test_branch_metadata_for_static_exits(void)
+{
+    struct branch_case {
+        const char *name;
+        uint8_t rom[10];
+        size_t size;
+        h8s_block_branch_kind_t kind;
+        uint8_t bytes;
+        bool conditional;
+        uint8_t condition;
+        bool has_target;
+        uint32_t fallthrough;
+        uint32_t target;
+    } cases[] = {
+        {"BNE d:8", {0x46, 0xfc}, 2, H8S_BLOCK_BRANCH_BCC8, 2, true, 6, true, 2, 0xfffffe},
+        {"BGT d:16", {0x58, 0xe0, 0x00, 0x06}, 4, H8S_BLOCK_BRANCH_BCC16, 4, true, 14, true, 4, 10},
+        {"BSR d:8", {0x55, 0x04}, 2, H8S_BLOCK_BRANCH_BSR8, 2, false, 0, true, 2, 6},
+        {"BSR d:16", {0x5c, 0x00, 0xff, 0xfc}, 4, H8S_BLOCK_BRANCH_BSR16, 4, false, 0, true, 4, 0},
+        {"JMP @aa:24", {0x5a, 0x12, 0x34, 0x56}, 4, H8S_BLOCK_BRANCH_JMP_ABS24, 4, false, 0, true, 4, 0x123456},
+        {"JSR @aa:24", {0x5e, 0xab, 0xcd, 0xef}, 4, H8S_BLOCK_BRANCH_JSR_ABS24, 4, false, 0, true, 4, 0xabcdef},
+    };
+
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        h8s_block_t block;
+        TEST_ASSERT_(h8s_analyze_rom_block(cases[i].rom, cases[i].size, 0, 16, &block),
+                     "%s should analyze", cases[i].name);
+        TEST_CHECK_(block.instructions == 0, "%s should have no straight-line instructions", cases[i].name);
+        TEST_CHECK_(block.stop == H8S_BLOCK_STOP_BRANCH, "%s should stop at branch", cases[i].name);
+        TEST_CHECK_(block.stop_pc == 0, "%s stop pc", cases[i].name);
+        TEST_CHECK_(block.branch_kind == cases[i].kind, "%s kind", cases[i].name);
+        TEST_CHECK_(block.branch_bytes == cases[i].bytes, "%s bytes", cases[i].name);
+        TEST_CHECK_(block.branch_conditional == cases[i].conditional, "%s conditional", cases[i].name);
+        TEST_CHECK_(block.branch_condition == cases[i].condition, "%s condition", cases[i].name);
+        TEST_CHECK_(block.branch_has_target == cases[i].has_target, "%s has target", cases[i].name);
+        TEST_CHECK_(block.branch_fallthrough == cases[i].fallthrough, "%s fallthrough", cases[i].name);
+        TEST_CHECK_(block.branch_target == cases[i].target, "%s target", cases[i].name);
+    }
+}
+
+static void test_branch_metadata_for_indirect_and_system_exits(void)
+{
+    struct branch_case {
+        const char *name;
+        uint8_t rom[4];
+        size_t size;
+        h8s_block_branch_kind_t kind;
+        bool has_target;
+    } cases[] = {
+        {"SLEEP", {0x01, 0x80}, 2, H8S_BLOCK_BRANCH_SLEEP, false},
+        {"RTS", {0x54, 0x70}, 2, H8S_BLOCK_BRANCH_RETURN, false},
+        {"RTE", {0x56, 0x70}, 2, H8S_BLOCK_BRANCH_RETURN, false},
+        {"TRAPA", {0x57, 0x00}, 2, H8S_BLOCK_BRANCH_TRAP, false},
+        {"JMP @ERn", {0x59, 0x00}, 2, H8S_BLOCK_BRANCH_INDIRECT, false},
+        {"JMP @@aa:8", {0x5b, 0x20}, 2, H8S_BLOCK_BRANCH_INDIRECT, false},
+        {"JSR @ERn", {0x5d, 0x00}, 2, H8S_BLOCK_BRANCH_INDIRECT, false},
+        {"JSR @@aa:8", {0x5f, 0x20}, 2, H8S_BLOCK_BRANCH_INDIRECT, false},
+    };
+
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        h8s_block_t block;
+        TEST_ASSERT_(h8s_analyze_rom_block(cases[i].rom, cases[i].size, 0, 16, &block),
+                     "%s should analyze", cases[i].name);
+        TEST_CHECK_(block.stop == H8S_BLOCK_STOP_BRANCH, "%s should stop at branch", cases[i].name);
+        TEST_CHECK_(block.branch_kind == cases[i].kind, "%s kind", cases[i].name);
+        TEST_CHECK_(block.branch_has_target == cases[i].has_target, "%s has target", cases[i].name);
+        TEST_CHECK_(block.branch_fallthrough == 2, "%s fallthrough", cases[i].name);
+    }
 }
 
 static void test_counts_variable_immediates(void)
@@ -1040,6 +1117,8 @@ static void test_semantic_block_matches_interpreter_mixed_multi_instruction_bloc
 
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
+    { "branch_metadata_for_static_exits", test_branch_metadata_for_static_exits },
+    { "branch_metadata_for_indirect_and_system_exits", test_branch_metadata_for_indirect_and_system_exits },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },

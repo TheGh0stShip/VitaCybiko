@@ -100,6 +100,15 @@ Current block-discovery gate:
   that compare semantic block execution with repeated `h8s_cpu_step` execution
   across flag dependency, register dependency, logic/shift/bit, and immediate
   logic chains.
+- Decoded blocks now retain branch-exit metadata for control-transfer
+  terminators without executing them: branch kind, opcode, byte length,
+  condition, fall-through, and static targets for Bcc/BSR d:8/d:16 and
+  absolute JMP/JSR. Indirect, return, trap, and sleep exits are explicitly
+  classified. This is the first data-structure step toward a branch-aware
+  cached-block or native translation tier.
+- `cybiko-block-scan` now reports branch-exit distributions and top static
+  branch targets. This turns branch-aware cached-block work into a measurable
+  target instead of guessing from aggregate stop counts.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -137,6 +146,23 @@ Next semantic-executor targets, in order:
 2. If a future runtime block tier is attempted, it must include the branch/hot
    prefix groups that dominate the executed opcode profile; straight-line
    semantic-only immutable blocks are too narrow to repay their lookup cost.
+3. Extend host scanning/profiling to rank branch-exit kinds and static target
+   reuse, then use that data to decide whether a C cached-interpreter tier or
+   Vita ARMv7 translation backend has the better payoff.
+
+Current Classic V2 branch-exit scan, max 32 instructions per candidate start:
+
+| Image | Branch stops | Conditional | Static targets | In-ROM even targets | Top branch kinds |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Boot (`emu_rom.bin`) | 12,384 | 8,553 | 10,439 | 9,826 | Bcc8 7,313; JSR abs24 1,605; return 1,295 |
+| CyOS (`emu_cyos.bin`) | 123,488 | 54,773 | 101,342 | 58,176 | Bcc8 46,553; JSR abs24 44,143; return 13,462 |
+| DataFlash (`emu_flash.bin`) | 250,935 | 168,977 | 201,555 | 109,266 | Bcc8 158,926; indirect 25,866; return 16,084 |
+
+The branch data shows a pure straight-line semantic tier is structurally too
+narrow: even the boot/CyOS images repeatedly exit on branch-heavy control flow.
+The next implementation target should use the static metadata to design a
+branch-aware block tier with explicit exits for conditional fall-through/target,
+call/return/indirect exits, and event deadlines.
 
 Do not make semantic block execution the default Vita runtime path until the
 guarded runtime experiment proves an actual speedup without breaking

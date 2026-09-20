@@ -57,6 +57,104 @@ static bool is_control_transfer(uint16_t op)
     return false;
 }
 
+static void describe_control_transfer(const uint8_t *rom, size_t rom_size,
+                                      uint32_t pc, uint16_t op,
+                                      h8s_block_t *block)
+{
+    uint8_t hi = (uint8_t)(op >> 8);
+    uint8_t lo = (uint8_t)op;
+    block->branch_op = op;
+    block->branch_bytes = 2;
+    block->branch_condition = 0;
+    block->branch_conditional = false;
+    block->branch_has_target = false;
+    block->branch_fallthrough = (pc + 2) & 0xffffffu;
+    block->branch_target = 0;
+
+    if ((hi >> 4) == 0x4) {
+        int8_t disp = (int8_t)lo;
+        block->branch_kind = H8S_BLOCK_BRANCH_BCC8;
+        block->branch_condition = hi & 0xf;
+        block->branch_conditional = true;
+        block->branch_has_target = true;
+        block->branch_target = (uint32_t)(block->branch_fallthrough + disp) & 0xffffffu;
+        return;
+    }
+
+    if (hi == 0x01 && lo == 0x80) {
+        block->branch_kind = H8S_BLOCK_BRANCH_SLEEP;
+        return;
+    }
+
+    switch (hi) {
+    case 0x54:
+    case 0x56:
+        block->branch_kind = H8S_BLOCK_BRANCH_RETURN;
+        return;
+    case 0x55: {
+        int8_t disp = (int8_t)lo;
+        block->branch_kind = H8S_BLOCK_BRANCH_BSR8;
+        block->branch_has_target = true;
+        block->branch_target = (uint32_t)(block->branch_fallthrough + disp) & 0xffffffu;
+        return;
+    }
+    case 0x57:
+        block->branch_kind = H8S_BLOCK_BRANCH_TRAP;
+        return;
+    case 0x58:
+        block->branch_bytes = 4;
+        block->branch_fallthrough = (pc + 4) & 0xffffffu;
+        if ((size_t)pc + 3 < rom_size) {
+            int16_t disp = (int16_t)read_be16(rom + pc + 2);
+            block->branch_kind = H8S_BLOCK_BRANCH_BCC16;
+            block->branch_condition = (lo >> 4) & 0xf;
+            block->branch_conditional = true;
+            block->branch_has_target = true;
+            block->branch_target = (uint32_t)(block->branch_fallthrough + disp) & 0xffffffu;
+        } else {
+            block->branch_kind = H8S_BLOCK_BRANCH_INDIRECT;
+        }
+        return;
+    case 0x59:
+    case 0x5b:
+    case 0x5d:
+    case 0x5f:
+        block->branch_kind = H8S_BLOCK_BRANCH_INDIRECT;
+        return;
+    case 0x5a:
+        block->branch_bytes = 4;
+        block->branch_fallthrough = (pc + 4) & 0xffffffu;
+        block->branch_kind = H8S_BLOCK_BRANCH_JMP_ABS24;
+        if ((size_t)pc + 3 < rom_size) {
+            block->branch_has_target = true;
+            block->branch_target = (((uint32_t)lo << 16) | read_be16(rom + pc + 2)) & 0xffffffu;
+        }
+        return;
+    case 0x5c:
+        block->branch_bytes = 4;
+        block->branch_fallthrough = (pc + 4) & 0xffffffu;
+        block->branch_kind = H8S_BLOCK_BRANCH_BSR16;
+        if ((size_t)pc + 3 < rom_size) {
+            int16_t disp = (int16_t)read_be16(rom + pc + 2);
+            block->branch_has_target = true;
+            block->branch_target = (uint32_t)(block->branch_fallthrough + disp) & 0xffffffu;
+        }
+        return;
+    case 0x5e:
+        block->branch_bytes = 4;
+        block->branch_fallthrough = (pc + 4) & 0xffffffu;
+        block->branch_kind = H8S_BLOCK_BRANCH_JSR_ABS24;
+        if ((size_t)pc + 3 < rom_size) {
+            block->branch_has_target = true;
+            block->branch_target = (((uint32_t)lo << 16) | read_be16(rom + pc + 2)) & 0xffffffu;
+        }
+        return;
+    default:
+        block->branch_kind = H8S_BLOCK_BRANCH_INDIRECT;
+        return;
+    }
+}
+
 static bool is_shift_rotate_form(uint8_t lo)
 {
     switch ((lo >> 4) & 0xf) {
@@ -294,6 +392,7 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
         if (is_control_transfer(op)) {
             block.stop = H8S_BLOCK_STOP_BRANCH;
             block.stop_pc = pc;
+            describe_control_transfer(rom, rom_size, pc, op, &block);
             break;
         }
         if (!is_tier1_executable(op)) block.executable = false;

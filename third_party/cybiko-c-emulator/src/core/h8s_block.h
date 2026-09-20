@@ -11,6 +11,20 @@ typedef enum {
     H8S_BLOCK_STOP_UNSUPPORTED
 } h8s_block_stop_t;
 
+typedef enum {
+    H8S_BLOCK_BRANCH_NONE,
+    H8S_BLOCK_BRANCH_BCC8,
+    H8S_BLOCK_BRANCH_BCC16,
+    H8S_BLOCK_BRANCH_BSR8,
+    H8S_BLOCK_BRANCH_BSR16,
+    H8S_BLOCK_BRANCH_JMP_ABS24,
+    H8S_BLOCK_BRANCH_JSR_ABS24,
+    H8S_BLOCK_BRANCH_INDIRECT,
+    H8S_BLOCK_BRANCH_RETURN,
+    H8S_BLOCK_BRANCH_TRAP,
+    H8S_BLOCK_BRANCH_SLEEP
+} h8s_block_branch_kind_t;
+
 #define H8S_BLOCK_MAX_INSTRUCTIONS 32
 
 typedef struct {
@@ -31,6 +45,14 @@ typedef struct {
     unsigned instructions;
     h8s_block_stop_t stop;
     uint32_t stop_pc;
+    h8s_block_branch_kind_t branch_kind;
+    uint16_t branch_op;
+    uint8_t branch_bytes;
+    uint8_t branch_condition;
+    bool branch_conditional;
+    bool branch_has_target;
+    uint32_t branch_fallthrough;
+    uint32_t branch_target;
     /* Number of leading instructions covered by the initial semantic tier. */
     unsigned executable_prefix_instructions;
     /* True only when every instruction in this block is covered by that tier. */
