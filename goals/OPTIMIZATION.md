@@ -625,6 +625,12 @@ Rejected follow-up experiments on 2026-09-20:
   repeated Xtreme-only runs. The patch was removed. Do not retry simple
   `cybiko_run_frame` deadline memoization without proving the CPU batches are
   actually long enough for it to amortize the extra branch/state tracking.
+- Header-only timer8/timer16 deadline helpers for the frame scheduler preserved
+  timer tests, scheduler equivalence, full `ctest`, and three-model smoke, but
+  did not demonstrate a stable speedup. The first Xtreme smoke measured 3.59 s,
+  while repeated Xtreme-only runs measured 3.65/3.93/4.37 s. The patch was
+  removed. Do not duplicate timer deadline logic in headers without a stronger
+  benchmark signal or a structural reduction in deadline queries.
 
 Do not retry these as-is; the next performance step needs semantic decoded
 blocks or an ARMv7 translation tier rather than more scalar hot-path nibbling.
