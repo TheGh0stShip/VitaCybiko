@@ -302,6 +302,11 @@ Raw linked executable SHA-256:
   `sce_sys/livearea/contents/startup.png` are present.
 - Local host verification passed all 16 default C/Python tests. The Vita VPK
   target built successfully with VitaSDK.
+- Post-release CI on commit `1fca4da` passed the public
+  [Host tests workflow](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/35521286530):
+  Release host build/tests and sanitizer/frontend host build/tests both
+  completed successfully. This run followed a UBSan fix for H8S long INC/DEC
+  and NEG arithmetic wraparound.
 - The local Classic V2 600-frame firmware smoke passed with 599 active frames
   and reported semantic fast-path telemetry:
   `semantic_fast_blocks=220047`, `semantic_fast_cycles=556354`,
