@@ -452,7 +452,10 @@ Executed opcode profile gate:
   opcode high-byte counts and the top exact 16-bit opcodes at process exit;
   normal release/Vita builds leave it disabled. It now also reports dynamic
   static-branch execution/taken counts and a direct-mapped top target sample
-  for Bcc/BSR/JMP/JSR, return, indirect, trap, and sleep exits.
+  for Bcc/BSR/JMP/JSR, return, indirect, trap, and sleep exits. The profiler
+  now also ranks the second word of hot `0x0100` and `0x01f0` prefixed
+  instructions so memory-form work can target measured addressing modes rather
+  than broad prefix families.
 - 600-frame smoke profiles show that byte-immediate opcodes are not the right
   first runtime tier. The hottest groups are prefix `0x01`, `0x0f` MOV.L
   register, branches (`0x40`-`0x4f`), shifts/rotates (`0x10`/`0x11`), ADDS/SUBS
@@ -483,6 +486,24 @@ The first useful design checkpoint is therefore memory-aware handling for
 register-only `0x01f0` long logic subset is now covered by the isolated
 semantic executor, but this does not by itself improve runtime speed until a
 broader branch-aware block dispatcher uses the coverage.
+
+Top `0x0100` second words from the same 600-frame smoke runs:
+
+| Image | #1 | #2 | #3 | #4 | #5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Classic V1 | 7820 1,153,481 | 6903 1,085,519 | 6982 1,077,587 | 6f75 662,810 | 6ff5 458,592 |
+| Classic V2 | 69c2 187,036 | 7820 177,872 | 6945 176,538 | 6b00 134,989 | 6f75 94,241 |
+| Xtreme | 6f75 985,484 | 6ff5 606,280 | 6f42 427,808 | 6f73 421,133 | 6ff3 393,799 |
+
+For Xtreme, the hot `0x0100` forms are overwhelmingly long memory moves with
+16-bit displacement (`0x6fxx`), followed by absolute (`0x6b00`) and register
+indirect (`0x69xx`) forms. A safe memory-aware block tier should therefore
+start with guarded 32-bit reads/writes where the effective address resolves to
+plain RAM or immutable ROM/flash, and must exit before RAM writes that could
+affect code, memory-mapped I/O, DMA-visible regions, or peripheral
+synchronization. This matches QEMU-style translated memory fast/slow paths:
+fast only when the address-space guard proves ordinary memory, otherwise fall
+back to the existing interpreter/bus path.
 
 Dynamic branch profile on the locally staged Classic V2 600-frame smoke:
 

@@ -22,6 +22,8 @@
 #define BRANCH_PROFILE_TARGET_SLOTS 4096
 static uint64_t opcode_profile_hi[256];
 static uint64_t opcode_profile_exact[65536];
+static uint64_t prefix0100_profile_op2[65536];
+static uint64_t prefix01f0_profile_op2[65536];
 static uint64_t branch_profile_kind[12];
 static uint64_t branch_profile_taken_kind[12];
 static uint32_t branch_profile_target_tag[BRANCH_PROFILE_TARGET_SLOTS];
@@ -47,6 +49,36 @@ static void opcode_profile_dump(void) {
         if (!best_count) break;
         opcode_printed[best] = true;
         fprintf(stderr, "opcode_exact_top%02u_op=0x%04x count=%llu\n",
+                rank + 1, best, (unsigned long long)best_count);
+    }
+    bool prefix0100_printed[65536] = {0};
+    for (unsigned rank = 0; rank < 16; ++rank) {
+        unsigned best = 0;
+        uint64_t best_count = 0;
+        for (unsigned i = 0; i < 65536; ++i) {
+            if (!prefix0100_printed[i] && prefix0100_profile_op2[i] > best_count) {
+                best_count = prefix0100_profile_op2[i];
+                best = i;
+            }
+        }
+        if (!best_count) break;
+        prefix0100_printed[best] = true;
+        fprintf(stderr, "prefix0100_op2_top%02u_op=0x%04x count=%llu\n",
+                rank + 1, best, (unsigned long long)best_count);
+    }
+    bool prefix01f0_printed[65536] = {0};
+    for (unsigned rank = 0; rank < 16; ++rank) {
+        unsigned best = 0;
+        uint64_t best_count = 0;
+        for (unsigned i = 0; i < 65536; ++i) {
+            if (!prefix01f0_printed[i] && prefix01f0_profile_op2[i] > best_count) {
+                best_count = prefix01f0_profile_op2[i];
+                best = i;
+            }
+        }
+        if (!best_count) break;
+        prefix01f0_printed[best] = true;
+        fprintf(stderr, "prefix01f0_op2_top%02u_op=0x%04x count=%llu\n",
                 rank + 1, best, (unsigned long long)best_count);
     }
     static const char *names[] = {
@@ -86,6 +118,17 @@ CPU_INLINE void opcode_profile_record(uint16_t op) {
     opcode_profile_exact[op]++;
 }
 
+CPU_INLINE void prefix01_profile_record(uint8_t lo, uint16_t op2) {
+    if (!opcode_profile_registered) {
+        atexit(opcode_profile_dump);
+        opcode_profile_registered = true;
+    }
+    if (lo == 0x00)
+        prefix0100_profile_op2[op2]++;
+    else if (lo == 0xf0)
+        prefix01f0_profile_op2[op2]++;
+}
+
 CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target) {
     if (!opcode_profile_registered) {
         atexit(opcode_profile_dump);
@@ -105,6 +148,9 @@ CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target
 #else
 CPU_INLINE void opcode_profile_record(uint16_t op) {
     (void)op;
+}
+CPU_INLINE void prefix01_profile_record(uint8_t lo, uint16_t op2) {
+    (void)lo; (void)op2;
 }
 CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target) {
     (void)kind; (void)taken; (void)target;
@@ -733,7 +779,7 @@ static void decode0100(h8s_cpu_t *cpu, uint16_t op2) {
 /* ---- decode01: prefix 0x01xx ---- */
 static void decode01(h8s_cpu_t *cpu, int lo) {
     switch (lo) {
-        case 0x00: { uint16_t op2 = fetch16(cpu); decode0100(cpu, op2); break; }
+        case 0x00: { uint16_t op2 = fetch16(cpu); prefix01_profile_record((uint8_t)lo, op2); decode0100(cpu, op2); break; }
         case 0x10: case 0x20: case 0x30: {
             int count = (lo >> 4);
             uint16_t op2 = fetch16(cpu);
@@ -755,6 +801,7 @@ static void decode01(h8s_cpu_t *cpu, int lo) {
         case 0x41: { uint16_t op2 = fetch16(cpu); decode0141(cpu, op2); break; }
         case 0xC0: case 0xD0: case 0xF0: {
             uint16_t op2 = fetch16(cpu);
+            prefix01_profile_record((uint8_t)lo, op2);
             int hi2 = (op2 >> 8) & 0xFF;
             if (hi2 == 0x6B) { decode6B_32(cpu, op2); }
             else if (hi2 == 0x50 || hi2 == 0x52) { decode_mulxs(cpu, hi2, op2); }
