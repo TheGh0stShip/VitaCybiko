@@ -184,6 +184,8 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
                            unsigned max_instructions, h8s_block_t *out)
 {
     if (!rom || !out || start >= rom_size || max_instructions == 0) return false;
+    if (max_instructions > H8S_BLOCK_MAX_INSTRUCTIONS)
+        max_instructions = H8S_BLOCK_MAX_INSTRUCTIONS;
 
     h8s_block_t block = {
         .start = start,
@@ -231,6 +233,8 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
 
         pc += bytes;
         block.bytes += bytes;
+        block.decoded[block.instructions].op = op;
+        block.decoded[block.instructions].bytes = (uint8_t)bytes;
         block.instructions++;
         if (block.executable) block.executable_prefix_instructions++;
         block.stop_pc = pc;
@@ -250,6 +254,8 @@ void h8s_block_cache_init(h8s_block_cache_t *cache, unsigned max_instructions)
     if (!cache) return;
     memset(cache, 0, sizeof(*cache));
     cache->max_instructions = max_instructions ? max_instructions : 32;
+    if (cache->max_instructions > H8S_BLOCK_MAX_INSTRUCTIONS)
+        cache->max_instructions = H8S_BLOCK_MAX_INSTRUCTIONS;
 }
 
 void h8s_block_cache_clear(h8s_block_cache_t *cache)
@@ -258,6 +264,8 @@ void h8s_block_cache_clear(h8s_block_cache_t *cache)
     unsigned max_instructions = cache->max_instructions;
     memset(cache, 0, sizeof(*cache));
     cache->max_instructions = max_instructions ? max_instructions : 32;
+    if (cache->max_instructions > H8S_BLOCK_MAX_INSTRUCTIONS)
+        cache->max_instructions = H8S_BLOCK_MAX_INSTRUCTIONS;
 }
 
 const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,

@@ -11,6 +11,13 @@ typedef enum {
     H8S_BLOCK_STOP_UNSUPPORTED
 } h8s_block_stop_t;
 
+#define H8S_BLOCK_MAX_INSTRUCTIONS 32
+
+typedef struct {
+    uint16_t op;
+    uint8_t bytes;
+} h8s_block_instruction_t;
+
 typedef struct {
     uint32_t start;
     uint32_t bytes;
@@ -21,6 +28,7 @@ typedef struct {
     unsigned executable_prefix_instructions;
     /* True only when every instruction in this block is covered by that tier. */
     bool executable;
+    h8s_block_instruction_t decoded[H8S_BLOCK_MAX_INSTRUCTIONS];
 } h8s_block_t;
 
 #define H8S_BLOCK_CACHE_ENTRIES 256

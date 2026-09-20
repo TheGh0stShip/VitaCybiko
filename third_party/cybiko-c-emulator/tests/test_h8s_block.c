@@ -17,6 +17,10 @@ static void test_stops_before_branch(void)
     TEST_CHECK(block.stop_pc == 4);
     TEST_CHECK(block.executable);
     TEST_CHECK(block.executable_prefix_instructions == 2);
+    TEST_CHECK(block.decoded[0].op == 0x0b00);
+    TEST_CHECK(block.decoded[0].bytes == 2);
+    TEST_CHECK(block.decoded[1].op == 0x0b81);
+    TEST_CHECK(block.decoded[1].bytes == 2);
 }
 
 static void test_counts_variable_immediates(void)
@@ -34,6 +38,10 @@ static void test_counts_variable_immediates(void)
     TEST_CHECK(block.stop_pc == 10);
     TEST_CHECK(block.executable);
     TEST_CHECK(block.executable_prefix_instructions == 2);
+    TEST_CHECK(block.decoded[0].op == 0x7900);
+    TEST_CHECK(block.decoded[0].bytes == 4);
+    TEST_CHECK(block.decoded[1].op == 0x7a00);
+    TEST_CHECK(block.decoded[1].bytes == 6);
 }
 
 static void test_counts_absolute_and_compound_bit_lengths(void)
@@ -203,6 +211,23 @@ static void test_cache_rejects_invalid_start(void)
     TEST_CHECK(cache.hits == 0);
 }
 
+static void test_cache_caps_instruction_limit(void)
+{
+    uint8_t rom[128] = {0};
+    for (unsigned i = 0; i < sizeof(rom); i += 2) {
+        rom[i] = 0x0b;
+        rom[i + 1] = 0x00;
+    }
+    h8s_block_cache_t cache;
+    h8s_block_cache_init(&cache, 200);
+    const h8s_block_t *block = h8s_block_cache_get(&cache, rom, sizeof(rom), 0);
+    TEST_ASSERT(block != NULL);
+    TEST_CHECK(cache.max_instructions == H8S_BLOCK_MAX_INSTRUCTIONS);
+    TEST_CHECK(block->instructions == H8S_BLOCK_MAX_INSTRUCTIONS);
+    TEST_CHECK(block->decoded[H8S_BLOCK_MAX_INSTRUCTIONS - 1].op == 0x0b00);
+    TEST_CHECK(block->decoded[H8S_BLOCK_MAX_INSTRUCTIONS - 1].bytes == 2);
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -216,5 +241,6 @@ TEST_LIST = {
     { "cache_collision_evicts", test_cache_collision_evicts },
     { "cache_clear_preserves_limit", test_cache_clear_preserves_limit },
     { "cache_rejects_invalid_start", test_cache_rejects_invalid_start },
+    { "cache_caps_instruction_limit", test_cache_caps_instruction_limit },
     { NULL, NULL }
 };

@@ -46,7 +46,10 @@ Current block-discovery gate:
   invalid starts;
 - tier-one executable-block classification now identifies straight-line blocks
   containing only register/immediate/non-memory instructions, while recording
-  the executable prefix before memory/I/O/control-sensitive forms.
+  the executable prefix before memory/I/O/control-sensitive forms;
+- cached blocks now store bounded decoded instruction words and byte lengths,
+  capped by `H8S_BLOCK_MAX_INSTRUCTIONS`, so the next semantic executor can
+  consume cache entries without repeating length decode.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
