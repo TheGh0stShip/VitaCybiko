@@ -292,6 +292,9 @@ Raw linked executable SHA-256:
 - Package metadata, LiveArea title and runtime UI now report `01.16`.
 - The VPK contains 9 ZIP entries, all stored for VitaShell compatibility, and
   `zipfile.testzip()` reported no corrupt member.
+- The GitHub `v0.1.16-preview` release asset was downloaded after publication;
+  its SHA-256 matched the candidate VPK hash above, it still contained 9 stored
+  ZIP entries, and `zipfile.testzip()` reported no corrupt member.
 - The packaged `param.sfo` contains `VitaCybiko 01.16`, `01.16`, and title ID
   `VCYB00001`. `sce_sys/icon0.png`, `sce_sys/livearea/contents/bg.png`, and
   `sce_sys/livearea/contents/startup.png` are present.
