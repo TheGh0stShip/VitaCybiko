@@ -219,16 +219,18 @@ static void write_timer8(address_bus_t *bus, int bus_off, uint8_t value)
 static uint16_t adc_channel_value(const address_bus_t *bus, int channel)
 {
     if (bus->machine->model == CYBIKO_XTREME) {
-        return 0xCC00;
+        return 0x0330;
     }
 
     /* Classic CyOS compares ADC channel 1 against channel 2 for the battery
      * check. Keep a healthy spread so firmware never sees low/critical power
-     * and enters its auto-shutdown path. Values are left-aligned like the H8S
-     * ADC data registers. */
+     * and enters its auto-shutdown path. Values are 10-bit ADC samples; H8 ADC
+     * byte reads expose them as high=(sample >> 2), low=(sample << 6), matching
+     * MAME's H8 ADC device. */
+    if (channel == 0) return 0x0300;
     if (channel == 1) return 0x0300;
     if (channel == 2) return 0x0100;
-    return 0x0200;
+    return 0x0300;
 }
 
 static uint8_t read_adc_data_byte(address_bus_t *bus, uint32_t address)
@@ -236,7 +238,7 @@ static uint8_t read_adc_data_byte(address_bus_t *bus, uint32_t address)
     int reg = (int)(address - 0xFFFF90);
     int channel = reg / 2;
     uint16_t value = adc_channel_value(bus, channel);
-    return (reg & 1) ? (uint8_t)value : (uint8_t)(value >> 8);
+    return (reg & 1) ? (uint8_t)(value << 6) : (uint8_t)(value >> 2);
 }
 
 /* --- Init / Free --- */
@@ -494,6 +496,10 @@ static uint16_t read_on_chip16(address_bus_t *bus, uint32_t address)
     int t16 = route_timer16_read16(bus, address);
     if (t16 >= 0) return (uint16_t)t16;
 
+    if (address >= 0xFFFF90 && address <= 0xFFFF96 && (address & 1) == 0) {
+        return adc_channel_value(bus, (int)((address - 0xFFFF90) / 2));
+    }
+
     /* I/O register region: compose from two 8-bit reads */
     if (address >= 0xFFFE00) {
         return (read_on_chip8(bus, address) << 8) | read_on_chip8(bus, address + 1);
@@ -717,9 +723,9 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
     if (address >= 0xFFFF90 && address <= 0xFFFF99) {
         if (address == 0xFFFF98) {
             if (value & 0x20) {
-                bus->adcsr = (value & 0x7F) | 0x80;  /* auto-set ADF */
+                bus->adcsr = (value & 0x5F) | 0x80;  /* immediate conversion done: ADF set, ADST clear */
             } else {
-                bus->adcsr = value & 0x7F;
+                bus->adcsr = (value & 0x7F) | (bus->adcsr & value & 0x80);
             }
         } else if (address == 0xFFFF99) {
             bus->adcr = value & 0xFF;

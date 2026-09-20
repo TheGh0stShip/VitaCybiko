@@ -1,5 +1,42 @@
 # Verification — 2026-09-19
 
+## 01.10 physical Vita update
+
+Vita package metadata is `01.10`. Candidate VPK SHA-256:
+
+```text
+430f9589409df4a2723fe952e98b57d1afe2a17d39cee7c5288614e02cb75eec
+```
+
+Executable payload SHA-256:
+
+```text
+634b9351b2c03675ae53335a5eab47ebe86245f20b3d9c241744b6aaacda649d
+```
+
+- Fixed Classic/Xtreme ADC byte reads to match the H8 ADC layout used by MAME:
+  high byte is `sample >> 2`, low byte is `sample << 6`. This corrects the
+  previous under-reported battery reading that still showed low battery in CyOS.
+- ADC start writes now complete immediately by setting ADF and clearing ADST,
+  so CyOS does not see a permanently busy converter.
+- Vita emulation pacing now allows up to two bounded catch-up frames and skips
+  intermediate LCD texture uploads during catch-up, reducing slow-motion during
+  the CyOS swirl/menu transition without wasting GPU work on unpresented frames.
+- Version and LiveArea art were bumped to `01.10`; LiveArea `content-rev` is
+  now `10`.
+- Local verification: regular host C suite passed 12/12, frontend-enabled host
+  suite passed 13/13 with SDL dummy video/audio, the Vita build completed, the
+  VPK passed ZIP integrity checks, and package metadata reports `01.10`.
+- Classic V2 C4PC headless smoke test passed for 3600 frames using the supplied
+  firmware/dataflash from `/mnt/e/cybiko/apps/c4pc`.
+- The VPK was uploaded to the physical Vita at `ux0:/VPK/VitaCybiko.vpk`.
+  The extracted app folder was also updated at `ux0:/app/VCYB00001/`; FTP
+  readback verified the VPK, `eboot.bin`, `bg.png`, `startup.png`, and
+  `template.xml` hashes.
+
+Physical Vita behavior after the FTP update still requires user confirmation
+for corrected battery display and smoother CyOS menu transition.
+
 ## 01.09 physical Vita update
 
 Vita package metadata is `01.09`. Candidate VPK SHA-256:

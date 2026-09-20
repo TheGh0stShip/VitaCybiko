@@ -78,7 +78,7 @@
 #define AUDIO_MAX_QUEUE_FRAMES 4u
 #define AUDIO_CONVERT_MAX_SAMPLES 8192
 #ifdef VITA
-#define EMULATION_CATCHUP_MAX_FRAMES 0
+#define EMULATION_CATCHUP_MAX_FRAMES 2
 #else
 #define EMULATION_CATCHUP_MAX_FRAMES 2
 #endif
@@ -336,6 +336,7 @@ typedef struct {
     bool backgrounded;
     bool focus_lost;
     bool quit_requested;
+    bool skip_lcd_upload;
     cybiko_model_t model;
     char status[128];
 } app_ctx_t;
@@ -1210,7 +1211,7 @@ static void hal_render_frame(void *ctx_ptr, const uint8_t *pixels, int width, in
 {
     app_ctx_t *ctx = ctx_ptr;
     if (!ctx->lcd_texture || width != CYBIKO_LCD_WIDTH ||
-        height != CYBIKO_LCD_HEIGHT) {
+        height != CYBIKO_LCD_HEIGHT || ctx->skip_lcd_upload) {
         return;
     }
 
@@ -2096,13 +2097,17 @@ select_model:
 
         uint64_t frame_now = SDL_GetPerformanceCounter();
         int catchup_frames = 0;
-        while (catchup_frames < EMULATION_CATCHUP_MAX_FRAMES &&
-               frame_now > frame_deadline + frame_interval) {
-            frame_deadline += frame_interval;
-            advance_emulated_frame(emu, ctx);
-            catchup_frames++;
-            frame_now = SDL_GetPerformanceCounter();
+        if (frame_now > frame_deadline + frame_interval) {
+            uint64_t late_frames = (frame_now - frame_deadline) / frame_interval;
+            catchup_frames = (int)(late_frames > EMULATION_CATCHUP_MAX_FRAMES ?
+                                   EMULATION_CATCHUP_MAX_FRAMES : late_frames);
         }
+        for (int i = 0; i < catchup_frames; ++i) {
+            frame_deadline += frame_interval;
+            ctx->skip_lcd_upload = i + 1 < catchup_frames;
+            advance_emulated_frame(emu, ctx);
+        }
+        ctx->skip_lcd_upload = false;
 
         render_frame(ctx);
 

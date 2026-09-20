@@ -127,13 +127,24 @@ static void test_battery_adc_stays_charged(void)
         uint16_t ch1 = bus_read16(&bus, 0xFFFF92);
         uint16_t ch2 = bus_read16(&bus, 0xFFFF94);
         if (model == CYBIKO_XTREME) {
-            TEST_CHECK(ch1 == 0xCC00);
-            TEST_CHECK(ch2 == 0xCC00);
+            TEST_CHECK(ch1 == 0x0330);
+            TEST_CHECK(ch2 == 0x0330);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF92) == 0xCC);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF93) == 0x00);
         } else {
             TEST_CHECK(ch1 == 0x0300);
             TEST_CHECK(ch2 == 0x0100);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF92) == 0xC0);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF93) == 0x00);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF94) == 0x40);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF95) == 0x00);
             TEST_CHECK(ch1 > ch2 + 0x00F0);
         }
+        bus_write8(&bus, 0xFFFF98, 0x20 | 2);
+        TEST_CHECK(bus_read8(&bus, 0xFFFF98) & 0x80);
+        TEST_CHECK(!(bus_read8(&bus, 0xFFFF98) & 0x20));
+        bus_write8(&bus, 0xFFFF98, 0);
+        TEST_CHECK(!(bus_read8(&bus, 0xFFFF98) & 0x80));
         bus_free(&bus);
     }
 }
