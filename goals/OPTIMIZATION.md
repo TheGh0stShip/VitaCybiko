@@ -14,7 +14,8 @@ per 600 frames.
 
 ## Goal B — Immutable-ROM decoded blocks
 
-Status: next implementation target.
+Status: partial — raw immutable-ROM fetch blocks landed in `495aa2a`; semantic
+decoded blocks remain open.
 
 Build a bounded cache keyed by ROM PC. A block ends before branches, interrupts,
 I/O, event deadlines, or any instruction whose operands leave immutable ROM.
@@ -40,7 +41,8 @@ only.
 
 ## Goal D — Peripheral-event cost reduction
 
-Status: profiling target.
+Status: partial — disabled timers now skip event-query calls in `5216028`;
+deadline caching for active timers remains open.
 
 The latest host profile attributes material time to
 `timer16_cycles_until_event`, `cycles_until_next_peripheral_event`, and
