@@ -85,6 +85,10 @@ Current block-discovery gate:
   counting them as executable semantic gaps. On local Classic V2 candidate
   blobs, every tier-one executable block is now covered by the isolated
   semantic executor.
+- A first interpreter-equivalence harness now compares isolated semantic block
+  execution against `h8s_cpu_step` for representative supported forms across
+  multiple register/CCR edge states. This is the required safety gate before
+  runtime integration.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -116,11 +120,10 @@ locally available Classic V2 candidate blobs:
 
 Next semantic-executor targets, in order:
 
-1. Build an interpreter-equivalence harness for isolated semantic blocks before
-   any runtime wiring. It should compare CPU register/CCR/PC results for each
-   supported two-byte form and immediate form against the existing interpreter
-   decode path.
-2. Only after equivalence is proven, prototype a runtime semantic-block call
+1. Expand the interpreter-equivalence harness from representative forms to a
+   generated table of every supported tier-one opcode family, including
+   immediate word/long cases and all valid shift/rotate/unary/bit subforms.
+2. Only after broad equivalence is proven, prototype a runtime semantic-block call
    at safe immutable-ROM/event-deadline boundaries and benchmark against the
    current interpreter. Remove it if it repeats prior slowdown behavior.
 
@@ -183,6 +186,19 @@ the semantic executor covers every executable tier-one block:
 This does not mean runtime speed is fixed. It means the isolated executor's
 eligibility predicate is now honest enough to move to equivalence testing and
 careful runtime integration experiments.
+
+Initial interpreter-equivalence gate:
+
+- Added a test harness that writes a single instruction to on-chip RAM, executes
+  it through the existing `h8s_cpu_step` interpreter, executes the same bytes as
+  a one-instruction semantic block, and compares all ER registers, CCR, and PC
+  delta.
+- Current matrix covers 15 representative forms across three edge-value
+  register banks and four CCR states (180 comparisons total):
+  byte/word/long register ALU, MOV.L, INC/DEC, NEG, shift/rotate, register bit
+  ops, immediate bit ops, byte immediate, word immediate, and long immediate.
+- Focused `h8s_block` test passes with this matrix. This is a start, not yet
+  enough to justify runtime wiring.
 
 Executed opcode profile gate:
 
@@ -286,6 +302,8 @@ starvation with frame dropping.
 - [H8/300 programming manual mirror](https://docs.alexrp.com/h8300/)
 - [QEMU TCG translation blocks](https://www.qemu.org/docs/master/devel/tcg.html)
 - [Cached interpreter overview](https://emudev.org/2021/01/31/cached-interpreter.html)
+- [QEMU translator internals](https://www.qemu.org/docs/master/devel/tcg.html)
+- [Differential emulator-instruction testing example](https://arxiv.org/abs/2105.14273)
 - [melonDS JIT/cached-interpreter notes](https://melonds.kuribo64.net/comments.php?id=138)
 - [ARM cache-coherency guidance](https://developer.arm.com/community/arm-community-blogs/b/architectures-and-processors-blog/posts/caches-and-self-modifying-code)
 - [Mupen64Plus ARM dynarec notes](https://github.com/mupen64plus/mupen64plus-core/blob/master/doc/new_dynarec.mediawiki)

@@ -1,5 +1,81 @@
 #include "acutest.h"
 #include "core/h8s_block.h"
+#include "core/h8s_cpu.h"
+#include "core/address_bus.h"
+#include <string.h>
+
+#define EQUIV_CODE_BASE 0xFFDC00u
+
+static void write_equiv_code(address_bus_t *bus, const uint8_t *code, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+        memory_write8(&bus->on_chip_ram, (uint32_t)i, code[i]);
+}
+
+static void setup_equiv_cpu(address_bus_t *bus, h8s_cpu_t *cpu,
+                            const uint8_t *code, size_t size,
+                            const uint32_t er[8], uint8_t ccr)
+{
+    bus_init(bus);
+    memory_init(&bus->on_chip_ram, 0x2400, true);
+    h8s_cpu_init(cpu, bus);
+    bus->cpu = cpu;
+    cpu->pc = EQUIV_CODE_BASE;
+    cpu->ccr = ccr;
+    for (unsigned i = 0; i < 8; ++i)
+        cpu->er[i] = er[i];
+    write_equiv_code(bus, code, size);
+}
+
+static void teardown_equiv_cpu(address_bus_t *bus)
+{
+    memory_free(&bus->on_chip_ram);
+    bus_free(bus);
+}
+
+static void check_semantic_matches_interpreter(const char *name,
+                                               const uint8_t *code, size_t size,
+                                               const uint32_t er[8], uint8_t ccr)
+{
+    uint8_t rom[10] = {0};
+    TEST_ASSERT(size + 2 <= sizeof(rom));
+    memcpy(rom, code, size);
+    rom[size] = 0x54;
+    rom[size + 1] = 0x70; /* RTS boundary after the tested instruction. */
+
+    h8s_block_t block;
+    TEST_ASSERT_(h8s_analyze_rom_block(rom, size + 2, 0, 4, &block),
+                 "%s should analyze", name);
+    TEST_ASSERT_(block.instructions == 1, "%s should produce a one-instruction block", name);
+    TEST_ASSERT_(h8s_semantic_block_supported(&block), "%s should be semantic-supported", name);
+
+    h8s_block_cpu_state_t semantic = {.ccr = ccr, .pc = 0};
+    for (unsigned i = 0; i < 8; ++i)
+        semantic.er[i] = er[i];
+    TEST_ASSERT_(h8s_execute_semantic_block(&block, &semantic),
+                 "%s semantic execution should succeed", name);
+
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_equiv_cpu(&bus, &cpu, code, size, er, ccr);
+    h8s_cpu_step(&cpu);
+
+    for (unsigned i = 0; i < 8; ++i) {
+        TEST_CHECK_(semantic.er[i] == cpu.er[i],
+                    "%s ER%u semantic=0x%08x interpreter=0x%08x",
+                    name, i, semantic.er[i], cpu.er[i]);
+    }
+    TEST_CHECK_(semantic.ccr == cpu.ccr,
+                "%s CCR semantic=0x%02x interpreter=0x%02x",
+                name, semantic.ccr, cpu.ccr);
+    TEST_CHECK_(semantic.pc == size,
+                "%s semantic PC should advance by %zu, got %u",
+                name, size, semantic.pc);
+    TEST_CHECK_(cpu.pc == EQUIV_CODE_BASE + size,
+                "%s interpreter PC should advance by %zu, got 0x%06x",
+                name, size, cpu.pc);
+    teardown_equiv_cpu(&bus);
+}
 
 static void test_stops_before_branch(void)
 {
@@ -614,6 +690,63 @@ static void test_semantic_block_executes_immediate_bit_ops(void)
     TEST_CHECK(!(state.ccr & 0x04));
 }
 
+static void test_semantic_block_matches_interpreter_representative_ops(void)
+{
+    const uint32_t ers[][8] = {
+        {
+            0x12345678, 0x87654321, 0x7fffffff, 0x80000001,
+            0x0000f0f0, 0x00000f0f, 0x00000003, 0x00000080
+        },
+        {
+            0x00000000, 0x00000001, 0xffffffff, 0x80000000,
+            0x00007fff, 0x00008000, 0x00000007, 0x0000ff00
+        },
+        {
+            0x00ff00ff, 0xff00ff00, 0x00010000, 0xffff0001,
+            0xaaaaaaaa, 0x55555555, 0x00000004, 0x0000007f
+        }
+    };
+    const uint8_t ccrs[] = {
+        0x00, 0x01, 0x25, 0xff
+    };
+
+    const uint8_t add_b_reg[] = {0x08, 0x89};
+    const uint8_t mov_w_reg[] = {0x0d, 0x45};
+    const uint8_t add_l_reg[] = {0x0a, 0x90};
+    const uint8_t inc_w[] = {0x0b, 0x54};
+    const uint8_t sub_l_reg[] = {0x1a, 0xa3};
+    const uint8_t mov_l_reg[] = {0x0f, 0x81};
+    const uint8_t neg_l[] = {0x17, 0xb3};
+    const uint8_t shal_b[] = {0x10, 0x08};
+    const uint8_t rotxr_b[] = {0x13, 0x0f};
+    const uint8_t or_w[] = {0x64, 0x45};
+    const uint8_t btst_reg[] = {0x63, 0x67};
+    const uint8_t bld_imm[] = {0x77, 0x07};
+    const uint8_t add_b_imm[] = {0x88, 0x7f};
+    const uint8_t mov_w_imm[] = {0x79, 0x04, 0x80, 0x00};
+    const uint8_t xor_l_imm[] = {0x7a, 0x53, 0x12, 0x34, 0x56, 0x78};
+
+    for (unsigned e = 0; e < sizeof(ers) / sizeof(ers[0]); ++e) {
+        for (unsigned c = 0; c < sizeof(ccrs) / sizeof(ccrs[0]); ++c) {
+            check_semantic_matches_interpreter("ADD.B R0L,R1L", add_b_reg, sizeof(add_b_reg), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("MOV.W R4,R5", mov_w_reg, sizeof(mov_w_reg), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("ADD.L ER1,ER0", add_l_reg, sizeof(add_l_reg), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("INC.W R4", inc_w, sizeof(inc_w), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("SUB.L ER2,ER3", sub_l_reg, sizeof(sub_l_reg), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("MOV.L ER0,ER1", mov_l_reg, sizeof(mov_l_reg), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("NEG.L ER3", neg_l, sizeof(neg_l), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("SHAL.B R0L", shal_b, sizeof(shal_b), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("ROTXR.B R7L", rotxr_b, sizeof(rotxr_b), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("OR.W R4,R5", or_w, sizeof(or_w), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("BTST R6H bit,R7H", btst_reg, sizeof(btst_reg), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("BLD #0,R7H", bld_imm, sizeof(bld_imm), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("ADD.B #0x7f,R0L", add_b_imm, sizeof(add_b_imm), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("MOV.W #0x8000,R4", mov_w_imm, sizeof(mov_w_imm), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("XOR.L #0x12345678,ER3", xor_l_imm, sizeof(xor_l_imm), ers[e], ccrs[c]);
+        }
+    }
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -643,5 +776,6 @@ TEST_LIST = {
     { "semantic_block_executes_zero_a_inc_dec_forms", test_semantic_block_executes_zero_a_inc_dec_forms },
     { "semantic_block_executes_register_bit_and_word_logic", test_semantic_block_executes_register_bit_and_word_logic },
     { "semantic_block_executes_immediate_bit_ops", test_semantic_block_executes_immediate_bit_ops },
+    { "semantic_block_matches_interpreter_representative_ops", test_semantic_block_matches_interpreter_representative_ops },
     { NULL, NULL }
 };
