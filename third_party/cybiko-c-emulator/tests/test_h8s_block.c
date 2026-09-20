@@ -365,6 +365,31 @@ static void test_semantic_block_executes_register_alu_ops(void)
     TEST_CHECK(state.pc == 12);
 }
 
+static void test_semantic_block_executes_byte_word_register_ops(void)
+{
+    const uint8_t rom[] = {
+        0x0c, 0x89, /* MOV.B R0L,R1L */
+        0x08, 0x89, /* ADD.B R0L,R1L */
+        0x1c, 0x89, /* CMP.B R0L,R1L; no write */
+        0x1e, 0x89, /* SUBX.B R0L,R1L */
+        0x0d, 0x12, /* MOV.W R1,R2 */
+        0x09, 0x12, /* ADD.W R1,R2 */
+        0x1d, 0x12, /* CMP.W R1,R2; no write */
+        0x19, 0x12, /* SUB.W R1,R2 */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_block_cpu_state_t state = {
+        .er = {0x00000003, 0x00000004, 0, 0, 0, 0, 0, 0},
+        .ccr = 0
+    };
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK((state.er[1] & 0xff) == 0x03);
+    TEST_CHECK((state.er[2] & 0xffff) == 0x0003);
+    TEST_CHECK(state.pc == 16);
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -386,5 +411,6 @@ TEST_LIST = {
     { "semantic_block_executes_word_long_immediates", test_semantic_block_executes_word_long_immediates },
     { "semantic_block_long_compare_no_write", test_semantic_block_long_compare_no_write },
     { "semantic_block_executes_register_alu_ops", test_semantic_block_executes_register_alu_ops },
+    { "semantic_block_executes_byte_word_register_ops", test_semantic_block_executes_byte_word_register_ops },
     { NULL, NULL }
 };
