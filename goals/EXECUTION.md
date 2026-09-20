@@ -58,9 +58,14 @@ current evidence:
 
 Every performance change must include:
 
-1. Host tests passing.
-2. Three-model smoke or a clear explanation of which firmware fixture is absent.
-3. Before/after timing for Classic V1, Classic V2 and Xtreme when fixtures exist.
-4. A note in `goals/OPTIMIZATION.md` saying whether the result improved,
+1. `scripts/release_gate.sh` passing locally before push.
+2. The pushed GitHub Actions run completing green before the VPK is uploaded,
+   installed or described as publishable.
+3. Three-model smoke or a clear explanation of which firmware fixture is absent.
+4. Before/after timing for Classic V1, Classic V2 and Xtreme when fixtures exist.
+5. A note in `goals/OPTIMIZATION.md` saying whether the result improved,
    regressed, or was rejected.
-5. No claim of physical Vita smoothness without physical Vita evidence.
+6. No claim of physical Vita smoothness without physical Vita evidence.
+
+The recent failed GitHub runs were caused by sanitizer/leak gates that had not
+been run before pushing. Do not bypass the release gate to ship a “quick fix.”

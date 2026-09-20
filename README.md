@@ -72,6 +72,18 @@ ctest --test-dir build-host --output-on-failure
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
+Before publishing or pushing release-candidate emulator changes, run the same
+local gate used by the maintainer workflow:
+
+```sh
+scripts/release_gate.sh
+```
+
+That gate runs release host tests, focused H8S CPU tests, ASan/UBSan/leak tests,
+Python tests and the Vita package build when VitaSDK/build-vita is available.
+After pushing, the corresponding GitHub Actions run must complete successfully
+before a VPK is treated as distributable.
+
 No firmware is needed for these tests. The host `cybiko-smoke` runner can also run legally supplied firmware; LCD activity alone is not evidence of a successful desktop boot.
 
 ## Known boundaries
