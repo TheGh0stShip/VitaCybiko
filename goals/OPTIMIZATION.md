@@ -1449,6 +1449,29 @@ This is accepted as the second small branch-aware cached interpretation step:
 it removes a hot ROM helper return probe without permitting arbitrary dynamic
 return targets through the fast path.
 
+Rejected broad immutable-ROM mixed-plain executor hook: a follow-up experiment
+let immutable ROM/flash blocks use the existing mixed plain-memory executor
+when static memory operands were plain and the branch target stayed in
+immutable code. A focused CPU test proved a ROM `MOV.W @ERn,Rd; BNE` block
+could execute correctly, but the smoke benchmark showed the generic executor
+cost outweighed the saved interpreter dispatch.
+
+Measured reject result:
+
+- broad version: Xtreme direct `cpu_seconds=1.463479`, three-model wall
+  Classic V1 1.08 s, Classic V2 0.58 s, Xtreme 1.95 s;
+- narrowed memory-only version: Xtreme direct `cpu_seconds=1.300162`,
+  three-model wall Classic V1 1.03 s, Classic V2 0.53 s, Xtreme 1.87 s;
+- previous accepted branch-only RTS baseline remained better:
+  Xtreme direct `cpu_seconds=1.151049`, three-model wall Classic V1 1.00 s,
+  Classic V2 0.47 s, Xtreme 1.64 s.
+
+The runtime hook was removed. Do not reintroduce a broad ROM mixed-plain path
+without a cheaper specialized implementation. The next viable route is either
+targeted hand-fast paths for specific hot memory opcodes, or an ARMv7/Vita
+translation tier that fuses register ops, plain memory access and branch exits
+without repeatedly constructing mixed executor runs.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
