@@ -504,6 +504,48 @@ static void test_chain_target_rejects_fallbacks(void)
     TEST_CHECK(block_cache.misses == 2);
 }
 
+static void test_chain_target_rejects_static_calls(void)
+{
+    const uint8_t bsr_rom[] = {
+        0x0b, 0x00,       /* 0: ADDS #1, ER0 */
+        0x55, 0x04,       /* 2: BSR 8 */
+        0x54, 0x70,       /* 4: RTS */
+        0x0b, 0x01,       /* 6: ADDS #2, ER1 */
+        0x0b, 0x02,       /* 8: ADDS #4, ER2 */
+        0x54, 0x70        /* 10: RTS */
+    };
+    const uint8_t jsr_rom[] = {
+        0x0b, 0x00,       /* 0: ADDS #1, ER0 */
+        0x5e, 0x00, 0x00, 0x08, /* 2: JSR @0x000008 */
+        0x54, 0x70,       /* 6: RTS */
+        0x0b, 0x01,       /* 8: ADDS #2, ER1 */
+        0x54, 0x70        /* 10: RTS */
+    };
+    h8s_block_cache_t block_cache;
+    h8s_branch_edge_cache_t edge_cache;
+    uint32_t next = 0x123456;
+
+    h8s_block_cache_init(&block_cache, 16);
+    h8s_branch_edge_cache_init(&edge_cache);
+    const h8s_block_t *entry = h8s_block_cache_get(&block_cache, bsr_rom, sizeof(bsr_rom), 0);
+    TEST_ASSERT(entry != NULL);
+    TEST_CHECK(h8s_block_cache_get_chain_target(&block_cache, &edge_cache,
+                                                bsr_rom, sizeof(bsr_rom),
+                                                entry, 0, &next) == NULL);
+    TEST_CHECK(next == 0x123456);
+    TEST_CHECK(edge_cache.misses == 0);
+
+    h8s_block_cache_clear(&block_cache);
+    h8s_branch_edge_cache_clear(&edge_cache);
+    entry = h8s_block_cache_get(&block_cache, jsr_rom, sizeof(jsr_rom), 0);
+    TEST_ASSERT(entry != NULL);
+    TEST_CHECK(h8s_block_cache_get_chain_target(&block_cache, &edge_cache,
+                                                jsr_rom, sizeof(jsr_rom),
+                                                entry, 0, &next) == NULL);
+    TEST_CHECK(next == 0x123456);
+    TEST_CHECK(edge_cache.misses == 0);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1319,6 +1361,7 @@ TEST_LIST = {
     { "branch_edge_cache_rejects_dynamic_exits", test_branch_edge_cache_rejects_dynamic_exits },
     { "chain_target_returns_semantic_cached_block", test_chain_target_returns_semantic_cached_block },
     { "chain_target_rejects_fallbacks", test_chain_target_rejects_fallbacks },
+    { "chain_target_rejects_static_calls", test_chain_target_rejects_static_calls },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },

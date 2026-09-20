@@ -281,6 +281,10 @@ const h8s_block_t *h8s_block_cache_get_chain_target(h8s_block_cache_t *block_cac
                                                     uint8_t ccr, uint32_t *next_pc)
 {
     if (!block_cache || !edge_cache || !rom || !block) return NULL;
+    if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24)
+        return NULL;
 
     uint32_t resolved = 0;
     if (!h8s_branch_edge_cache_get(edge_cache, block, ccr, &resolved))
