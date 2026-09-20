@@ -295,6 +295,8 @@ Raw linked executable SHA-256:
 - The GitHub `v0.1.16-preview` release asset was downloaded after publication;
   its SHA-256 matched the candidate VPK hash above, it still contained 9 stored
   ZIP entries, and `zipfile.testzip()` reported no corrupt member.
+- A `SHA256SUMS` release asset was added and downloaded alongside
+  `VitaCybiko.vpk`; `sha256sum -c SHA256SUMS` reported `VitaCybiko.vpk: OK`.
 - The packaged `param.sfo` contains `VitaCybiko 01.16`, `01.16`, and title ID
   `VCYB00001`. `sce_sys/icon0.png`, `sce_sys/livearea/contents/bg.png`, and
   `sce_sys/livearea/contents/startup.png` are present.
