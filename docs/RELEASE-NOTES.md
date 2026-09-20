@@ -20,6 +20,12 @@ Install `VitaCybiko.vpk`, then follow model setup. No firmware, commercial
 applications or user saves are distributed. The source archive contains the
 vendored core and tests; no Git submodule checkout is needed.
 
+Release asset SHA-256:
+
+```text
+013373b31441d38285acdc42b9d7f3164fb4bdc92db3d9959bd3d7fbda88c24e  VitaCybiko.vpk
+```
+
 **Not a completed 1:1 emulator.** Classic V2 is the deepest-tested path and is
 the only profile with the latest local smoke-performance gate. Classic V1 and
 Xtreme boot with matching firmware in prior verification, but broad app
