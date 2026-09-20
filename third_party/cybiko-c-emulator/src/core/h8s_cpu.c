@@ -2125,6 +2125,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     if (cpu->bus) bus_clear_code_watches(cpu->bus);
     h8s_branch_edge_cache_clear(&cpu->semantic_edge_cache);
     memset(cpu->semantic_reject_cache, 0, sizeof(cpu->semantic_reject_cache));
+    memset(cpu->mutable_reject_cache, 0, sizeof(cpu->mutable_reject_cache));
     cpu->semantic_reject_backoff = 0;
     cpu->semantic_fast_blocks = 0;
     cpu->semantic_fast_cycles = 0;
@@ -2170,6 +2171,45 @@ CPU_INLINE void semantic_reject_cache_store(h8s_cpu_t *cpu,
     entry->valid = true;
     entry->data = data;
     entry->pc = pc;
+}
+
+CPU_INLINE h8s_mutable_reject_entry_t *
+mutable_reject_entry(h8s_cpu_t *cpu, uint32_t pc)
+{
+    return &cpu->mutable_reject_cache[
+        ((pc >> 1) ^ (pc >> 12)) & (H8S_MUTABLE_REJECT_CACHE_ENTRIES - 1)];
+}
+
+CPU_INLINE bool mutable_reject_cached(h8s_cpu_t *cpu, uint32_t pc)
+{
+    h8s_mutable_reject_entry_t *entry = mutable_reject_entry(cpu, pc);
+    if (!entry->valid || entry->pc != (pc & 0xffffffu)) return false;
+    if (bus_code_page_generation(cpu->bus, entry->first_page << 12) !=
+        entry->first_generation) return false;
+    if (entry->last_page != entry->first_page &&
+        bus_code_page_generation(cpu->bus, entry->last_page << 12) !=
+        entry->last_generation) return false;
+    return true;
+}
+
+CPU_INLINE void mutable_reject_cache_store(h8s_cpu_t *cpu, uint32_t pc,
+                                           const h8s_block_t *block)
+{
+    if (!cpu || !block) return;
+    uint32_t bytes = block->bytes ? block->bytes : block->branch_bytes;
+    if (bytes == 0) bytes = 2;
+    pc &= 0xffffffu;
+    uint32_t first_page = pc >> 12;
+    uint32_t last_page = ((pc + bytes - 1) & 0xffffffu) >> 12;
+    if (last_page < first_page) last_page = 4095u;
+    bus_watch_code_range(cpu->bus, pc, bytes);
+    h8s_mutable_reject_entry_t *entry = mutable_reject_entry(cpu, pc);
+    entry->valid = true;
+    entry->pc = pc;
+    entry->first_page = first_page;
+    entry->last_page = last_page;
+    entry->first_generation = bus_code_page_generation(cpu->bus, pc);
+    entry->last_generation = bus_code_page_generation(cpu->bus, last_page << 12);
 }
 
 CPU_INLINE bool semantic_fast_reject_with_backoff(h8s_cpu_t *cpu,
@@ -2260,16 +2300,26 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
         return false;
     if (start_pc < base || start_pc >= base + size)
         return false;
+    if (mutable_reject_cached(cpu, start_pc)) {
+        cpu->semantic_reject_backoff = H8S_SEMANTIC_CACHED_REJECT_BACKOFF;
+        return false;
+    }
 
     const h8s_block_t *block =
         h8s_mutable_block_cache_get(&cpu->mutable_block_cache, cpu->bus,
                                     data, size, base, start_pc);
-    if (!block || !h8s_mixed_plain_block_supported(block))
+    if (!block)
         return false;
+    if (!h8s_mixed_plain_block_supported(block)) {
+        mutable_reject_cache_store(cpu, start_pc, block);
+        return false;
+    }
     if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
-        block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24)
+        block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24) {
+        mutable_reject_cache_store(cpu, start_pc, block);
         return false;
+    }
 
     int block_cycles = (int)block->instructions + 1;
     if (block_cycles < 1 || block_cycles > limit)

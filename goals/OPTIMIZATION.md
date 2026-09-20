@@ -1142,6 +1142,29 @@ evidence that the remaining top sites are dominated by MMIO and call/return
 boundaries; optimizing those for PS Vita requires a different design than
 blindly adding more plain-memory MOV forms.
 
+Accepted Vita-oriented reject-cost reduction: Xtreme mutable fast-path probing
+now has a small generation-checked negative cache for state-independent RAM
+block rejects. It stores rejects only after decoding a mutable RAM block and
+proving the block shape or static exit is unsupported; it does not cache
+runtime execution failures that depend on current registers or effective
+addresses. Entries watch the decoded source page range and compare
+`bus_code_page_generation`, so CyOS/app self-modifying writes invalidate the
+reject. A focused CPU test covers exactly that case: an MMIO-shaped RAM block
+is cached as rejected, then overwritten with a semantic-supported block, and
+the fast path must execute after the generation changes.
+
+Validation:
+
+- focused `test_h8s_cpu` passed with the invalidation test;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 2.06 s, Classic V2 0.78 s, Xtreme
+  1.63 s; Classic wrapper times are noisy and this path is Xtreme-only;
+- direct Xtreme repeats tightened to 1.513/1.505/1.485 s;
+- profile build passed at 1.644 s. The profiler still reports the same
+  top window-reject PCs because cached mutable rejects are intentionally
+  counted as window rejects; the win is avoiding repeated mutable
+  decode/support analysis on those PCs, not changing accepted block coverage.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

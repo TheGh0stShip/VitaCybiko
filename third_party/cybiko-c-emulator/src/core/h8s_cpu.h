@@ -19,6 +19,7 @@ typedef struct address_bus address_bus_t;
 
 #define H8S_ROM_FETCH_BLOCK_WORDS 16
 #define H8S_SEMANTIC_REJECT_CACHE_ENTRIES 512
+#define H8S_MUTABLE_REJECT_CACHE_ENTRIES 256
 /* Optional semantic ROM fast-path probes are expensive at hot unsupported PCs.
  * A 256-cycle fixed backoff preserves the three-model smoke gates while
  * reducing repeated cached-reject probes on Xtreme after the BHI/BLS fix. */
@@ -33,6 +34,15 @@ typedef struct {
     const uint8_t *data;
     uint32_t pc;
 } h8s_semantic_reject_entry_t;
+
+typedef struct {
+    bool valid;
+    uint32_t pc;
+    uint32_t first_page;
+    uint32_t last_page;
+    uint32_t first_generation;
+    uint32_t last_generation;
+} h8s_mutable_reject_entry_t;
 
 typedef struct h8s_cpu {
     uint32_t er[8];
@@ -66,6 +76,7 @@ typedef struct h8s_cpu {
     h8s_mutable_block_cache_t mutable_block_cache;
     h8s_branch_edge_cache_t semantic_edge_cache;
     h8s_semantic_reject_entry_t semantic_reject_cache[H8S_SEMANTIC_REJECT_CACHE_ENTRIES];
+    h8s_mutable_reject_entry_t mutable_reject_cache[H8S_MUTABLE_REJECT_CACHE_ENTRIES];
     uint16_t semantic_reject_backoff;
     uint64_t semantic_fast_blocks;
     uint64_t semantic_fast_cycles;
