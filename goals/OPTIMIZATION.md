@@ -98,6 +98,10 @@ Rejected runtime experiment on 2026-09-20:
   so it was removed. The compiler's existing size/speed tradeoff is better
   than broad manual inlining here; the next optimization should reduce dispatch
   count with cached blocks instead of inflating the interpreter.
+- Inlining `evaluate_condition` and caching CCR flag booleans for the hot Bcc
+  path passed all 17 host tests but slowed the 600-frame Xtreme smoke to
+  18.21 s, so it was removed. Branch micro-tuning is not the remaining path;
+  reducing total interpreter dispatches is.
 
 ## Goal C — ARMv7 translation backend
 
