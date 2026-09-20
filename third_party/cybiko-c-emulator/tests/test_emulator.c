@@ -52,6 +52,34 @@ static void test_nvram_size_is_bounded(void)
     cybiko_destroy(emu);
 }
 
+static uint32_t reference_crc32(const uint8_t *data, size_t size)
+{
+    uint32_t crc = 0xffffffff;
+    while (size--) {
+        crc ^= *data++;
+        for (int bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xedb88320u : 0);
+    }
+    return crc ^ 0xffffffff;
+}
+
+static void test_crc32_matches_bitwise(void)
+{
+    uint8_t data[4097];
+    uint32_t random = 0x641348;
+    for (size_t i = 0; i < sizeof(data); ++i) {
+        random = random * 1664525u + 1013904223u;
+        data[i] = (uint8_t)(random >> 24);
+    }
+    for (size_t offset = 0; offset < 4; ++offset)
+        for (size_t size = 0; size <= sizeof(data) - offset; size += 7)
+            TEST_CHECK(cybiko_crc32(data + offset, size) == reference_crc32(data + offset, size));
+    for (unsigned value = 0; value < 256; ++value) {
+        data[0] = (uint8_t)value;
+        TEST_CHECK(cybiko_crc32(data, 1) == reference_crc32(data, 1));
+    }
+}
+
 static void test_firmware_identification(void)
 {
     static const uint8_t check[] = "123456789";
@@ -139,6 +167,7 @@ static void test_timer_starts_during_frame(void)
 }
 
 TEST_LIST = {
+    { "crc32_matches_bitwise", test_crc32_matches_bitwise },
     { "timer_starts_during_frame", test_timer_starts_during_frame },
     { "sleep_keeps_emulation_running", test_sleep_does_not_stop_emulation },
     { "rom_sizes_are_validated", test_rom_sizes_are_validated },

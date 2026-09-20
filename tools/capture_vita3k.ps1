@@ -1,5 +1,6 @@
-param([Parameter(Mandatory=$true)][int]$VitaProcessId, [Parameter(Mandatory=$true)][string]$OutputPath, [int[]]$Keys, [int]$Delay=300, [int]$TouchX=-1, [int]$TouchY=-1, [ValidateRange(20,3000)][int]$Hold=180)
+param([Parameter(Mandatory=$true)][int]$VitaProcessId, [Parameter(Mandatory=$true)][string]$OutputPath, [int[]]$Keys, [int]$Delay=300, [int]$TouchX=-1, [int]$TouchY=-1, [ValidateRange(20,3000)][int]$Hold=180, [switch]$BackgroundCapture)
 $ErrorActionPreference = 'Stop'
+if ($BackgroundCapture -and ($Keys.Count -gt 0 -or $TouchX -ge 0 -or $TouchY -ge 0)) { throw 'Background capture cannot inject input' }
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
 using System;
@@ -14,6 +15,7 @@ public class VitaWindowCapture {
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr handle, out Rect rect);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr handle, ref Point point);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr handle);
+    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr handle, IntPtr dc, uint flags);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint mapType);
@@ -43,7 +45,7 @@ $script:gameHandle = [IntPtr]::Zero
 }, [IntPtr]::Zero)
 $handle = $script:gameHandle
 if ($handle -eq 0) { throw 'No Vita3K window handle' }
-[void][VitaWindowCapture]::SetForegroundWindow($handle)
+if (-not $BackgroundCapture) { [void][VitaWindowCapture]::SetForegroundWindow($handle) }
 Start-Sleep -Milliseconds 300
 if ($Keys.Count -gt 0) {
     if ([VitaWindowCapture]::GetForegroundWindow() -ne $handle) { throw 'Game not foreground' }
@@ -55,6 +57,9 @@ if ($Keys.Count -gt 0) {
     }
 }
 Start-Sleep -Milliseconds $Delay
+if (-not $BackgroundCapture -and [VitaWindowCapture]::GetForegroundWindow() -ne $handle) {
+    throw 'Game is not foreground; refusing to capture unrelated desktop content'
+}
 $rect = New-Object VitaWindowCapture+Rect
 if (-not [VitaWindowCapture]::GetClientRect($handle, [ref]$rect)) { throw 'No window rectangle' }
 $origin = New-Object VitaWindowCapture+Point
@@ -72,7 +77,15 @@ if ($width -lt 100 -or $height -lt 100) { throw 'Window is minimized or too smal
 $bitmap = New-Object System.Drawing.Bitmap($width, $height)
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
 try {
-    $graphics.CopyFromScreen($origin.X, $origin.Y, 0, 0, $bitmap.Size)
+    if ($BackgroundCapture) {
+        $dc = $graphics.GetHdc()
+        try {
+            if (-not [VitaWindowCapture]::PrintWindow($handle, $dc, 3)) { throw 'Window capture failed' }
+        } finally { $graphics.ReleaseHdc($dc) }
+    } else {
+        if ([VitaWindowCapture]::GetForegroundWindow() -ne $handle) { throw 'Game lost foreground before capture' }
+        $graphics.CopyFromScreen($origin.X, $origin.Y, 0, 0, $bitmap.Size)
+    }
     $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
     $process | Select-Object Id,Responding,MainWindowTitle
 } finally {

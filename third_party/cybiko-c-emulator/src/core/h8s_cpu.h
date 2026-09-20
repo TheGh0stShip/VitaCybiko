@@ -41,6 +41,10 @@ typedef struct h8s_cpu {
 void     h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus);
 void     h8s_cpu_reset(h8s_cpu_t *cpu);
 void     h8s_cpu_step(h8s_cpu_t *cpu);
+/* Execute an event-bounded Classic batch without a host call per guest
+ * instruction. Debts and I/O exits preserve the single-step ordering. */
+int      h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
+                     int *timer_debt, int *completion_debt, bool *io_access);
 void     h8s_cpu_request_interrupt(h8s_cpu_t *cpu, int vector);
 void     h8s_cpu_cancel_interrupt(h8s_cpu_t *cpu, int vector);
 uint32_t h8s_cpu_get_er(const h8s_cpu_t *cpu, int n);

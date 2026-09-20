@@ -674,6 +674,27 @@ static void test_runtime_dir_creation_on_prepared_storage(void)
     TEST_CHECK(rmdir(temporary) == 0);
 }
 
+static void test_presentation_gaps(void)
+{
+    present_timing_t timing = {0};
+    record_present(&timing, 1000000, 16000);
+    TEST_CHECK(timing.max_gap == 0 && timing.late == 0);
+    record_present(&timing, 1016000, 16000);
+    TEST_CHECK(timing.max_gap == 16000 && timing.late == 0);
+    record_present(&timing, 1036000, 16000);
+    TEST_CHECK(timing.max_gap == 20000 && timing.late == 0);
+    record_present(&timing, 1068000, 16000);
+    TEST_CHECK(timing.max_gap == 32000 && timing.late == 1);
+    /* A new reporting window must retain the previous presentation stamp. */
+    timing.max_gap = timing.late = 0;
+    record_present(&timing, 1116000, 16000);
+    TEST_CHECK(timing.max_gap == 48000 && timing.late == 1);
+    /* Suspend/resume starts a new interval, not a multi-second late frame. */
+    memset(&timing, 0, sizeof(timing));
+    record_present(&timing, 9000000, 16000);
+    TEST_CHECK(timing.max_gap == 0 && timing.late == 0);
+}
+
 static void test_catchup_respects_presentation_budget(void)
 {
     /* 50 ms CPU work caused 150 ms between presentations in the old loop. */
@@ -720,6 +741,22 @@ static void test_lcd_upload_preserves_colors_and_skips_duplicates(void)
     free(ctx);
 }
 
+static void test_frame_log_bounds(void)
+{
+    uint8_t data[32];
+    memset(data, 0xa5, sizeof(data));
+    frame_log_t log = {.data = data, .capacity = 16};
+    TEST_CHECK(append_frame_log(&log, "header\n"));
+    TEST_CHECK(log.used == 7);
+    TEST_CHECK(!append_frame_log(&log, "%020d", 1));
+    TEST_CHECK(log.used == 7);
+    for (size_t i = 16; i < sizeof(data); ++i) TEST_CHECK(data[i] == 0xa5);
+    TEST_CHECK(append_frame_log(&log, "tail\n"));
+    TEST_CHECK(log.used == 12);
+    TEST_CHECK(!memcmp(data, "header\ntail\n", 12));
+    TEST_CHECK(!append_frame_log(NULL, "ignored"));
+}
+
 static void test_async_save_snapshot(void)
 {
     TEST_ASSERT(SDL_Init(SDL_INIT_TIMER) == 0);
@@ -736,6 +773,17 @@ static void test_async_save_snapshot(void)
         TEST_ASSERT(emu != NULL);
         save_snapshot_t *job = capture_save_snapshot(emu);
         TEST_ASSERT(job != NULL);
+        char trace_path[MAX_PATH_CHARS];
+        snprintf(trace_path, sizeof(trace_path), "%s/performance.csv", directory);
+        frame_log_t *log = create_frame_log(trace_path);
+        TEST_ASSERT(log != NULL);
+        TEST_CHECK(append_frame_log(log, "version,model\n01.13,%d\n", model));
+        TEST_CHECK(access(trace_path, F_OK) != 0); /* No I/O in the frame loop. */
+        TEST_CHECK(capture_frame_log(job, log));
+        size_t trace_size = log->used;
+        uint32_t trace_crc = cybiko_crc32(log->data, log->used);
+        TEST_CHECK(append_frame_log(log, "later row must not change snapshot\n"));
+        free_frame_log(log);
         uint32_t storage_crc = cybiko_crc32(job->storage, job->storage_size);
         uint32_t ram_crc = job->ram ? cybiko_crc32(job->ram + 24, job->ram_size) : 0;
         /* Job must not reference live emulator memory or mutable path globals. */
@@ -775,12 +823,17 @@ static void test_async_save_snapshot(void)
         free(data);
         TEST_CHECK(remove(storage_path) == 0);
         TEST_CHECK(remove(rtc_path) == 0);
+        data = load_file(trace_path, &size, false);
+        TEST_ASSERT(data != NULL);
+        TEST_CHECK(size == trace_size && cybiko_crc32(data, size) == trace_crc);
+        free(data);
+        TEST_CHECK(remove(trace_path) == 0);
         TEST_CHECK(rmdir(directory) == 0);
     }
     /* A failed worker must report failure and still be joinable/freeable. */
     cybiko_hal_t hal = {0};
     cybiko_emu_t *emu = cybiko_create_model(&hal, CYBIKO_CLASSIC_V1);
-    save_snapshot_t *job = start_async_save(emu);
+    save_snapshot_t *job = start_async_save(emu, NULL);
     TEST_ASSERT(job != NULL);
     bool ok = true; double elapsed;
     TEST_CHECK(finish_async_save(&job, true, &ok, &elapsed));
@@ -792,6 +845,8 @@ static void test_async_save_snapshot(void)
 }
 
 TEST_LIST = {
+    {"frame_log_bounds", test_frame_log_bounds},
+    {"presentation_gaps", test_presentation_gaps},
     {"async_save_snapshot", test_async_save_snapshot},
     {"lcd_colors_and_duplicate_uploads", test_lcd_upload_preserves_colors_and_skips_duplicates},
     {"catchup_presentation_budget", test_catchup_respects_presentation_budget},

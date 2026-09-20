@@ -323,6 +323,7 @@ static void test_instruction_mapping_cache(void) {
     h8s_cpu_step(&cpu);
     TEST_CHECK((cpu.er[0] & 255) == 0x34);
     memory_init(&bus.boot_rom, 32768, true);
+    bus_build_memory_map(&bus);
     memory_write16(&bus.boot_rom, 0x100, 0xF856);
     cpu.pc = 0x8100; /* Mirrored boot-ROM window. */
     h8s_cpu_step(&cpu);
@@ -414,6 +415,28 @@ static void test_trap_and_task_frame(void) {
     teardown();
 }
 
+static void test_unsigned_multiply_word_destination(void) {
+    setup();
+    for (int rs = 0; rs < 16; ++rs) {
+        for (int rd = 0; rd < 16; ++rd) {
+            for (int i = 0; i < 8; ++i) cpu.er[i] = 0x81fd03feu + i * 0x03050307u;
+            uint32_t before = cpu.er[rd & 7];
+            uint8_t source = (uint8_t)(cpu.er[rs & 7] >> (rs < 8 ? 8 : 0));
+            uint8_t dest = (uint8_t)(before >> (rd < 8 ? 0 : 16));
+            uint16_t product = (uint16_t)((unsigned)source * dest);
+            uint32_t expected = rd < 8 ? (before & 0xffff0000u) | product :
+                                        (before & 0xffffu) | ((uint32_t)product << 16);
+            write_code16(0, 0x5000 | (rs << 4) | rd);
+            cpu.pc = CODE_BASE;
+            cpu.ccr = 0xff;
+            h8s_cpu_step(&cpu);
+            TEST_CHECK_(cpu.er[rd & 7] == expected, "MULXU.B rs=%d rd=%d", rs, rd);
+            TEST_CHECK(cpu.ccr == 0xff);
+        }
+    }
+    teardown();
+}
+
 static void test_signed_multiply_word_destination(void) {
     setup();
     for (int rs = 0; rs < 16; ++rs) {
@@ -497,7 +520,72 @@ static void test_ccr_interrupt_deferral(void) {
     teardown();
 }
 
+static void test_move_byte_flags_exhaustive(void)
+{
+    setup();
+    for (unsigned initial = 0; initial < 256; ++initial) {
+        for (unsigned value = 0; value < 256; ++value) {
+            cpu.pc = CODE_BASE;
+            cpu.ccr = (uint8_t)initial;
+            write_code16(0, 0xf800 | value);
+            h8s_cpu_step(&cpu);
+            uint8_t expected = (uint8_t)(initial & ~(CCR_N | CCR_Z | CCR_V));
+            if (!value) expected |= CCR_Z;
+            if (value & 0x80) expected |= CCR_N;
+            TEST_CHECK(cpu.ccr == expected);
+            TEST_CHECK((cpu.er[0] & 255) == value);
+        }
+    }
+    teardown();
+}
+
+static void test_long_arithmetic_flags(void)
+{
+    setup();
+    const uint32_t edges[] = {0, 1, 0x0fffffff, 0x10000000, 0x7fffffff,
+                             0x80000000, 0xfffffffe, 0xffffffff};
+    uint32_t random = 0x41523132;
+    for (unsigned trial = 0; trial < 4096; ++trial) {
+        random = random * 1664525u + 1013904223u;
+        uint32_t d = trial < 64 ? edges[trial / 8] : random;
+        random = random * 1664525u + 1013904223u;
+        uint32_t s = trial < 64 ? edges[trial % 8] : random;
+        for (unsigned form = 0; form < 6; ++form) {
+            bool subtract = form % 3 != 0;
+            bool compare = form % 3 == 2;
+            uint64_t wide = subtract ? (uint64_t)d - s : (uint64_t)d + s;
+            uint32_t result = (uint32_t)wide;
+            uint32_t overflow = subtract ? ((d ^ s) & (d ^ result))
+                                         : ((d ^ result) & (s ^ result));
+            uint8_t initial = (uint8_t)trial;
+            uint8_t expected = initial & (CCR_I | CCR_UI | CCR_U);
+            if (wide & 0x100000000ULL) expected |= CCR_C;
+            if (result == 0) expected |= CCR_Z;
+            if (result & 0x80000000u) expected |= CCR_N;
+            if (overflow & 0x80000000u) expected |= CCR_V;
+            if ((d ^ s ^ result) & 0x10000000u) expected |= CCR_H;
+            cpu.pc = CODE_BASE; cpu.ccr = initial;
+            cpu.er[0] = d; cpu.er[1] = s;
+            if (form < 3) {
+                write_code16(0, form == 0 ? 0x0a90 : form == 1 ? 0x1a90 : 0x1f90);
+            } else {
+                write_code16(0, form == 3 ? 0x7a10 : form == 4 ? 0x7a30 : 0x7a20);
+                write_code16(2, s >> 16); write_code16(4, s);
+            }
+            h8s_cpu_step(&cpu);
+            TEST_CHECK_(cpu.ccr == expected, "trial=%u form=%u flags=%02x expected=%02x",
+                        trial, form, cpu.ccr, expected);
+            TEST_CHECK(cpu.er[0] == (compare ? d : result));
+            TEST_CHECK(cpu.er[1] == s);
+        }
+    }
+    teardown();
+}
+
 TEST_LIST = {
+    {"unsigned_multiply_word_destination", test_unsigned_multiply_word_destination},
+    {"move_byte_flags_exhaustive", test_move_byte_flags_exhaustive},
+    {"long_arithmetic_flags", test_long_arithmetic_flags},
     {"ccr_interrupt_deferral", test_ccr_interrupt_deferral},
     {"signed_multiply_word_destination", test_signed_multiply_word_destination},
     {"signed_divide_registers_and_flags", test_signed_divide_registers_and_flags},

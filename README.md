@@ -8,6 +8,9 @@ matching firmware is supplied, but they are not yet app-by-app verified and are
 slower than Classic V2. This is a **preview**, not complete 1:1 hardware
 emulation.
 
+Source work on 01.13 is **unreleased and not 60 FPS qualified**. See the
+[optimization workbench and remaining gates](docs/OPTIMIZATION-01.13.md).
+
 [Download the VPK](https://github.com/TheGh0stShip/VitaCybiko/releases) · [Setup](docs/MODELS.md) · [Compatibility](docs/COMPATIBILITY.md) · [Test evidence](docs/VERIFICATION.md)
 
 ![Classic V2 desktop captured in Windows Vita3K](docs/vita3k-classic-desktop.png)

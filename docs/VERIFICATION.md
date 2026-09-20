@@ -1,5 +1,21 @@
 # Verification — 2026-09-19
 
+## 01.13 workbench — not released or hardware-qualified
+
+See [optimization evidence and unmet release gates](OPTIMIZATION-01.13.md).
+Core tests pass 13/13; frontend and ASan/UBSan frontend-enabled suites pass 14/14.
+Real-firmware scheduler equivalence passes for Classic V1/V2 and Xtreme, and
+the saved V1 full-battery/navigation test passes. A Vita VPK builds successfully:
+
+```text
+201961b1269a40defb4519628506d9648699d8e01bda1fdb4635e3c9727319a3  VitaCybiko.vpk
+e05e374114a1db2ec1267a058d1b4b5411db2d59e0dc028bcbf982ead868c1d0  eboot.bin
+```
+
+An intermediate ARM build booted in Windows Vita3K. This does not establish
+60 FPS guest animation, audio stability, or physical-Vita performance. No new
+VPK was deployed to the physical device and no manual retest was requested.
+
 ## 01.12 candidate
 
 See [01.12 changes and remaining limits](RELEASE-01.12.md).
@@ -28,10 +44,12 @@ The previous nine app files and VPK were backed up locally before any upload,
 in `/tmp/vitacybiko-0112-install-backup-efnjmuk4`; that directory also contains
 the installed verification manifest. Firmware, saves, and plugins were untouched.
 
-Physical-Vita runtime validation of 01.12 remains pending; installation and
-readback do not establish animation smoothness or game accuracy. The 01.11
-performance log was retrieved earlier and is analyzed in
-[the investigation](INVESTIGATION-01.12.md).
+Subsequently, an existing 95-row physical-Vita 01.12 performance log was
+retrieved without requesting another run. It confirms execution but **fails**
+the smoothness/audio target: initial core work averages 39.55 ms/frame and
+audio underruns remain. See [the newer workbench analysis](OPTIMIZATION-01.13.md).
+Battery/input/game accuracy are not established by timing logs. The earlier
+01.11 performance log is analyzed in [the investigation](INVESTIGATION-01.12.md).
 
 ## 01.11 candidate
 

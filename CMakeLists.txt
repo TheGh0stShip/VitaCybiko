@@ -53,7 +53,7 @@ if(VITA)
 
   set(VITA_APP_NAME "VitaCybiko")
   set(VITA_TITLEID  "VCYB00001")
-  set(VITA_VERSION  "01.12")
+  set(VITA_VERSION  "01.13")
 
   add_executable(${PROJECT_NAME}
     src/vita/main.c
@@ -101,6 +101,8 @@ else()
   option(VITACYBIKO_FRONTEND_TESTS "Test Vita frontend using host SDL2" OFF)
   add_executable(cybiko-smoke src/host/smoke.c)
   target_link_libraries(cybiko-smoke cybiko_core)
+  add_executable(cybiko-replay src/host/replay.c)
+  target_link_libraries(cybiko-replay cybiko_core)
 
   include(CTest)
   if(BUILD_TESTING)

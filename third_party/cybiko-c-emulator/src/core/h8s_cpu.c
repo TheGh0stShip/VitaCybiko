@@ -7,13 +7,11 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Forward declarations for bus functions */
-extern uint8_t  bus_read8(address_bus_t *bus, uint32_t address);
-extern uint16_t bus_read16(address_bus_t *bus, uint32_t address);
-extern uint32_t bus_read32(address_bus_t *bus, uint32_t address);
-extern void     bus_write8(address_bus_t *bus, uint32_t address, uint8_t value);
-extern void     bus_write16(address_bus_t *bus, uint32_t address, uint16_t value);
-extern void     bus_write32(address_bus_t *bus, uint32_t address, uint32_t value);
+#if defined(__GNUC__) || defined(__clang__)
+#define CPU_INLINE static inline __attribute__((always_inline))
+#else
+#define CPU_INLINE static inline
+#endif
 
 /* ---- CCR bit positions (for Java-style getFlag/setFlag using bit index) ---- */
 #define BIT_C  0
@@ -77,16 +75,31 @@ static inline void set_flag(h8s_cpu_t *cpu, int bit, bool v) {
 }
 
 static inline void set_nz_b(h8s_cpu_t *cpu, int result) {
-    set_flag(cpu, BIT_N, (result & 0x80) != 0);
-    set_flag(cpu, BIT_Z, (result & 0xFF) == 0);
+    uint32_t value = (uint8_t)result;
+    cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z)) |
+                        ((value >> 4) & CCR_N) | ((value == 0) << BIT_Z));
 }
 static inline void set_nz_w(h8s_cpu_t *cpu, int result) {
-    set_flag(cpu, BIT_N, (result & 0x8000) != 0);
-    set_flag(cpu, BIT_Z, (result & 0xFFFF) == 0);
+    uint32_t value = (uint16_t)result;
+    cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z)) |
+                        ((value >> 12) & CCR_N) | ((value == 0) << BIT_Z));
 }
 static inline void set_nz_l(h8s_cpu_t *cpu, int32_t result) {
-    set_flag(cpu, BIT_N, (result & (int32_t)0x80000000) != 0);
-    set_flag(cpu, BIT_Z, result == 0);
+    cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z)) |
+                        (((uint32_t)result >> 28) & CCR_N) | ((result == 0) << BIT_Z));
+}
+
+/* Carry/borrow are 32-bit comparisons, not a 64-bit emulation operation.
+ * Build the arithmetic flags once; preserve I/UI/U exactly. */
+static inline void set_arithmetic_l(h8s_cpu_t *cpu, uint32_t d, uint32_t s,
+                                    uint32_t result, bool subtract) {
+    uint32_t overflow = subtract ? ((d ^ s) & (d ^ result))
+                                 : ((d ^ result) & (s ^ result));
+    cpu->ccr = (uint8_t)((cpu->ccr & (CCR_I | CCR_UI | CCR_U)) |
+        ((result >> 28) & CCR_N) | (result == 0 ? CCR_Z : 0) |
+        ((overflow >> 30) & CCR_V) |
+        (((d ^ s ^ result) >> 23) & CCR_H) |
+        (subtract ? d < s : result < d));
 }
 
 /* ---- Fetch helpers ---- */
@@ -116,7 +129,13 @@ static void cache_instruction_memory(h8s_cpu_t *cpu, uint32_t pc) {
 }
 
 static inline uint16_t fetch16(h8s_cpu_t *cpu) {
-    uint32_t pc = cpu->pc;
+    uint32_t pc = cpu->pc & 0xffffff;
+    const uint8_t *page = cpu->bus->read_pages[pc >> 12];
+    unsigned offset = pc & 4095;
+    if (page && offset <= 4094) {
+        cpu->pc = (pc + 2) & 0xffffff;
+        return (uint16_t)((page[offset] << 8) | page[offset + 1]);
+    }
     if (pc < cpu->fetch_base || pc + 1 >= cpu->fetch_end)
         cache_instruction_memory(cpu, pc);
     uint16_t val;
@@ -368,7 +387,7 @@ static void execute_bit_op_at_address(h8s_cpu_t *cpu, uint32_t addr, uint16_t bi
 }
 
 /* ======== Forward declarations for decode sub-functions ======== */
-static void decode(h8s_cpu_t *cpu, uint16_t op);
+CPU_INLINE void decode(h8s_cpu_t *cpu, uint16_t op);
 
 /* ---- MOV.L with absolute address (6B_32) ---- */
 static void decode6B_32(h8s_cpu_t *cpu, uint16_t op2) {
@@ -621,13 +640,10 @@ static void decode01(h8s_cpu_t *cpu, int lo) {
 static void decode0A(h8s_cpu_t *cpu, int lo) {
     if ((lo & 0x80) != 0) {
         int rs = (lo >> 4) & 0x7; int rd = lo & 0x7;
-        uint64_t s = cpu->er[rs]; uint64_t d = cpu->er[rd];
-        uint64_t result = d + s;
-        cpu->er[rd] = (uint32_t)result;
-        set_nz_l(cpu, (int32_t)cpu->er[rd]);
-        set_flag(cpu, BIT_C, (result & 0x100000000ULL) != 0);
-        set_flag(cpu, BIT_V, (int32_t)((d ^ result) & (s ^ result)) < 0);
-        set_flag(cpu, BIT_H, ((int32_t)(d ^ s ^ result) & 0x10000000) != 0);
+        uint32_t s = cpu->er[rs], d = cpu->er[rd];
+        uint32_t result = d + s;
+        cpu->er[rd] = result;
+        set_arithmetic_l(cpu, d, s, result, false);
     } else if ((lo & 0xF0) == 0x00) {
         int rd = lo & 0xF;
         int val = get_reg_b(cpu, rd);
@@ -837,13 +853,10 @@ static void decode10_17(h8s_cpu_t *cpu, int hi, int lo) {
 static void decode1A(h8s_cpu_t *cpu, int lo) {
     if ((lo & 0x80) != 0) {
         int rs = (lo >> 4) & 0x7; int rd = lo & 0x7;
-        uint64_t s = cpu->er[rs]; uint64_t d = cpu->er[rd];
-        uint64_t result = d - s;
-        cpu->er[rd] = (uint32_t)result;
-        set_nz_l(cpu, (int32_t)cpu->er[rd]);
-        set_flag(cpu, BIT_C, (result & 0x100000000ULL) != 0);
-        set_flag(cpu, BIT_V, (int32_t)((d ^ s) & (d ^ result)) < 0);
-        set_flag(cpu, BIT_H, ((int32_t)(d ^ s ^ result) & 0x10000000) != 0);
+        uint32_t s = cpu->er[rs], d = cpu->er[rd];
+        uint32_t result = d - s;
+        cpu->er[rd] = result;
+        set_arithmetic_l(cpu, d, s, result, true);
     } else if ((lo & 0xF0) == 0x00) {
         int rd = lo & 0xF;
         int val = get_reg_b(cpu, rd);
@@ -905,12 +918,8 @@ static void decode1B(h8s_cpu_t *cpu, int lo) {
 static void decode1F(h8s_cpu_t *cpu, int lo) {
     if ((lo & 0x80) != 0) {
         int rs = (lo >> 4) & 0x7; int rd = lo & 0x7;
-        uint64_t s = cpu->er[rs]; uint64_t d = cpu->er[rd];
-        uint64_t result = d - s;
-        set_nz_l(cpu, (int32_t)result);
-        set_flag(cpu, BIT_C, (result & 0x100000000ULL) != 0);
-        set_flag(cpu, BIT_V, (int32_t)((d ^ s) & (d ^ result)) < 0);
-        set_flag(cpu, BIT_H, ((int32_t)(d ^ s ^ result) & 0x10000000) != 0);
+        uint32_t s = cpu->er[rs], d = cpu->er[rd];
+        set_arithmetic_l(cpu, d, s, d - s, true);
     } else if ((lo & 0xF0) == 0x00) {
         /* DAS stub */
     } else { unimplemented(cpu, 0x1F00 | lo, cpu->pc - 2); }
@@ -1006,27 +1015,20 @@ static void decode7A(h8s_cpu_t *cpu, int lo) {
     switch (subop) {
         case 0x0: cpu->er[rd] = imm; set_nz_l(cpu, (int32_t)imm); set_flag(cpu, BIT_V, false); break;
         case 0x1: {
-            uint64_t d = cpu->er[rd]; uint64_t result = d + (uint64_t)imm;
-            cpu->er[rd] = (uint32_t)result; set_nz_l(cpu, (int32_t)cpu->er[rd]);
-            set_flag(cpu, BIT_C, (result & 0x100000000ULL) != 0);
-            set_flag(cpu, BIT_V, (int32_t)((d ^ result) & (imm ^ result)) < 0);
-            set_flag(cpu, BIT_H, ((int32_t)(d ^ imm ^ result) & 0x10000000) != 0);
+            uint32_t d = cpu->er[rd], result = d + imm;
+            cpu->er[rd] = result;
+            set_arithmetic_l(cpu, d, imm, result, false);
             break;
         }
         case 0x2: {
-            uint64_t d = cpu->er[rd]; uint64_t result = d - (uint64_t)imm;
-            set_nz_l(cpu, (int32_t)result);
-            set_flag(cpu, BIT_C, (result & 0x100000000ULL) != 0);
-            set_flag(cpu, BIT_V, (int32_t)((d ^ imm) & (d ^ result)) < 0);
-            set_flag(cpu, BIT_H, ((int32_t)(d ^ imm ^ result) & 0x10000000) != 0);
+            uint32_t d = cpu->er[rd];
+            set_arithmetic_l(cpu, d, imm, d - imm, true);
             break;
         }
         case 0x3: {
-            uint64_t d = cpu->er[rd]; uint64_t result = d - (uint64_t)imm;
-            cpu->er[rd] = (uint32_t)result; set_nz_l(cpu, (int32_t)cpu->er[rd]);
-            set_flag(cpu, BIT_C, (result & 0x100000000ULL) != 0);
-            set_flag(cpu, BIT_V, (int32_t)((d ^ imm) & (d ^ result)) < 0);
-            set_flag(cpu, BIT_H, ((int32_t)(d ^ imm ^ result) & 0x10000000) != 0);
+            uint32_t d = cpu->er[rd], result = d - imm;
+            cpu->er[rd] = result;
+            set_arithmetic_l(cpu, d, imm, result, true);
             break;
         }
         case 0x4: cpu->er[rd] |= imm; set_nz_l(cpu, (int32_t)cpu->er[rd]); set_flag(cpu, BIT_V, false); break;
@@ -1238,7 +1240,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
     switch (hi) {
         case 0x50: { /* MULXU.B */
             int rs = (lo >> 4) & 0xF; int rd = lo & 0xF;
-            int result = get_reg_b(cpu, rs) * get_reg_b(cpu, rd);
+            int result = get_reg_b(cpu, rs) * (uint8_t)get_r(cpu, rd);
             set_r(cpu, rd, (uint16_t)(result & 0xFFFF));
             break;
         }
@@ -1267,7 +1269,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
             uint32_t divisor = get_r(cpu, rs) & 0xFFFF;
             if (divisor == 0) { set_flag(cpu, BIT_Z, true); }
             else {
-                uint64_t dividend = cpu->er[rd] & 0xFFFFFFFFULL;
+                uint32_t dividend = cpu->er[rd];
                 uint32_t quotient = (uint32_t)((dividend / divisor) & 0xFFFF);
                 uint32_t remainder = (uint32_t)((dividend % divisor) & 0xFFFF);
                 cpu->er[rd] = (remainder << 16) | quotient;
@@ -1568,7 +1570,7 @@ static void decode7(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
 }
 
 /* ======== Main decode ======== */
-static void decode(h8s_cpu_t *cpu, uint16_t op) {
+CPU_INLINE void decode(h8s_cpu_t *cpu, uint16_t op) {
     int hi = (op >> 8) & 0xFF;
     int lo = op & 0xFF;
 
@@ -1713,7 +1715,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
-void h8s_cpu_step(h8s_cpu_t *cpu) {
+CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
     /* CCR-control instructions inhibit interrupt acceptance through the next
      * instruction. CyOS uses ANDC followed by a stack-pointer load during a
      * task switch; taking an IRQ between them corrupts the task context. */
@@ -1733,6 +1735,26 @@ void h8s_cpu_step(h8s_cpu_t *cpu) {
     uint16_t op = fetch16(cpu);
     decode(cpu, op);
     cpu->cycle_count++;
+}
+
+void h8s_cpu_step(h8s_cpu_t *cpu) {
+    execute_step(cpu);
+}
+
+int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
+                int *timer_debt, int *completion_debt, bool *io_access) {
+    int done = 0;
+    while (done < limit) {
+        cpu->bus->speaker->frame_cycle = frame_cycle + done;
+        ++*timer_debt;
+        if (done + 1 == limit && cpu->bus->sync_peripherals)
+            cpu->bus->sync_peripherals(cpu->bus->sync_ctx);
+        execute_step(cpu);
+        ++*completion_debt;
+        ++done;
+        if (*io_access || cpu->halted) break;
+    }
+    return done;
 }
 
 void h8s_cpu_request_interrupt(h8s_cpu_t *cpu, int vector) {

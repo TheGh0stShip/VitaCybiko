@@ -30,7 +30,8 @@ static uint8_t *load_file(const char *path, size_t *size)
         return NULL;
     }
     long length = ftell(file);
-    if (length < 0 || length > DATAFLASH_SIZE || fseek(file, 0, SEEK_SET) != 0) {
+    /* Xtreme raw RAM checkpoints are 2 MiB; Classic dataflash is 528 KiB. */
+    if (length < 0 || length > 0x200000 || fseek(file, 0, SEEK_SET) != 0) {
         fclose(file);
         return NULL;
     }

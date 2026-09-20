@@ -117,6 +117,74 @@ static void test_model_address_maps(void)
     }
 }
 
+static void test_longword_memory_paths(void)
+{
+    for (int model = 0; model < CYBIKO_MODEL_COUNT; ++model) {
+        address_bus_t a, b;
+        bus_init(&a); bus_init(&b);
+        const cybiko_machine_t *m = cybiko_machine(model);
+        a.machine = b.machine = m;
+        for (int instance = 0; instance < 2; ++instance) {
+            address_bus_t *bus = instance ? &b : &a;
+            memory_init(&bus->boot_rom, 32768, false);
+            memory_init(&bus->external_ram, m->ram_size, true);
+            memory_init(&bus->flash_rom, m->flash_size ? m->flash_size : 1, false);
+            memory_init(&bus->on_chip_ram, 0x1000000 - m->on_chip_base, true);
+            bus->unmapped_log_count = 200;
+            memset(bus->boot_rom.data, 0xa7, bus->boot_rom.size);
+            memset(bus->external_ram.data, 0x59, bus->external_ram.size);
+            memset(bus->flash_rom.data, 0x31, bus->flash_rom.size);
+            memset(bus->on_chip_ram.data, 0xc2, bus->on_chip_ram.size);
+        }
+        bus_build_memory_map(&a); /* b deliberately retains the slow router. */
+        TEST_CHECK(a.read_pages[m->ram_base >> 12] == a.external_ram.data);
+        TEST_CHECK(a.write_pages[0] == NULL);
+        TEST_CHECK(a.read_pages[4095] == NULL); /* Never cache I/O. */
+        for (uint32_t page = 0; page < 4096; ++page) {
+            if (!a.read_pages[page]) continue;
+            unsigned offsets[] = {0, 1, 2, 3, 2047, 4092, 4093, 4094, 4095};
+            for (unsigned i = 0; i < sizeof(offsets) / sizeof(offsets[0]); ++i) {
+                uint32_t address = page * 4096 + offsets[i];
+                TEST_CHECK(bus_read8(&a, address) == bus_read8(&b, address));
+                TEST_CHECK(bus_read16(&a, address) == bus_read16(&b, address));
+                TEST_CHECK(bus_read32(&a, address) == bus_read32(&b, address));
+                uint32_t value = address * 0x9e3779b9u;
+                bus_write8(&a, address, value); bus_write8(&b, address, value);
+                bus_write16(&a, address, value); bus_write16(&b, address, value);
+                bus_write32(&a, address, value); bus_write32(&b, address, value);
+            }
+        }
+        TEST_CHECK(!memcmp(a.external_ram.data, b.external_ram.data, m->ram_size));
+        TEST_CHECK(!memcmp(a.on_chip_ram.data, b.on_chip_ram.data, a.on_chip_ram.size));
+        TEST_CHECK(!memcmp(a.boot_rom.data, b.boot_rom.data, a.boot_rom.size));
+        TEST_CHECK(!memcmp(a.flash_rom.data, b.flash_rom.data, a.flash_rom.size));
+        uint32_t edges[] = {0, 32768, m->boot_end + 1, m->ram_base, m->ram_base + 4096,
+            m->ram_base + m->ram_size, m->ram_end + 1, m->on_chip_base,
+            0xfffc00, m->flash_base, m->flash_base + m->flash_size,
+            m->flash_end + 1, 0x1000000};
+        for (size_t edge = 0; edge < sizeof(edges) / sizeof(edges[0]); ++edge) {
+            for (int delta = -6; delta <= 6; ++delta) {
+                uint32_t address = (edges[edge] + delta) & 0xffffff;
+                /* Do not compare side-effectful I/O against a repeated read. */
+                if (address >= 0xfffc00) continue;
+                uint32_t expected = (uint32_t)bus_read16(&b, address) << 16;
+                expected |= bus_read16(&b, address + 2);
+                TEST_CHECK_(bus_read32(&a, address) == expected,
+                            "model=%d address=%06x", model, address);
+                uint32_t value = address * 0x9e3779b9u;
+                bus_write32(&a, address, value);
+                bus_write16(&b, address, value >> 16);
+                bus_write16(&b, address + 2, value);
+                TEST_CHECK(!memcmp(a.external_ram.data, b.external_ram.data, m->ram_size));
+                TEST_CHECK(!memcmp(a.on_chip_ram.data, b.on_chip_ram.data, a.on_chip_ram.size));
+                TEST_CHECK(!memcmp(a.boot_rom.data, b.boot_rom.data, a.boot_rom.size));
+                TEST_CHECK(!memcmp(a.flash_rom.data, b.flash_rom.data, a.flash_rom.size));
+            }
+        }
+        bus_free(&a); bus_free(&b);
+    }
+}
+
 static void test_battery_adc_registers_and_conversion(void)
 {
     for (int model = 0; model < CYBIKO_MODEL_COUNT; ++model) {
@@ -288,6 +356,7 @@ static void test_classic_v2_escape_isolation(void)
 }
 
 TEST_LIST = {
+    {"longword_memory_paths", test_longword_memory_paths},
     {"classic_v2_escape_isolation", test_classic_v2_escape_isolation},
     {"serial_transmit_interrupts", test_serial_transmit_interrupts},
     {"classic_spi_bus_and_dtc", test_classic_spi_bus_and_dtc},

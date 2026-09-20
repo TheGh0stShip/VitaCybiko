@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -1171,6 +1172,44 @@ static bool save_session(cybiko_emu_t *emu)
     return storage_ok && clock_ok;
 }
 
+/* Diagnostic rows must not wait for SD2Vita storage on the game thread.
+ * Keep a bounded memory log and persist immutable copies with autosaves. */
+typedef struct {
+    char path[MAX_PATH_CHARS];
+    uint8_t *data;
+    size_t used, capacity;
+} frame_log_t;
+
+static frame_log_t *create_frame_log(const char *path)
+{
+    if (strlen(path) + sizeof(".tmp") > MAX_PATH_CHARS) return NULL;
+    frame_log_t *log = calloc(1, sizeof(*log));
+    if (!log) return NULL;
+    log->capacity = 256 * 1024;
+    log->data = malloc(log->capacity);
+    if (!log->data) { free(log); return NULL; }
+    snprintf(log->path, sizeof(log->path), "%s", path);
+    return log;
+}
+
+static bool append_frame_log(frame_log_t *log, const char *format, ...)
+{
+    if (!log || log->used >= log->capacity) return false;
+    va_list args;
+    va_start(args, format);
+    int size = vsnprintf((char *)log->data + log->used, log->capacity - log->used,
+                         format, args);
+    va_end(args);
+    if (size < 0 || (size_t)size >= log->capacity - log->used) return false;
+    log->used += (size_t)size;
+    return true;
+}
+
+static void free_frame_log(frame_log_t *log)
+{
+    if (log) { free(log->data); free(log); }
+}
+
 /* Only immutable copies cross the worker boundary. The emulator, SDL renderer,
  * input state and runtime path globals remain owned by the main thread. */
 typedef struct {
@@ -1182,6 +1221,9 @@ typedef struct {
     uint8_t clock[36];
     char storage_path[MAX_PATH_CHARS], ram_path[MAX_PATH_CHARS];
     char rtc_path[MAX_PATH_CHARS];
+    uint8_t *trace;
+    size_t trace_size;
+    char trace_path[MAX_PATH_CHARS];
     double write_ms;
 } save_snapshot_t;
 
@@ -1190,6 +1232,7 @@ static void free_save_snapshot(save_snapshot_t *job)
     if (!job) return;
     free(job->storage);
     free(job->ram);
+    free(job->trace);
     free(job);
 }
 
@@ -1211,8 +1254,9 @@ static save_snapshot_t *capture_save_snapshot(cybiko_emu_t *emu)
     if (model != CYBIKO_XTREME) {
         const uint8_t *ram = cybiko_get_nvram(emu, &job->ram_size);
         if (!ram || !job->ram_size) goto fail;
-        job->ram = calloc(1, job->ram_size + 24);
+        job->ram = malloc(job->ram_size + 24);
         if (!job->ram) goto fail;
+        memset(job->ram, 0, 24);
         memcpy(job->ram, "VCRM\1", 5);
         job->ram[5] = (uint8_t)model;
         put_u32le(job->ram + 8, (uint32_t)job->ram_size);
@@ -1225,6 +1269,17 @@ static save_snapshot_t *capture_save_snapshot(cybiko_emu_t *emu)
 fail:
     free_save_snapshot(job);
     return NULL;
+}
+
+static bool capture_frame_log(save_snapshot_t *job, const frame_log_t *log)
+{
+    if (!log || !log->used) return true;
+    job->trace = malloc(log->used);
+    if (!job->trace) return false;
+    job->trace_size = log->used;
+    memcpy(job->trace, log->data, log->used);
+    snprintf(job->trace_path, sizeof(job->trace_path), "%s", log->path);
+    return true;
 }
 
 static int write_save_snapshot(void *opaque)
@@ -1243,16 +1298,21 @@ static int write_save_snapshot(void *opaque)
         job->ok = write_file(job->ram_path, job->ram, job->ram_size + 24);
     bool clock_ok = write_file(job->rtc_path, job->clock, sizeof(job->clock));
     job->ok = job->ok && clock_ok;
+    /* Diagnostics are secondary: a log failure must not discard a good save. */
+    if (job->trace && !write_file(job->trace_path, job->trace, job->trace_size))
+        fprintf(stderr, "background performance log write failed\n");
     job->write_ms = (SDL_GetPerformanceCounter() - start) * 1000.0 /
                     SDL_GetPerformanceFrequency();
     SDL_AtomicSet(&job->done, 1);
     return job->ok ? 0 : -1;
 }
 
-static save_snapshot_t *start_async_save(cybiko_emu_t *emu)
+static save_snapshot_t *start_async_save(cybiko_emu_t *emu, const frame_log_t *log)
 {
     save_snapshot_t *job = capture_save_snapshot(emu);
     if (!job) return NULL;
+    if (!capture_frame_log(job, log))
+        fprintf(stderr, "could not snapshot performance log; saving device state only\n");
     job->thread = SDL_CreateThread(write_save_snapshot, "VitaCybiko save", job);
     if (!job->thread) { free_save_snapshot(job); return NULL; }
     return job;
@@ -1422,6 +1482,21 @@ static int catchup_frame_budget(uint64_t late, uint64_t interval,
     if (budget > due) budget = due;
     if (budget > EMULATION_CATCHUP_MAX_FRAMES) budget = EMULATION_CATCHUP_MAX_FRAMES;
     return (int)budget;
+}
+
+typedef struct {
+    uint64_t previous, max_gap;
+    unsigned late;
+} present_timing_t;
+
+static void record_present(present_timing_t *timing, uint64_t now, uint64_t interval)
+{
+    if (timing->previous && now >= timing->previous) {
+        uint64_t gap = now - timing->previous;
+        if (gap > timing->max_gap) timing->max_gap = gap;
+        if (interval && gap > interval + interval / 4) ++timing->late;
+    }
+    timing->previous = now;
 }
 
 static void hal_keyboard_poll(void *ctx_ptr, uint16_t *matrix, int num_columns)
@@ -2199,10 +2274,9 @@ select_model:
     uint64_t last_render_ticks = 0;
     char perf_path[MAX_PATH_CHARS + sizeof("/performance.csv")];
     snprintf(perf_path, sizeof(perf_path), "%s/performance.csv", runtime_root);
-    FILE *perf_log = fopen(perf_path, "w");
+    frame_log_t *perf_log = create_frame_log(perf_path);
     if (perf_log) {
-        fprintf(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms\n");
-        fflush(perf_log);
+        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents\n");
     }
     unsigned perf_presents = 0, perf_guest = 0, perf_rows = 0;
     unsigned perf_lcd_start = ctx->lcd_updates;
@@ -2210,6 +2284,7 @@ select_model:
     ctx->audio_underruns = ctx->audio_dropped_frames = 0;
     uint64_t perf_start = frame_deadline, perf_core = 0, perf_render = 0, perf_max_core = 0;
     double perf_save_capture_ms = 0, perf_save_worker_ms = 0;
+    present_timing_t present_timing = {0};
     while (running) {
         uint64_t work_start = SDL_GetPerformanceCounter();
         process_sdl_events(ctx, &running);
@@ -2233,10 +2308,11 @@ select_model:
                 snprintf(ctx->status, sizeof(ctx->status), "Device save failed; check available storage");
             }
             ctx->save_requested = false;
+            if (perf_log) write_file(perf_log->path, perf_log->data, perf_log->used);
             next_autosave = now + AUTOSAVE_INTERVAL_MS;
         } else if (!pending_save && (int32_t)(now - next_autosave) >= 0) {
             uint64_t capture_start = SDL_GetPerformanceCounter();
-            pending_save = start_async_save(emu);
+            pending_save = start_async_save(emu, perf_log);
             perf_save_capture_ms += (SDL_GetPerformanceCounter() - capture_start) *
                                     1000.0 / perf_frequency;
             if (!pending_save)
@@ -2249,6 +2325,7 @@ select_model:
         }
 
         if (ctx->backgrounded || ctx->focus_lost) {
+            memset(&present_timing, 0, sizeof(present_timing));
             frame_deadline = SDL_GetPerformanceCounter();
             perf_start = frame_deadline;
             perf_presents = perf_guest = 0;
@@ -2284,7 +2361,9 @@ select_model:
         uint64_t render_start = SDL_GetPerformanceCounter();
         core_ticks = render_start - core_start;
         render_frame(ctx);
-        last_render_ticks = SDL_GetPerformanceCounter() - render_start;
+        uint64_t present_stamp = SDL_GetPerformanceCounter();
+        last_render_ticks = present_stamp - render_start;
+        record_present(&present_timing, present_stamp, frame_interval);
         perf_core += core_ticks;
         perf_render += last_render_ticks;
         if (core_ticks > perf_max_core) perf_max_core = core_ticks;
@@ -2293,7 +2372,7 @@ select_model:
             uint64_t stamp = SDL_GetPerformanceCounter();
             if (perf_log && perf_rows++ < 600) {
                 double ms = 1000.0 / (double)perf_frequency;
-                fprintf(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f\n",
+                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u\n",
                         VITACYBIKO_VERSION, ctx->model, perf_presents, perf_guest,
                         ctx->lcd_updates - perf_lcd_start,
                         (stamp - perf_start) * ms, perf_core * ms,
@@ -2302,11 +2381,13 @@ select_model:
                         ctx->audio_ticks * ms, ctx->lcd_ticks * ms,
                         ctx->audio_underruns, ctx->audio_dropped_frames,
                         ctx->audio_dev ? SDL_GetQueuedAudioSize(ctx->audio_dev) : 0,
-                        perf_save_capture_ms, perf_save_worker_ms);
-                fflush(perf_log);
+                        perf_save_capture_ms, perf_save_worker_ms,
+                        present_timing.max_gap * ms, present_timing.late);
             }
             perf_start = stamp;
             perf_save_capture_ms = perf_save_worker_ms = 0;
+            present_timing.max_gap = 0;
+            present_timing.late = 0;
             perf_presents = perf_guest = 0;
             perf_core = perf_render = perf_max_core = 0;
             perf_lcd_start = ctx->lcd_updates;
@@ -2328,10 +2409,11 @@ select_model:
         }
     }
 
-    if (perf_log) fclose(perf_log);
     bool final_async_ok;
     double final_async_ms;
     finish_async_save(&pending_save, true, &final_async_ok, &final_async_ms);
+    if (perf_log) write_file(perf_log->path, perf_log->data, perf_log->used);
+    free_frame_log(perf_log);
     if (!save_session(emu)) {
         fprintf(stderr, "failed to save NVRAM\n");
     }

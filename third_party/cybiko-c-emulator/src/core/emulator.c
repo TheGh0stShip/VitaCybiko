@@ -128,6 +128,7 @@ cybiko_emu_t *cybiko_create_model(const cybiko_hal_t *hal, cybiko_model_t model)
     emu->bus.cpu = &emu->cpu;
     emu->bus.sync_peripherals = sync_peripherals;
     emu->bus.sync_ctx = emu;
+    bus_build_memory_map(&emu->bus);
 
     emu->running = true;
 
@@ -148,13 +149,19 @@ void cybiko_destroy(cybiko_emu_t *emu) {
 
 uint32_t cybiko_crc32(const uint8_t *data, size_t len) {
     if (!data && len != 0) return 0;
+    /* Reflected IEEE CRC-32, four bits per lookup. Constant data is safe for
+     * the save worker and costs only 64 bytes, with no lazy init race. */
+    static const uint32_t nibble[16] = {
+        0x00000000u, 0x1db71064u, 0x3b6e20c8u, 0x26d930acu,
+        0x76dc4190u, 0x6b6b51f4u, 0x4db26158u, 0x5005713cu,
+        0xedb88320u, 0xf00f9344u, 0xd6d6a3e8u, 0xcb61b38cu,
+        0x9b64c2b0u, 0x86d3d2d4u, 0xa00ae278u, 0xbdbdf21cu
+    };
     uint32_t crc = 0xFFFFFFFFu;
     for (size_t i = 0; i < len; i++) {
         crc ^= data[i];
-        for (int bit = 0; bit < 8; bit++) {
-            uint32_t mask = 0u - (crc & 1u);
-            crc = (crc >> 1) ^ (0xEDB88320u & mask);
-        }
+        crc = (crc >> 4) ^ nibble[crc & 15];
+        crc = (crc >> 4) ^ nibble[crc & 15];
     }
     return crc ^ 0xFFFFFFFFu;
 }
@@ -314,15 +321,10 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
         int next_event = cycles_until_next_peripheral_event(emu);
         if (next_event > 0 && next_event < chunk) chunk = next_event;
         emu->peripheral_access = false;
-        for (int step = 0; step < chunk; ++step) {
-            emu->speaker.frame_cycle = cycle;
-            ++emu->pending_timer_cycles;
-            if (step + 1 == chunk) sync_peripherals(emu);
-            h8s_cpu_step(&emu->cpu);
-            ++emu->pending_completion_cycles;
-            ++cycle;
-            if (emu->peripheral_access || emu->cpu.halted) break;
-        }
+        cycle += h8s_cpu_run(&emu->cpu, chunk, cycle,
+                            &emu->pending_timer_cycles,
+                            &emu->pending_completion_cycles,
+                            &emu->peripheral_access);
         sync_peripherals(emu);
     }
     emu->total_steps += (uint64_t)frame_cycles;

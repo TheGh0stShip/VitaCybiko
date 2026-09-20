@@ -64,6 +64,10 @@ static void update_rtc_pins(address_bus_t *bus);
 static bus_region_t decode_region(address_bus_t *bus, uint32_t address)
 {
     const cybiko_machine_t *m = bus->machine;
+    /* Stack, heap and Classic executable code dominate data accesses. */
+    if (address >= m->ram_base && address <= m->ram_end)
+        return REGION_EXT_RAM;
+
     if (address <= m->boot_end)
         return REGION_BOOT_ROM;
 
@@ -72,9 +76,6 @@ static bus_region_t decode_region(address_bus_t *bus, uint32_t address)
 
     if (m->model == CYBIKO_XTREME && address >= USB_BASE && address <= USB_END)
         return REGION_USB;
-
-    if (address >= m->ram_base && address <= m->ram_end)
-        return REGION_EXT_RAM;
 
     if (m->flash_size && address >= m->flash_base && address <= m->flash_end)
         return REGION_FLASH;
@@ -295,7 +296,32 @@ static uint16_t read_keyboard(address_bus_t *bus, uint32_t address)
     return value;
 }
 
-uint8_t bus_read8(address_bus_t *bus, uint32_t address)
+void bus_build_memory_map(address_bus_t *bus)
+{
+    memset(bus->read_pages, 0, sizeof(bus->read_pages));
+    memset(bus->write_pages, 0, sizeof(bus->write_pages));
+    for (uint32_t address = 0; address < 0x1000000; address += 4096) {
+        bus_region_t region = decode_region(bus, address);
+        if (decode_region(bus, address + 4095) != region) continue;
+        memory_t *mem = NULL;
+        uint32_t offset = 0;
+        switch (region) {
+        case REGION_BOOT_ROM: mem = &bus->boot_rom; offset = address & 0x7fff; break;
+        case REGION_EXT_RAM: mem = &bus->external_ram; offset = ext_ram_offset(bus, address); break;
+        case REGION_FLASH: mem = &bus->flash_rom; offset = flash_offset(bus, address); break;
+        case REGION_ON_CHIP:
+            if (address + 4095 >= 0xfffc00) continue;
+            mem = &bus->on_chip_ram; offset = on_chip_offset(bus, address); break;
+        default: continue;
+        }
+        if (!mem->data || offset + 4096 > mem->size) continue;
+        bus->read_pages[address >> 12] = mem->data + offset;
+        if (mem->writable && region != REGION_BOOT_ROM)
+            bus->write_pages[address >> 12] = mem->data + offset;
+    }
+}
+
+uint8_t bus_read8_slow(address_bus_t *bus, uint32_t address)
 {
     address &= 0xFFFFFF;
     switch (decode_region(bus, address)) {
@@ -323,7 +349,7 @@ uint8_t bus_read8(address_bus_t *bus, uint32_t address)
     return 0;
 }
 
-uint16_t bus_read16(address_bus_t *bus, uint32_t address)
+uint16_t bus_read16_slow(address_bus_t *bus, uint32_t address)
 {
     address &= 0xFFFFFF;
     switch (decode_region(bus, address)) {
@@ -350,14 +376,25 @@ uint16_t bus_read16(address_bus_t *bus, uint32_t address)
     return 0;
 }
 
-uint32_t bus_read32(address_bus_t *bus, uint32_t address)
+uint32_t bus_read32_slow(address_bus_t *bus, uint32_t address)
 {
+    address &= 0xFFFFFF;
+    const cybiko_machine_t *m = bus->machine;
+    if (address >= m->ram_base && address + 3 <= m->ram_end) {
+        uint32_t offset = ext_ram_offset(bus, address);
+        if (offset + 3 < bus->external_ram.size)
+            return memory_read32(&bus->external_ram, offset);
+    }
+    /* Never combine I/O reads: they have ordering and completion side effects.
+     * Mirror edges also retain the original two-word semantics. */
+    if (address >= m->on_chip_base && address + 3 < 0xFFFC00)
+        return memory_read32(&bus->on_chip_ram, on_chip_offset(bus, address));
     return ((uint32_t)bus_read16(bus, address) << 16) | bus_read16(bus, address + 2);
 }
 
 /* --- Write operations --- */
 
-void bus_write8(address_bus_t *bus, uint32_t address, uint8_t value)
+void bus_write8_slow(address_bus_t *bus, uint32_t address, uint8_t value)
 {
     address &= 0xFFFFFF;
     switch (decode_region(bus, address)) {
@@ -388,7 +425,7 @@ void bus_write8(address_bus_t *bus, uint32_t address, uint8_t value)
     }
 }
 
-void bus_write16(address_bus_t *bus, uint32_t address, uint16_t value)
+void bus_write16_slow(address_bus_t *bus, uint32_t address, uint16_t value)
 {
     address &= 0xFFFFFF;
     switch (decode_region(bus, address)) {
@@ -419,8 +456,21 @@ void bus_write16(address_bus_t *bus, uint32_t address, uint16_t value)
     }
 }
 
-void bus_write32(address_bus_t *bus, uint32_t address, uint32_t value)
+void bus_write32_slow(address_bus_t *bus, uint32_t address, uint32_t value)
 {
+    address &= 0xFFFFFF;
+    const cybiko_machine_t *m = bus->machine;
+    if (address >= m->ram_base && address + 3 <= m->ram_end) {
+        uint32_t offset = ext_ram_offset(bus, address);
+        if (offset + 3 < bus->external_ram.size) {
+            memory_write32(&bus->external_ram, offset, value);
+            return;
+        }
+    }
+    if (address >= m->on_chip_base && address + 3 < 0xFFFC00) {
+        memory_write32(&bus->on_chip_ram, on_chip_offset(bus, address), value);
+        return;
+    }
     bus_write16(bus, address, (uint16_t)(value >> 16));
     bus_write16(bus, address + 2, (uint16_t)(value & 0xFFFF));
 }
@@ -429,6 +479,8 @@ void bus_write32(address_bus_t *bus, uint32_t address, uint32_t value)
 
 static uint8_t read_on_chip8(address_bus_t *bus, uint32_t address)
 {
+    if (address < 0xFFFC00)
+        return memory_read8(&bus->on_chip_ram, on_chip_offset(bus, address));
     if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
     /* Timer16 channels (non-contiguous, check first) */
     int t16 = route_timer16_read8(bus, address);
@@ -515,6 +567,8 @@ static uint8_t read_on_chip8(address_bus_t *bus, uint32_t address)
 
 static uint16_t read_on_chip16(address_bus_t *bus, uint32_t address)
 {
+    if (address < 0xFFFC00)
+        return memory_read16(&bus->on_chip_ram, on_chip_offset(bus, address));
     if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
     /* Timer16 routing first */
     int t16 = route_timer16_read16(bus, address);
@@ -575,6 +629,10 @@ static void update_rtc_pins(address_bus_t *bus)
 
 static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
 {
+    if (address < 0xFFFC00) {
+        memory_write8(&bus->on_chip_ram, on_chip_offset(bus, address), value);
+        return;
+    }
     if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
     /* Timer16 routing (check first, non-contiguous addresses) */
     if (route_timer16_write8(bus, address, value)) return;
@@ -766,6 +824,10 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
 
 static void write_on_chip16(address_bus_t *bus, uint32_t address, uint16_t value)
 {
+    if (address < 0xFFFC00) {
+        memory_write16(&bus->on_chip_ram, on_chip_offset(bus, address), value);
+        return;
+    }
     if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
     /* Timer16 routing first */
     if (route_timer16_write16(bus, address, value)) return;

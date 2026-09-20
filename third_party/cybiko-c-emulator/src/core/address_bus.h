@@ -66,17 +66,69 @@ typedef struct address_bus {
     int     io_fallthrough_log;
     int     dma_debug_log;
     bool    in_dma;  /* true during DMA transfers */
+    /* Only complete, side-effect-free 4 KiB pages are mapped. The last page
+     * (on-chip I/O), partial pages and page-crossing accesses use the router.
+     * Entries alias live backing storage, not a copy of guest bytes. */
+    const uint8_t *read_pages[4096];
+    uint8_t *write_pages[4096];
 } address_bus_t;
 
 void     bus_init(address_bus_t *bus);
 void     bus_free(address_bus_t *bus);
+void     bus_build_memory_map(address_bus_t *bus);
 
-uint8_t  bus_read8(address_bus_t *bus, uint32_t address);
-uint16_t bus_read16(address_bus_t *bus, uint32_t address);
-uint32_t bus_read32(address_bus_t *bus, uint32_t address);
-void     bus_write8(address_bus_t *bus, uint32_t address, uint8_t value);
-void     bus_write16(address_bus_t *bus, uint32_t address, uint16_t value);
-void     bus_write32(address_bus_t *bus, uint32_t address, uint32_t value);
+uint8_t  bus_read8_slow(address_bus_t *bus, uint32_t address);
+uint16_t bus_read16_slow(address_bus_t *bus, uint32_t address);
+uint32_t bus_read32_slow(address_bus_t *bus, uint32_t address);
+void     bus_write8_slow(address_bus_t *bus, uint32_t address, uint8_t value);
+void     bus_write16_slow(address_bus_t *bus, uint32_t address, uint16_t value);
+void     bus_write32_slow(address_bus_t *bus, uint32_t address, uint32_t value);
+
+static inline uint8_t bus_read8(address_bus_t *bus, uint32_t address) {
+    address &= 0xffffff;
+    const uint8_t *page = bus->read_pages[address >> 12];
+    return page ? page[address & 4095] : bus_read8_slow(bus, address);
+}
+static inline uint16_t bus_read16(address_bus_t *bus, uint32_t address) {
+    address &= 0xffffff;
+    const uint8_t *page = bus->read_pages[address >> 12];
+    unsigned offset = address & 4095;
+    if (page && offset <= 4094)
+        return (uint16_t)((page[offset] << 8) | page[offset + 1]);
+    return bus_read16_slow(bus, address);
+}
+static inline uint32_t bus_read32(address_bus_t *bus, uint32_t address) {
+    address &= 0xffffff;
+    const uint8_t *page = bus->read_pages[address >> 12];
+    unsigned offset = address & 4095;
+    if (page && offset <= 4092)
+        return ((uint32_t)page[offset] << 24) | ((uint32_t)page[offset + 1] << 16) |
+               ((uint32_t)page[offset + 2] << 8) | page[offset + 3];
+    return bus_read32_slow(bus, address);
+}
+static inline void bus_write8(address_bus_t *bus, uint32_t address, uint8_t value) {
+    address &= 0xffffff;
+    uint8_t *page = bus->write_pages[address >> 12];
+    if (page) page[address & 4095] = value;
+    else bus_write8_slow(bus, address, value);
+}
+static inline void bus_write16(address_bus_t *bus, uint32_t address, uint16_t value) {
+    address &= 0xffffff;
+    uint8_t *page = bus->write_pages[address >> 12];
+    unsigned offset = address & 4095;
+    if (page && offset <= 4094) {
+        page[offset] = (uint8_t)(value >> 8); page[offset + 1] = (uint8_t)value;
+    } else bus_write16_slow(bus, address, value);
+}
+static inline void bus_write32(address_bus_t *bus, uint32_t address, uint32_t value) {
+    address &= 0xffffff;
+    uint8_t *page = bus->write_pages[address >> 12];
+    unsigned offset = address & 4095;
+    if (page && offset <= 4092) {
+        page[offset] = (uint8_t)(value >> 24); page[offset + 1] = (uint8_t)(value >> 16);
+        page[offset + 2] = (uint8_t)(value >> 8); page[offset + 3] = (uint8_t)value;
+    } else bus_write32_slow(bus, address, value);
+}
 
 void     bus_tick_dma_completion(address_bus_t *bus);
 int      bus_cycles_until_dma_completion(const address_bus_t *bus);

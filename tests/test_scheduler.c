@@ -49,6 +49,8 @@ static void test_event_scheduler_matches_reference(void)
         TEST_ASSERT(a && b);
         b->reference_scheduler = true;
         b->bus.sync_peripherals = NULL;
+        memset(b->bus.read_pages, 0, sizeof(b->bus.read_pages));
+        memset(b->bus.write_pages, 0, sizeof(b->bus.write_pages));
         uint8_t rom[CYBIKO_BOOT_ROM_SIZE] = {0};
         /* All IRQ vectors point at an RTE. Reset starts at 0x400. */
         for (int vector = 0; vector < 128; ++vector) rom[vector * 4 + 2] = 2;
@@ -114,6 +116,8 @@ static void test_firmware_scheduler_optional(void)
     TEST_ASSERT(a && b);
     b->reference_scheduler = true;
     b->bus.sync_peripherals = NULL;
+    memset(b->bus.read_pages, 0, sizeof(b->bus.read_pages));
+    memset(b->bus.write_pages, 0, sizeof(b->bus.write_pages));
     for (int instance = 0; instance < 2; ++instance) {
         cybiko_emu_t *e = instance ? b : a;
         load_exact(boot, e->bus.boot_rom.data, e->bus.boot_rom.size);
