@@ -1008,8 +1008,8 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
                 }
                 case 0x70: {
                     unsigned rd = lo & 0x7;
-                    int32_t val = (int32_t)state->er[rd];
-                    state->er[rd] = (uint32_t)(val + 1);
+                    uint32_t val = state->er[rd];
+                    state->er[rd] = val + 1u;
                     block_set_nz_l(state, state->er[rd]);
                     block_set_flag(state, BLOCK_CCR_V, val == 0x7fffffff);
                     break;
@@ -1137,7 +1137,7 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
             }
             case 0xb: {
                 uint32_t v = state->er[erd];
-                state->er[erd] = (uint32_t)(-(int32_t)v);
+                state->er[erd] = 0u - v;
                 block_set_nz_l(state, state->er[erd]);
                 block_set_flag(state, BLOCK_CCR_C, state->er[erd] != 0);
                 block_set_flag(state, BLOCK_CCR_V, v == 0x80000000u);
@@ -1608,8 +1608,8 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
             }
             case 0x70: {
                 unsigned rd = lo & 0x7;
-                int32_t val = (int32_t)state->er[rd];
-                state->er[rd] = (uint32_t)(val + 1);
+                uint32_t val = state->er[rd];
+                state->er[rd] = val + 1u;
                 block_set_nz_l(state, state->er[rd]);
                 block_set_flag(state, BLOCK_CCR_V, val == 0x7fffffff);
                 break;
@@ -1646,10 +1646,10 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
             }
             case 0x70: {
                 unsigned rd = lo & 0x7;
-                int32_t val = (int32_t)state->er[rd];
-                state->er[rd] = (uint32_t)(val - 1);
+                uint32_t val = state->er[rd];
+                state->er[rd] = val - 1u;
                 block_set_nz_l(state, state->er[rd]);
-                block_set_flag(state, BLOCK_CCR_V, (uint32_t)val == 0x80000000u);
+                block_set_flag(state, BLOCK_CCR_V, val == 0x80000000u);
                 break;
             }
             case 0x80: state->er[lo & 0x7] -= 2; break;

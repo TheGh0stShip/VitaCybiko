@@ -868,7 +868,7 @@ static void decode17(h8s_cpu_t *cpu, int lo) {
             break;
         }
         case 0xB: {
-            uint32_t v = cpu->er[erd]; cpu->er[erd] = (uint32_t)(-(int32_t)v);
+            uint32_t v = cpu->er[erd]; cpu->er[erd] = 0u - v;
             set_nz_l(cpu, (int32_t)cpu->er[erd]);
             set_flag(cpu, BIT_C, cpu->er[erd] != 0);
             set_flag(cpu, BIT_V, v == 0x80000000u);
