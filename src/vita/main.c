@@ -2633,8 +2633,10 @@ select_model:
     snprintf(perf_path, sizeof(perf_path), "%s/performance.csv", runtime_root);
     frame_log_t *perf_log = create_frame_log(perf_path);
     if (perf_log) {
-        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents,source_lcd_updates,generated_lcd_frames,motion_estimate_ms,interpolation_delay_ms\n");
+        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents,source_lcd_updates,generated_lcd_frames,motion_estimate_ms,interpolation_delay_ms,semantic_fast_blocks,semantic_fast_cycles,semantic_fast_rejects,semantic_fast_cached_rejects,semantic_fast_backoff_skips\n");
     }
+    cybiko_cpu_stats_t perf_cpu_start = {0};
+    cybiko_get_cpu_stats(emu, &perf_cpu_start);
     unsigned perf_presents = 0, perf_guest = 0, perf_rows = 0;
     unsigned perf_lcd_start = ctx->lcd_updates;
     unsigned perf_source_start = ctx->source_lcd_updates, perf_generated_start = ctx->generated_lcd_frames;
@@ -2743,7 +2745,9 @@ select_model:
             uint64_t stamp = SDL_GetPerformanceCounter();
             if (perf_log && perf_rows++ < 600) {
                 double ms = 1000.0 / (double)perf_frequency;
-                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u,%u,%u,%.3f,%u\n",
+                cybiko_cpu_stats_t perf_cpu_now = {0};
+                cybiko_get_cpu_stats(emu, &perf_cpu_now);
+                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u,%u,%u,%.3f,%u,%llu,%llu,%llu,%llu,%llu\n",
                         VITACYBIKO_VERSION, ctx->model, perf_presents, perf_guest,
                         ctx->lcd_updates - perf_lcd_start,
                         (stamp - perf_start) * ms, perf_core * ms,
@@ -2756,7 +2760,13 @@ select_model:
                         present_timing.max_gap * ms, present_timing.late,
                         ctx->source_lcd_updates - perf_source_start,
                         ctx->generated_lcd_frames - perf_generated_start,
-                        perf_motion * ms, MOTION_DELAY_US / 1000);
+                        perf_motion * ms, MOTION_DELAY_US / 1000,
+                        (unsigned long long)(perf_cpu_now.semantic_fast_blocks - perf_cpu_start.semantic_fast_blocks),
+                        (unsigned long long)(perf_cpu_now.semantic_fast_cycles - perf_cpu_start.semantic_fast_cycles),
+                        (unsigned long long)(perf_cpu_now.semantic_fast_rejects - perf_cpu_start.semantic_fast_rejects),
+                        (unsigned long long)(perf_cpu_now.semantic_fast_cached_rejects - perf_cpu_start.semantic_fast_cached_rejects),
+                        (unsigned long long)(perf_cpu_now.semantic_fast_backoff_skips - perf_cpu_start.semantic_fast_backoff_skips));
+                perf_cpu_start = perf_cpu_now;
             }
             perf_start = stamp;
             perf_save_capture_ms = perf_save_worker_ms = 0;

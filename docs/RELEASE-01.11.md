@@ -51,13 +51,17 @@ confirmation with the installed build.
 ## Physical-Vita timing report
 
 Each model boot writes `ux0:data/VitaCybiko/<model>/performance.csv`, with up to
-120 rows, one per 60 presentations. The next boot of that model replaces it.
+600 rows, one per 60 presentations. The next boot of that model replaces it.
 Rows contain version/model, presentations, guest frames, LCD uploads, elapsed
 time, total core time, total render time, maximum core work per presentation,
-and the guest PC. All times are milliseconds. `1000 * presents / elapsed_ms`
-gives presented FPS; core totals include audio generation and LCD conversion.
-The log is intended to distinguish interpreter load, rendering cost, and low
-guest LCD update rates without changing the screen layout.
+guest PC, audio/LCD callback timing, audio queue counters, interpolation
+counters, and H8S semantic fast-path deltas (`semantic_fast_blocks`,
+`semantic_fast_cycles`, `semantic_fast_rejects`,
+`semantic_fast_cached_rejects`, and `semantic_fast_backoff_skips`). All times
+are milliseconds. `1000 * presents / elapsed_ms` gives presented FPS; core
+totals include audio generation and LCD conversion. The log is intended to
+distinguish interpreter load, rendering cost, low guest LCD update rates, and
+semantic fast-path/probe behavior without changing the screen layout.
 
 ## Reproducing the optional firmware comparison
 

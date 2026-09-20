@@ -186,6 +186,12 @@ Current block-discovery gate:
   the fixed 128-cycle gate reported `semantic_fast_backoff_skips=11731784`,
   proving that avoided failed probes are a material part of the current speedup
   and must remain visible in Vita/host logs.
+- The Vita `performance.csv` now logs per-window semantic fast-path deltas:
+  accepted blocks, accepted cycles, guarded rejects, cached rejects, and
+  backoff skips. This is required for physical Vita/Vita3K diagnosis because
+  Xtreme or Classic slowdowns can now be separated into CPU fast-path coverage,
+  repeated reject/probe overhead, audio queue starvation, render/present stalls,
+  and interpolation work from the same runtime trace.
 
 Rejected follow-up experiment on 2026-09-20:
 
