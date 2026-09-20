@@ -274,7 +274,7 @@ an audio pacing candidate, not a completed audio-accuracy claim.
 Vita package metadata is `01.16`. Candidate VPK SHA-256:
 
 ```text
-93753355a36ce2b1edd1c76fa3edc370415d12213b4135552757f961ac2e704b
+013373b31441d38285acdc42b9d7f3164fb4bdc92db3d9959bd3d7fbda88c24e
 ```
 
 Executable SELF SHA-256:
