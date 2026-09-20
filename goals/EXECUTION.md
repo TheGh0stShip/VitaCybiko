@@ -6,8 +6,8 @@ is still the H8S core.
 
 ## Current release state
 
-- Latest published preview: `v0.1.17-preview`.
-- Version shown by package/runtime: `01.17`.
+- Latest published preview: `v0.1.18-preview`.
+- Version shown by package/runtime: `01.18`.
 - Classic V2 is the deepest-tested path.
 - Classic V1 and Xtreme are supported as selectable profiles, but broad app
   coverage and physical smoothness are not complete.
@@ -64,4 +64,3 @@ Every performance change must include:
 4. A note in `goals/OPTIMIZATION.md` saying whether the result improved,
    regressed, or was rejected.
 5. No claim of physical Vita smoothness without physical Vita evidence.
-

@@ -553,6 +553,13 @@ Rejected follow-up experiments on 2026-09-20:
   measured 14.71 s on Xtreme.
 - Increasing immutable ROM fetch blocks from 16 to 64 words preserved tests but
   measured 15.91 s on Xtreme.
+- A frame-local countdown cache for the next timer/DMA deadline preserved the
+  host unit suite and scheduler equivalence test, but did not improve the
+  three-model smoke gate. Classic V1/V2 stayed around 1.02 s/0.38 s, while
+  Xtreme measured 3.73 s on the first three-model run and 3.74/3.92/3.01 s on
+  repeated Xtreme-only runs. The patch was removed. Do not retry simple
+  `cybiko_run_frame` deadline memoization without proving the CPU batches are
+  actually long enough for it to amortize the extra branch/state tracking.
 
 Do not retry these as-is; the next performance step needs semantic decoded
 blocks or an ARMv7 translation tier rather than more scalar hot-path nibbling.
