@@ -156,6 +156,54 @@ static void test_scaled_subpixel_and_hud(void)
     free(p); free(out);
 }
 
+static void check_argb_fast_matches_indexed(int dx, int dy)
+{
+    motion_pair_t *p = malloc(sizeof(*p));
+    uint8_t a[MOTION_PIXELS], b[MOTION_PIXELS];
+    uint8_t *indexed = malloc(MOTION_PIXELS * 9);
+    uint32_t *argb = malloc(MOTION_PIXELS * 9 * sizeof(*argb));
+    uint32_t palette[256];
+    TEST_ASSERT(p && indexed && argb);
+    for (unsigned i = 0; i < 256; ++i)
+        palette[i] = 0xff000000u | (i << 16) | ((255u - i) << 8) | ((i * 37u) & 0xffu);
+
+    scene(a, 0, 0);
+    scene(b, dx, dy);
+    motion_estimate(p, a, b);
+    TEST_ASSERT_(p->translated && p->dx == dx && p->dy == dy,
+                 "translation=%d displacement=%d,%d", p->translated, p->dx, p->dy);
+    for (unsigned phase = 17; phase < 256; phase += 34) {
+        TEST_CHECK(motion_synthesize_scaled_argb_fast(p, phase, palette, argb));
+        motion_synthesize_scaled(p, phase, 3, indexed);
+        unsigned errors = 0;
+        for (int i = 0; i < MOTION_PIXELS * 9; ++i)
+            errors += argb[i] != palette[indexed[i]];
+        TEST_CHECK_(errors == 0, "dx=%d dy=%d phase=%u errors=%u", dx, dy, phase, errors);
+    }
+
+    free(argb); free(indexed); free(p);
+}
+
+static void test_scaled_argb_fast_path_matches_indexed(void)
+{
+    check_argb_fast_matches_indexed(0, 12);
+    check_argb_fast_matches_indexed(-19, 0);
+
+    motion_pair_t *p = calloc(1, sizeof(*p));
+    uint32_t palette[256] = {0}, argb[MOTION_PIXELS * 9];
+    TEST_ASSERT(p != NULL);
+    p->moving_blocks = 1;
+    TEST_CHECK(!motion_synthesize_scaled_argb_fast(p, 128, palette, argb));
+    p->translated = true;
+    p->dx = 3;
+    p->dy = 2;
+    TEST_CHECK(!motion_synthesize_scaled_argb_fast(p, 128, palette, argb));
+    p->dy = 0;
+    p->cut = true;
+    TEST_CHECK(!motion_synthesize_scaled_argb_fast(p, 128, palette, argb));
+    free(p);
+}
+
 static void test_history_bounds_and_cuts(void)
 {
     motion_presenter_t *p = calloc(1, sizeof(*p));
@@ -318,6 +366,7 @@ TEST_LIST = {
     {"presentation_timing", test_presenter_timing},
     {"small_motion_and_bounds", test_border_and_small_motion},
     {"scaled_subpixel_and_stationary_hud", test_scaled_subpixel_and_hud},
+    {"scaled_argb_fast_path_matches_indexed", test_scaled_argb_fast_path_matches_indexed},
     {"bounded_history_and_scene_cuts", test_history_bounds_and_cuts},
     {"scroll_with_unaligned_and_blinking_hud", test_scroll_with_unaligned_and_blinking_hud},
     {"independent_horizontal_bands", test_independent_horizontal_bands},
