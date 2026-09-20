@@ -1220,6 +1220,30 @@ keeping all memory accesses runtime-plain-checked. The remaining top rejects
 still include MMIO polling loops (`0x2ab3` and absolute/on-chip timer-like
 addresses) that must not be hidden behind a plain-memory fast path.
 
+Accepted Xtreme decode-boundary correction: runtime RAM inspection showed
+`0x4a83e6` entering a copied CyOS block that contains `0x0100/0x7820`, a
+prefixed long-displacement memory form. The interpreter consumes an additional
+operation word and a 32-bit displacement, so the analyzer must classify this as
+10 bytes. It previously classified the form as 8 bytes, which could make cached
+block analysis cut through the middle of the instruction and misidentify the
+following bytes as a branch. The analyzer now reports the block as ending at
+the real subsequent `RTS`, and a focused regression test locks that 10-byte
+length.
+
+Validation:
+
+- focused scheduler/H8S block/H8S CPU/emulator tests passed;
+- three-model smoke passed: Classic V1 1.83 s, Classic V2 0.56 s, Xtreme
+  2.77 s;
+- runtime RAM re-inspection confirms `0x4a83e6` now decodes the
+  `0x0100/0x7820` instruction as 10 bytes and stops at `0x5470` instead of
+  treating embedded displacement bytes as the branch.
+
+This is primarily a correctness and future-optimization fix. Executing this
+form in the mixed fast path requires widening the decoded instruction
+representation so the full extra word plus 32-bit displacement are available
+to the executor.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

@@ -413,7 +413,7 @@ static bool prefixed_01_length(const uint8_t *rom, size_t rom_size,
             *bytes = 6;
             return true;
         case 0x78:
-            *bytes = 8;
+            *bytes = 10;
             return true;
         default:
             *bytes = 4;

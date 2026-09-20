@@ -1228,6 +1228,23 @@ static void test_counts_prefix_lengths(void)
     TEST_CHECK(!block.executable);
 }
 
+static void test_counts_long_displacement_prefix_length(void)
+{
+    const uint8_t rom[] = {
+        0x01, 0x00, 0x78, 0x20, 0x6b, 0x20,
+        0x00, 0x48, 0x41, 0x2a,
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+    TEST_CHECK(block.decoded[0].op == 0x0100);
+    TEST_CHECK(block.decoded[0].bytes == 10);
+    TEST_CHECK(block.bytes == 10);
+    TEST_CHECK(block.stop_pc == 10);
+    TEST_CHECK(block.branch_kind == H8S_BLOCK_BRANCH_RETURN);
+}
+
 static void test_sleep_is_control_boundary(void)
 {
     const uint8_t rom[] = {
@@ -2125,6 +2142,7 @@ TEST_LIST = {
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },
+    { "counts_long_displacement_prefix_length", test_counts_long_displacement_prefix_length },
     { "sleep_is_control_boundary", test_sleep_is_control_boundary },
     { "truncated_instruction", test_truncated_instruction },
     { "executable_prefix_immediate_block", test_executable_prefix_immediate_block },
