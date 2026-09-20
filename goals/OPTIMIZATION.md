@@ -92,6 +92,10 @@ Current block-discovery gate:
 - The equivalence harness now includes a generated two-byte opcode-family
   sweep for supported tier-one forms, covering byte immediates and valid
   register/immediate subforms across multiple register/CCR states.
+- The equivalence harness now includes generated 4-byte and 6-byte immediate
+  sweeps for `0x79`/`0x7a` word/long MOV/ADD/CMP/SUB/OR/XOR/AND forms,
+  covering all destination registers and edge immediate values across multiple
+  register/CCR states.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -123,8 +127,10 @@ locally available Classic V2 candidate blobs:
 
 Next semantic-executor targets, in order:
 
-1. Expand interpreter-equivalence coverage for 4-byte and 6-byte immediate
-   forms (`0x79`/`0x7a`) across subops and edge immediates.
+1. Add multi-instruction semantic-block equivalence tests that execute mixed
+   tier-one blocks, not just one-instruction blocks, so runtime integration has
+   evidence for PC advancement, flag carry-over, and register dependencies
+   across decoded cache entries.
 2. Only after broad equivalence is proven, prototype a runtime semantic-block call
    at safe immutable-ROM/event-deadline boundaries and benchmark against the
    current interpreter. Remove it if it repeats prior slowdown behavior.
@@ -205,6 +211,11 @@ Initial interpreter-equivalence gate:
   and every byte-immediate high byte with edge immediate values. The generated
   portion currently checks 724 opcode encodings across twelve register/CCR
   state combinations (8,688 interpreter-vs-semantic comparisons).
+- Added generated sweeps for supported `0x79` word-immediate and `0x7a`
+  long-immediate forms. They cover MOV/ADD/CMP/SUB/OR/XOR/AND, all eight
+  destination registers, and zero/one/sign-boundary/all-ones immediates across
+  twelve register/CCR state combinations (6,720 additional
+  interpreter-vs-semantic comparisons).
 - Focused `h8s_block` test passes with this matrix. This is a start, not yet
   enough to justify runtime wiring.
 

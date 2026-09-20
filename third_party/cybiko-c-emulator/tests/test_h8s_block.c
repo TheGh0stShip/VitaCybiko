@@ -105,6 +105,67 @@ static void check_two_byte_opcode_matrix(uint16_t op)
     }
 }
 
+static void check_word_immediate_opcode_matrix(uint8_t subop, uint8_t rd, uint16_t imm)
+{
+    static const uint32_t ers[][8] = {
+        {
+            0x12345678, 0x87654321, 0x7fffffff, 0x80000001,
+            0x0000f0f0, 0x00000f0f, 0x00000003, 0x00000080
+        },
+        {
+            0x00000000, 0x00000001, 0xffffffff, 0x80000000,
+            0x00007fff, 0x00008000, 0x00000007, 0x0000ff00
+        },
+        {
+            0x00ff00ff, 0xff00ff00, 0x00010000, 0xffff0001,
+            0xaaaaaaaa, 0x55555555, 0x00000004, 0x0000007f
+        }
+    };
+    static const uint8_t ccrs[] = {0x00, 0x01, 0x25, 0xff};
+    uint8_t code[] = {
+        0x79, (uint8_t)((subop << 4) | (rd & 0xf)),
+        (uint8_t)(imm >> 8), (uint8_t)imm
+    };
+    char name[48];
+    snprintf(name, sizeof(name), "opcode 0x79%02x imm 0x%04x", code[1], imm);
+
+    for (unsigned e = 0; e < sizeof(ers) / sizeof(ers[0]); ++e) {
+        for (unsigned c = 0; c < sizeof(ccrs) / sizeof(ccrs[0]); ++c)
+            check_semantic_matches_interpreter(name, code, sizeof(code), ers[e], ccrs[c]);
+    }
+}
+
+static void check_long_immediate_opcode_matrix(uint8_t subop, uint8_t rd, uint32_t imm)
+{
+    static const uint32_t ers[][8] = {
+        {
+            0x12345678, 0x87654321, 0x7fffffff, 0x80000001,
+            0x0000f0f0, 0x00000f0f, 0x00000003, 0x00000080
+        },
+        {
+            0x00000000, 0x00000001, 0xffffffff, 0x80000000,
+            0x00007fff, 0x00008000, 0x00000007, 0x0000ff00
+        },
+        {
+            0x00ff00ff, 0xff00ff00, 0x00010000, 0xffff0001,
+            0xaaaaaaaa, 0x55555555, 0x00000004, 0x0000007f
+        }
+    };
+    static const uint8_t ccrs[] = {0x00, 0x01, 0x25, 0xff};
+    uint8_t code[] = {
+        0x7a, (uint8_t)((subop << 4) | (rd & 0x7)),
+        (uint8_t)(imm >> 24), (uint8_t)(imm >> 16),
+        (uint8_t)(imm >> 8), (uint8_t)imm
+    };
+    char name[64];
+    snprintf(name, sizeof(name), "opcode 0x7a%02x imm 0x%08x", code[1], imm);
+
+    for (unsigned e = 0; e < sizeof(ers) / sizeof(ers[0]); ++e) {
+        for (unsigned c = 0; c < sizeof(ccrs) / sizeof(ccrs[0]); ++c)
+            check_semantic_matches_interpreter(name, code, sizeof(code), ers[e], ccrs[c]);
+    }
+}
+
 static void test_stops_before_branch(void)
 {
     const uint8_t rom[] = {
@@ -848,6 +909,24 @@ static void test_semantic_block_matches_interpreter_generated_two_byte_ops(void)
     }
 }
 
+static void test_semantic_block_matches_interpreter_generated_immediate_word_long_ops(void)
+{
+    const uint8_t subops[] = {0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6};
+    const uint16_t word_imms[] = {0x0000, 0x0001, 0x7fff, 0x8000, 0xffff};
+    const uint32_t long_imms[] = {
+        0x00000000u, 0x00000001u, 0x7fffffffu, 0x80000000u, 0xffffffffu
+    };
+
+    for (unsigned s = 0; s < sizeof(subops) / sizeof(subops[0]); ++s) {
+        for (unsigned rd = 0; rd < 8; ++rd) {
+            for (unsigned i = 0; i < sizeof(word_imms) / sizeof(word_imms[0]); ++i)
+                check_word_immediate_opcode_matrix(subops[s], (uint8_t)rd, word_imms[i]);
+            for (unsigned i = 0; i < sizeof(long_imms) / sizeof(long_imms[0]); ++i)
+                check_long_immediate_opcode_matrix(subops[s], (uint8_t)rd, long_imms[i]);
+        }
+    }
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -879,5 +958,6 @@ TEST_LIST = {
     { "semantic_block_executes_immediate_bit_ops", test_semantic_block_executes_immediate_bit_ops },
     { "semantic_block_matches_interpreter_representative_ops", test_semantic_block_matches_interpreter_representative_ops },
     { "semantic_block_matches_interpreter_generated_two_byte_ops", test_semantic_block_matches_interpreter_generated_two_byte_ops },
+    { "semantic_block_matches_interpreter_generated_immediate_word_long_ops", test_semantic_block_matches_interpreter_generated_immediate_word_long_ops },
     { NULL, NULL }
 };
