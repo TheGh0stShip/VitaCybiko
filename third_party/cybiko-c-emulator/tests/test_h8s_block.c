@@ -2,6 +2,7 @@
 #include "core/h8s_block.h"
 #include "core/h8s_cpu.h"
 #include "core/address_bus.h"
+#include <stdio.h>
 #include <string.h>
 
 #define EQUIV_CODE_BASE 0xFFDC00u
@@ -75,6 +76,33 @@ static void check_semantic_matches_interpreter(const char *name,
                 "%s interpreter PC should advance by %zu, got 0x%06x",
                 name, size, cpu.pc);
     teardown_equiv_cpu(&bus);
+}
+
+static void check_two_byte_opcode_matrix(uint16_t op)
+{
+    static const uint32_t ers[][8] = {
+        {
+            0x12345678, 0x87654321, 0x7fffffff, 0x80000001,
+            0x0000f0f0, 0x00000f0f, 0x00000003, 0x00000080
+        },
+        {
+            0x00000000, 0x00000001, 0xffffffff, 0x80000000,
+            0x00007fff, 0x00008000, 0x00000007, 0x0000ff00
+        },
+        {
+            0x00ff00ff, 0xff00ff00, 0x00010000, 0xffff0001,
+            0xaaaaaaaa, 0x55555555, 0x00000004, 0x0000007f
+        }
+    };
+    static const uint8_t ccrs[] = {0x00, 0x01, 0x25, 0xff};
+    uint8_t code[] = {(uint8_t)(op >> 8), (uint8_t)op};
+    char name[32];
+    snprintf(name, sizeof(name), "opcode 0x%04x", op);
+
+    for (unsigned e = 0; e < sizeof(ers) / sizeof(ers[0]); ++e) {
+        for (unsigned c = 0; c < sizeof(ccrs) / sizeof(ccrs[0]); ++c)
+            check_semantic_matches_interpreter(name, code, sizeof(code), ers[e], ccrs[c]);
+    }
 }
 
 static void test_stops_before_branch(void)
@@ -747,6 +775,79 @@ static void test_semantic_block_matches_interpreter_representative_ops(void)
     }
 }
 
+static void test_semantic_block_matches_interpreter_generated_two_byte_ops(void)
+{
+    const uint8_t reg_los[] = {0x01, 0x89, 0xfe};
+    const uint8_t long_reg_los[] = {0x80, 0x91, 0xf7};
+    const uint8_t inc_dec_los[] = {
+        0x00, 0x08, 0x50, 0x58, 0x70, 0x77,
+        0x80, 0x87, 0x90, 0x97, 0xd0, 0xdf, 0xf0, 0xf7
+    };
+    const uint8_t zero_a_inc_dec_los[] = {
+        0x00, 0x08, 0x50, 0x58, 0x70, 0x77,
+        0x80, 0x91, 0xf7
+    };
+    const uint8_t unary_subops[] = {0x0, 0x1, 0x3, 0x5, 0x7, 0x8, 0x9, 0xb, 0xd, 0xf};
+    const uint8_t shift_subops[] = {0x0, 0x1, 0x3, 0x4, 0x5, 0x7, 0x8, 0x9, 0xb, 0xc, 0xd, 0xf};
+    const uint8_t bit_los[] = {0x08, 0x37, 0x89, 0xfe};
+    const uint8_t word_los[] = {0x01, 0x45, 0xfe};
+
+    const uint8_t simple_reg_hi[] = {
+        0x08, 0x09, 0x0c, 0x0d, 0x0e,
+        0x14, 0x15, 0x16,
+        0x18, 0x19, 0x1c, 0x1d, 0x1e
+    };
+    for (unsigned h = 0; h < sizeof(simple_reg_hi) / sizeof(simple_reg_hi[0]); ++h) {
+        for (unsigned l = 0; l < sizeof(reg_los) / sizeof(reg_los[0]); ++l)
+            check_two_byte_opcode_matrix((uint16_t)((simple_reg_hi[h] << 8) | reg_los[l]));
+    }
+
+    for (unsigned l = 0; l < sizeof(long_reg_los) / sizeof(long_reg_los[0]); ++l) {
+        check_two_byte_opcode_matrix((uint16_t)(0x0a00 | long_reg_los[l]));
+        check_two_byte_opcode_matrix((uint16_t)(0x0f00 | long_reg_los[l]));
+        check_two_byte_opcode_matrix((uint16_t)(0x1a00 | long_reg_los[l]));
+        check_two_byte_opcode_matrix((uint16_t)(0x1f00 | long_reg_los[l]));
+    }
+
+    for (unsigned l = 0; l < sizeof(zero_a_inc_dec_los) / sizeof(zero_a_inc_dec_los[0]); ++l) {
+        check_two_byte_opcode_matrix((uint16_t)(0x0a00 | zero_a_inc_dec_los[l]));
+        check_two_byte_opcode_matrix((uint16_t)(0x1a00 | zero_a_inc_dec_los[l]));
+    }
+
+    for (unsigned l = 0; l < sizeof(inc_dec_los) / sizeof(inc_dec_los[0]); ++l) {
+        check_two_byte_opcode_matrix((uint16_t)(0x0b00 | inc_dec_los[l]));
+        check_two_byte_opcode_matrix((uint16_t)(0x1b00 | inc_dec_los[l]));
+    }
+
+    for (unsigned s = 0; s < sizeof(unary_subops) / sizeof(unary_subops[0]); ++s)
+        check_two_byte_opcode_matrix((uint16_t)(0x1700 | (unary_subops[s] << 4) | (s & 0x7)));
+
+    for (unsigned h = 0x10; h <= 0x13; ++h) {
+        for (unsigned s = 0; s < sizeof(shift_subops) / sizeof(shift_subops[0]); ++s)
+            check_two_byte_opcode_matrix((uint16_t)((h << 8) | (shift_subops[s] << 4) | (s & 0x7)));
+    }
+
+    for (unsigned h = 0x60; h <= 0x63; ++h) {
+        for (unsigned l = 0; l < sizeof(bit_los) / sizeof(bit_los[0]); ++l)
+            check_two_byte_opcode_matrix((uint16_t)((h << 8) | bit_los[l]));
+    }
+    for (unsigned h = 0x64; h <= 0x66; ++h) {
+        for (unsigned l = 0; l < sizeof(word_los) / sizeof(word_los[0]); ++l)
+            check_two_byte_opcode_matrix((uint16_t)((h << 8) | word_los[l]));
+    }
+    for (unsigned h = 0x70; h <= 0x77; ++h) {
+        for (unsigned l = 0; l < sizeof(bit_los) / sizeof(bit_los[0]); ++l)
+            check_two_byte_opcode_matrix((uint16_t)((h << 8) | bit_los[l]));
+    }
+
+    for (unsigned h = 0x80; h <= 0xff; ++h) {
+        check_two_byte_opcode_matrix((uint16_t)((h << 8) | 0x00));
+        check_two_byte_opcode_matrix((uint16_t)((h << 8) | 0x7f));
+        check_two_byte_opcode_matrix((uint16_t)((h << 8) | 0x80));
+        check_two_byte_opcode_matrix((uint16_t)((h << 8) | 0xff));
+    }
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -777,5 +878,6 @@ TEST_LIST = {
     { "semantic_block_executes_register_bit_and_word_logic", test_semantic_block_executes_register_bit_and_word_logic },
     { "semantic_block_executes_immediate_bit_ops", test_semantic_block_executes_immediate_bit_ops },
     { "semantic_block_matches_interpreter_representative_ops", test_semantic_block_matches_interpreter_representative_ops },
+    { "semantic_block_matches_interpreter_generated_two_byte_ops", test_semantic_block_matches_interpreter_generated_two_byte_ops },
     { NULL, NULL }
 };

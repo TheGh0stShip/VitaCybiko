@@ -89,6 +89,9 @@ Current block-discovery gate:
   execution against `h8s_cpu_step` for representative supported forms across
   multiple register/CCR edge states. This is the required safety gate before
   runtime integration.
+- The equivalence harness now includes a generated two-byte opcode-family
+  sweep for supported tier-one forms, covering byte immediates and valid
+  register/immediate subforms across multiple register/CCR states.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -120,9 +123,8 @@ locally available Classic V2 candidate blobs:
 
 Next semantic-executor targets, in order:
 
-1. Expand the interpreter-equivalence harness from representative forms to a
-   generated table of every supported tier-one opcode family, including
-   immediate word/long cases and all valid shift/rotate/unary/bit subforms.
+1. Expand interpreter-equivalence coverage for 4-byte and 6-byte immediate
+   forms (`0x79`/`0x7a`) across subops and edge immediates.
 2. Only after broad equivalence is proven, prototype a runtime semantic-block call
    at safe immutable-ROM/event-deadline boundaries and benchmark against the
    current interpreter. Remove it if it repeats prior slowdown behavior.
@@ -197,6 +199,12 @@ Initial interpreter-equivalence gate:
   register banks and four CCR states (180 comparisons total):
   byte/word/long register ALU, MOV.L, INC/DEC, NEG, shift/rotate, register bit
   ops, immediate bit ops, byte immediate, word immediate, and long immediate.
+- Added a generated sweep over supported two-byte opcode families. It covers
+  representative low-byte combinations for register ALU/MOV/CMP, MOV.L/CMP.L,
+  INC/DEC/ADDS/SUBS, unary, shift/rotate, register bit ops, immediate bit ops,
+  and every byte-immediate high byte with edge immediate values. The generated
+  portion currently checks 724 opcode encodings across twelve register/CCR
+  state combinations (8,688 interpreter-vs-semantic comparisons).
 - Focused `h8s_block` test passes with this matrix. This is a start, not yet
   enough to justify runtime wiring.
 
@@ -304,6 +312,8 @@ starvation with frame dropping.
 - [Cached interpreter overview](https://emudev.org/2021/01/31/cached-interpreter.html)
 - [QEMU translator internals](https://www.qemu.org/docs/master/devel/tcg.html)
 - [Differential emulator-instruction testing example](https://arxiv.org/abs/2105.14273)
+- [CPU emulator testing methodology](https://rpaleari.github.io/)
+- [Interpreter-guided differential JIT compiler unit testing](https://hal.science/)
 - [melonDS JIT/cached-interpreter notes](https://melonds.kuribo64.net/comments.php?id=138)
 - [ARM cache-coherency guidance](https://developer.arm.com/community/arm-community-blogs/b/architectures-and-processors-blog/posts/caches-and-self-modifying-code)
 - [Mupen64Plus ARM dynarec notes](https://github.com/mupen64plus/mupen64plus-core/blob/master/doc/new_dynarec.mediawiki)
