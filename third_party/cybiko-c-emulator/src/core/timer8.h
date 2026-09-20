@@ -18,6 +18,7 @@ void    timer8_init(timer8_t *t, int channel, h8s_cpu_t *cpu);
 void    timer8_counter_tick(timer8_t *t);
 int     timer8_cycles_until_counter_tick(const timer8_t *t);
 int     timer8_cycles_until_event(const timer8_t *t);
+int     timer8_cycles_until_cpu_event(const timer8_t *t);
 void    timer8_advance(timer8_t *t, int cycles);
 static inline void timer8_tick(timer8_t *t) {
     if (t->cached_divisor == 0) return;

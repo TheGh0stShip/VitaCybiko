@@ -154,11 +154,39 @@ TIMER8_INLINE int timer8_counter_ticks_until_event(const timer8_t *t) {
     return ticks;
 }
 
+TIMER8_INLINE int timer8_counter_distance(uint8_t from, uint8_t target) {
+    int distance = (uint8_t)(target - from);
+    return distance == 0 ? 0x100 : distance;
+}
+
 int timer8_cycles_until_event(const timer8_t *t) {
     int first_tick = timer8_cycles_until_counter_tick_inline(t);
     if (first_tick <= 0) return 0;
     int ticks = timer8_counter_ticks_until_event(t);
     return first_tick + (ticks - 1) * t->cached_divisor;
+}
+
+int timer8_cycles_until_cpu_event(const timer8_t *t) {
+    int first_tick = timer8_cycles_until_counter_tick_inline(t);
+    if (first_tick <= 0) return 0;
+
+    int dist_a = timer8_counter_distance(t->tcnt, t->tcora);
+    int dist_b = timer8_counter_distance(t->tcnt, t->tcorb);
+    int dist_o = timer8_counter_distance(t->tcnt, 0);
+    bool obs_a = (t->tcr & TCR_CMIEA) && !(t->tcsr & TCSR_CMFA);
+    bool obs_b = (t->tcr & TCR_CMIEB) && !(t->tcsr & TCSR_CMFB);
+    bool obs_o = (t->tcr & TCR_OVIE) && !(t->tcsr & TCSR_OVF);
+
+    int best = 0x101;
+    if (obs_a && dist_a < best) best = dist_a;
+    if (obs_b && dist_b < best) best = dist_b;
+    if (obs_o && dist_o < best) best = dist_o;
+
+    int clear_mode = (t->tcr >> 3) & 0x03;
+    if (clear_mode == 1 && !obs_a && dist_a <= best) return 0;
+    if (clear_mode == 2 && !obs_b && dist_b <= best) return 0;
+    if (best == 0x101) return 0;
+    return first_tick + (best - 1) * t->cached_divisor;
 }
 
 TIMER8_INLINE void timer8_advance_no_event(timer8_t *t, int cycles) {

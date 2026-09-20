@@ -353,9 +353,9 @@ static int cycles_until_next_peripheral_event(cybiko_emu_t *emu, int *source)
 {
     int next = INT_MAX;
     int next_source = 0;
-    int t = emu->timer8[0].cached_divisor ? timer8_cycles_until_event(&emu->timer8[0]) : 0;
+    int t = emu->timer8[0].cached_divisor ? timer8_cycles_until_cpu_event(&emu->timer8[0]) : 0;
     if (t > 0 && t < next) { next = t; next_source = 1; }
-    t = emu->timer8[1].cached_divisor ? timer8_cycles_until_event(&emu->timer8[1]) : 0;
+    t = emu->timer8[1].cached_divisor ? timer8_cycles_until_cpu_event(&emu->timer8[1]) : 0;
     if (t > 0 && t < next) { next = t; next_source = 2; }
 
     const cybiko_machine_t *m = emu->bus.machine;
