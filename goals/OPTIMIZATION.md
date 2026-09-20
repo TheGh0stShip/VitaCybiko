@@ -798,6 +798,15 @@ This reinforces the next implementation order: add guarded memory-form support
 for plain RAM/ROM only, keep MMIO forms as exits, and keep returns/calls as
 interpreter exits until a proper call/return-aware tier exists.
 
+The bus now exposes tested `bus_is_plain_read_range` and
+`bus_is_plain_write_range` helpers. They accept complete accesses that map to
+ordinary read/write memory pages or plain on-chip RAM below `0xfffc00`, reject
+MMIO such as `0xffff84`, reject page-crossing accesses, and reject writes to
+ROM. This is the guard future memory-aware block execution must use before it
+directly reads/writes memory. It mirrors the QEMU-style RAM/ROM fast path vs
+MMIO slow path split: safe ordinary memory can be fast, but device-visible
+addresses remain interpreter exits.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

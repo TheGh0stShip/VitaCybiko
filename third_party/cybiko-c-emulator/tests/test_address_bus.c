@@ -73,9 +73,46 @@ static void test_io_boundary_byte_access_synchronizes(void)
     teardown_bus(&bus);
 }
 
+static void test_plain_range_classifier_accepts_mapped_ram_and_rom(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    TEST_CHECK(bus_is_plain_read_range(&bus, 0x000100, 4));
+    TEST_CHECK(!bus_is_plain_write_range(&bus, 0x000100, 4));
+    TEST_CHECK(bus_is_plain_read_range(&bus, bus.machine->ram_base + 0x100, 4));
+    TEST_CHECK(bus_is_plain_write_range(&bus, bus.machine->ram_base + 0x100, 4));
+
+    teardown_bus(&bus);
+}
+
+static void test_plain_range_classifier_rejects_mmio_and_page_crossing(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    TEST_CHECK(!bus_is_plain_read_range(&bus, 0xffff84, 1));
+    TEST_CHECK(!bus_is_plain_write_range(&bus, 0xffff84, 1));
+    TEST_CHECK(bus_is_plain_read_range(&bus, 0xfffbfc, 4));
+    TEST_CHECK(bus_is_plain_write_range(&bus, 0xfffbfc, 4));
+    TEST_CHECK(!bus_is_plain_read_range(&bus, 0xfffbfd, 4));
+    TEST_CHECK(!bus_is_plain_write_range(&bus, 0xfffbfd, 4));
+    TEST_CHECK(!bus_is_plain_read_range(&bus, bus.machine->ram_base + 0xfff, 2));
+    TEST_CHECK(!bus_is_plain_write_range(&bus, bus.machine->ram_base + 0xfff, 2));
+
+    teardown_bus(&bus);
+}
+
 TEST_LIST = {
     {"plain_on_chip_ram_fast_path_stays_below_io_boundary", test_plain_on_chip_ram_fast_path_stays_below_io_boundary},
     {"on_chip_access_reaching_io_boundary_uses_slow_router", test_on_chip_access_reaching_io_boundary_uses_slow_router},
     {"io_boundary_byte_access_synchronizes", test_io_boundary_byte_access_synchronizes},
+    {"plain_range_classifier_accepts_mapped_ram_and_rom", test_plain_range_classifier_accepts_mapped_ram_and_rom},
+    {"plain_range_classifier_rejects_mmio_and_page_crossing", test_plain_range_classifier_rejects_mmio_and_page_crossing},
     {NULL, NULL}
 };

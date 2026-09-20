@@ -84,6 +84,26 @@ void     bus_write8_slow(address_bus_t *bus, uint32_t address, uint8_t value);
 void     bus_write16_slow(address_bus_t *bus, uint32_t address, uint16_t value);
 void     bus_write32_slow(address_bus_t *bus, uint32_t address, uint32_t value);
 
+static inline bool bus_is_plain_read_range(const address_bus_t *bus,
+                                           uint32_t address, unsigned bytes) {
+    if (!bus || bytes == 0 || bytes > 4) return false;
+    address &= 0xffffff;
+    if ((address & 4095u) + bytes > 4096u) return false;
+    if (bus->read_pages[address >> 12]) return true;
+    const cybiko_machine_t *m = bus->machine;
+    return m && address >= m->on_chip_base && address + bytes <= 0xfffc00u;
+}
+
+static inline bool bus_is_plain_write_range(const address_bus_t *bus,
+                                            uint32_t address, unsigned bytes) {
+    if (!bus || bytes == 0 || bytes > 4) return false;
+    address &= 0xffffff;
+    if ((address & 4095u) + bytes > 4096u) return false;
+    if (bus->write_pages[address >> 12]) return true;
+    const cybiko_machine_t *m = bus->machine;
+    return m && address >= m->on_chip_base && address + bytes <= 0xfffc00u;
+}
+
 static inline uint8_t bus_read8(address_bus_t *bus, uint32_t address) {
     address &= 0xffffff;
     const uint8_t *page = bus->read_pages[address >> 12];
