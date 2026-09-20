@@ -773,6 +773,15 @@ list, but `0x0076c2` became the dominant remaining cached reject because it is a
 return boundary. Do not fake returns; the next branch-aware tier must model
 call/return stack/link effects explicitly or keep returns as interpreter exits.
 
+Rejected follow-up experiment: a guarded CPU-only semantic RTS path was tested
+for blocks ending in `RTS`, with the stack read limited to plain RAM/on-chip RAM
+below I/O space and focused equivalence tests against `h8s_cpu_step`. It
+preserved the focused CPU tests, but Xtreme 600-frame smoke regressed/noised to
+5.865057/4.873302/5.423801 s while only raising accepted semantic blocks from
+71,141 to 72,373. The patch was removed. Keep returns as interpreter exits
+until a broader call/return-aware tier can amortize stack-visible control flow;
+do not reintroduce isolated RTS handling as a standalone fast path.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
