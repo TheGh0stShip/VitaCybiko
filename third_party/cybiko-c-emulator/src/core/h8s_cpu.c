@@ -528,8 +528,27 @@ static inline uint16_t fetch16(h8s_cpu_t *cpu) {
                 unsigned count = (cpu->fetch_end - base) / 2;
                 if (count > H8S_ROM_FETCH_BLOCK_WORDS) count = H8S_ROM_FETCH_BLOCK_WORDS;
                 const uint8_t *block = cpu->fetch_data + (base - cpu->fetch_base);
-                for (unsigned i = 0; i < count; ++i)
-                    cpu->rom_block_words[i] = (uint16_t)((block[i * 2] << 8) | block[i * 2 + 1]);
+                if (CPU_LIKELY(count == H8S_ROM_FETCH_BLOCK_WORDS)) {
+                    cpu->rom_block_words[0] = (uint16_t)((block[0] << 8) | block[1]);
+                    cpu->rom_block_words[1] = (uint16_t)((block[2] << 8) | block[3]);
+                    cpu->rom_block_words[2] = (uint16_t)((block[4] << 8) | block[5]);
+                    cpu->rom_block_words[3] = (uint16_t)((block[6] << 8) | block[7]);
+                    cpu->rom_block_words[4] = (uint16_t)((block[8] << 8) | block[9]);
+                    cpu->rom_block_words[5] = (uint16_t)((block[10] << 8) | block[11]);
+                    cpu->rom_block_words[6] = (uint16_t)((block[12] << 8) | block[13]);
+                    cpu->rom_block_words[7] = (uint16_t)((block[14] << 8) | block[15]);
+                    cpu->rom_block_words[8] = (uint16_t)((block[16] << 8) | block[17]);
+                    cpu->rom_block_words[9] = (uint16_t)((block[18] << 8) | block[19]);
+                    cpu->rom_block_words[10] = (uint16_t)((block[20] << 8) | block[21]);
+                    cpu->rom_block_words[11] = (uint16_t)((block[22] << 8) | block[23]);
+                    cpu->rom_block_words[12] = (uint16_t)((block[24] << 8) | block[25]);
+                    cpu->rom_block_words[13] = (uint16_t)((block[26] << 8) | block[27]);
+                    cpu->rom_block_words[14] = (uint16_t)((block[28] << 8) | block[29]);
+                    cpu->rom_block_words[15] = (uint16_t)((block[30] << 8) | block[31]);
+                } else {
+                    for (unsigned i = 0; i < count; ++i)
+                        cpu->rom_block_words[i] = (uint16_t)((block[i * 2] << 8) | block[i * 2 + 1]);
+                }
                 cpu->rom_block_base = base;
                 cpu->rom_block_count = (uint8_t)count;
                 cpu->rom_block_valid = true;

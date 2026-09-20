@@ -1688,6 +1688,21 @@ Validation:
   7.858B total guest-emulator instructions, and `fetch16` dropped from about
   2.462B to 2.342B.
 
+Accepted immutable-ROM refill unroll: the copied 16-word immutable ROM fetch
+cache is still faster than the rejected pointer-window cache, but the common
+full-block refill was spending a large amount of time in a tiny loop. The
+common 16-word refill is now straight-line big-endian word assembly, while the
+short end-of-region case keeps the original loop.
+
+Validation:
+
+- focused H8S CPU tests passed;
+- scheduler equivalence tests passed;
+- three-model 600-frame smoke passed with Classic V1 1.058s, Classic V2 0.423s,
+  and Xtreme 1.727s in one direct run;
+- same-command 120-frame Xtreme callgrind dropped from about 7.858B to 7.277B
+  total guest-emulator instructions after the unrolled refill.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
