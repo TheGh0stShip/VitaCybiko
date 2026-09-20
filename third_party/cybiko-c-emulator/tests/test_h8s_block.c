@@ -839,6 +839,14 @@ static void test_plain_memory_instruction_matches_long32_displacement_read(void)
     TEST_CHECK(block.decoded[0].imm == 0x78206b03);
     TEST_CHECK(block.decoded[0].ext == 0x0000);
     TEST_CHECK(block.decoded[0].ext2 == 0x0010);
+    const uint8_t fast_code[] = {
+        0x01, 0x00, 0x78, 0x20, 0x6b, 0x03,
+        0x00, 0x00, 0x00, 0x10,
+        0x46, 0x00 /* BNE +0 */
+    };
+    h8s_block_t fast_block;
+    TEST_ASSERT(h8s_analyze_rom_block(fast_code, sizeof(fast_code), 0, 4, &fast_block));
+    TEST_CHECK(h8s_mixed_plain_block_supported(&fast_block));
 
     uint32_t er[8] = {0};
     address_bus_t bus;
@@ -870,6 +878,14 @@ static void test_plain_memory_instruction_matches_long32_displacement_write(void
     TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
     TEST_ASSERT(block.instructions == 1);
     TEST_CHECK(block.decoded[0].bytes == 10);
+    const uint8_t fast_code[] = {
+        0x01, 0x00, 0x78, 0x20, 0x6b, 0x83,
+        0x00, 0x00, 0x00, 0x10,
+        0x46, 0x00 /* BNE +0 */
+    };
+    h8s_block_t fast_block;
+    TEST_ASSERT(h8s_analyze_rom_block(fast_code, sizeof(fast_code), 0, 4, &fast_block));
+    TEST_CHECK(h8s_mixed_plain_block_supported(&fast_block));
 
     uint32_t er[8] = {0};
     er[3] = 0xfedcba98;

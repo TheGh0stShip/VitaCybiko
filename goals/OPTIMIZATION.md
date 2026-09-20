@@ -1260,6 +1260,30 @@ Validation:
 - focused H8S block tests compare both read and write variants of the 10-byte
   form against the interpreter.
 
+Accepted Xtreme mixed-block eligibility fix: profiling the current Xtreme boot
+showed the same `0x0100/0x78xx` long-displacement `MOV.L` family still among
+the hot prefixed memory forms, but the mixed plain-memory support predicate
+only accepted 4-, 6- and 8-byte `0x0100` instructions. The executor and decoder
+already handled the 10-byte form, so the fast path was leaving valid copied
+CyOS RAM blocks on the interpreter. The support predicate now accepts the
+10-byte form, and focused tests assert that read and write variants become
+eligible only in a real mixed block with a supported branch exit.
+
+Validation:
+
+- focused H8S block suite passed;
+- full host suite: 17/17 passed;
+- same 600-frame Xtreme profile improved from about 1.92 CPU seconds to about
+  1.73 CPU seconds in the opcode-profile build;
+- mutable fast blocks rose from about 1.259M to about 1.346M and mutable fast
+  cycles rose from about 11.62M to about 12.15M;
+- semantic window rejects dropped from about 28.7k to about 26.4k.
+
+This is accepted because it broadens an already correctness-tested fast path
+for ordinary RAM/ROM memory only; every effective address is still checked
+against the bus plain-read/plain-write predicates at execution time, so MMIO,
+timer, LCD and peripheral side effects remain interpreter-visible.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

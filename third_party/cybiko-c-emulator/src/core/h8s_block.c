@@ -2067,7 +2067,8 @@ static bool plain_memory_instruction_supported(const h8s_block_instruction_t *in
     uint16_t op = insn->op;
     uint8_t hi = (uint8_t)(op >> 8);
     if (op == 0x0100) {
-        if (insn->bytes != 4 && insn->bytes != 6 && insn->bytes != 8)
+        if (insn->bytes != 4 && insn->bytes != 6 &&
+            insn->bytes != 8 && insn->bytes != 10)
             return false;
         uint16_t op2 = insn->bytes == 4 ? (uint16_t)insn->imm :
                        (uint16_t)(insn->imm >> 16);
