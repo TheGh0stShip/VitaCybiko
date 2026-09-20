@@ -2143,6 +2143,13 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->semantic_fast_reject_cycle_budget = 0;
     cpu->semantic_fast_reject_branch_resolve = 0;
     cpu->semantic_fast_reject_target = 0;
+    cpu->semantic_mutable_reject_cached = 0;
+    cpu->semantic_mutable_reject_unsupported_block = 0;
+    cpu->semantic_mutable_reject_static_nonplain = 0;
+    cpu->semantic_mutable_reject_unsupported_exit = 0;
+    cpu->semantic_mutable_reject_cycle_budget = 0;
+    cpu->semantic_mutable_reject_execute = 0;
+    cpu->semantic_mutable_reject_target = 0;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
@@ -2301,6 +2308,7 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
     if (start_pc < base || start_pc >= base + size)
         return false;
     if (mutable_reject_cached(cpu, start_pc)) {
+        cpu->semantic_mutable_reject_cached++;
         cpu->semantic_reject_backoff = H8S_SEMANTIC_CACHED_REJECT_BACKOFF;
         return false;
     }
@@ -2311,10 +2319,12 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
     if (!block)
         return false;
     if (!h8s_mixed_plain_block_supported(block)) {
+        cpu->semantic_mutable_reject_unsupported_block++;
         mutable_reject_cache_store(cpu, start_pc, block);
         return false;
     }
     if (h8s_mixed_plain_block_has_static_nonplain_memory(block, cpu->bus)) {
+        cpu->semantic_mutable_reject_static_nonplain++;
         mutable_reject_cache_store(cpu, start_pc, block);
         return false;
     }
@@ -2329,13 +2339,16 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
            ((uint8_t)(block->branch_op >> 8)) == 0x5d)) &&
         !(block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
           block->branch_op == 0x5470)) {
+        cpu->semantic_mutable_reject_unsupported_exit++;
         mutable_reject_cache_store(cpu, start_pc, block);
         return false;
     }
 
     int block_cycles = (int)block->instructions + 1;
-    if (block_cycles < 1 || block_cycles > limit)
+    if (block_cycles < 1 || block_cycles > limit) {
+        cpu->semantic_mutable_reject_cycle_budget++;
         return false;
+    }
 
     uint32_t offset = start_pc - base;
     h8s_block_cpu_state_t state = {.ccr = cpu->ccr, .pc = offset};
@@ -2344,20 +2357,26 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
 
     uint32_t next_offset = 0;
     if (!h8s_execute_mixed_plain_block_exit(block, &cpu->semantic_edge_cache,
-                                            cpu->bus, base, &state, &next_offset))
+                                            cpu->bus, base, &state, &next_offset)) {
+        cpu->semantic_mutable_reject_execute++;
         return false;
+    }
 
     uint32_t next_pc = next_offset;
     if (block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JSR_ABS24 &&
         block->branch_kind != H8S_BLOCK_BRANCH_INDIRECT &&
         block->branch_kind != H8S_BLOCK_BRANCH_RETURN) {
-        if (next_offset >= size)
+        if (next_offset >= size) {
+            cpu->semantic_mutable_reject_target++;
             return false;
+        }
         next_pc = (base + next_offset) & 0xffffff;
     }
-    if (!bus_is_plain_read_range(cpu->bus, next_pc, 2))
+    if (!bus_is_plain_read_range(cpu->bus, next_pc, 2)) {
+        cpu->semantic_mutable_reject_target++;
         return false;
+    }
 
     cpu->last_start_pc = start_pc;
     for (unsigned i = 0; i < 8; ++i)

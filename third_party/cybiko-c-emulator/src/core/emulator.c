@@ -554,6 +554,13 @@ bool cybiko_get_cpu_stats(const cybiko_emu_t *emu, cybiko_cpu_stats_t *stats) {
     stats->semantic_fast_reject_cycle_budget = emu->cpu.semantic_fast_reject_cycle_budget;
     stats->semantic_fast_reject_branch_resolve = emu->cpu.semantic_fast_reject_branch_resolve;
     stats->semantic_fast_reject_target = emu->cpu.semantic_fast_reject_target;
+    stats->semantic_mutable_reject_cached = emu->cpu.semantic_mutable_reject_cached;
+    stats->semantic_mutable_reject_unsupported_block = emu->cpu.semantic_mutable_reject_unsupported_block;
+    stats->semantic_mutable_reject_static_nonplain = emu->cpu.semantic_mutable_reject_static_nonplain;
+    stats->semantic_mutable_reject_unsupported_exit = emu->cpu.semantic_mutable_reject_unsupported_exit;
+    stats->semantic_mutable_reject_cycle_budget = emu->cpu.semantic_mutable_reject_cycle_budget;
+    stats->semantic_mutable_reject_execute = emu->cpu.semantic_mutable_reject_execute;
+    stats->semantic_mutable_reject_target = emu->cpu.semantic_mutable_reject_target;
     return true;
 }
 bool cybiko_load_dataflash(cybiko_emu_t *emu, const uint8_t *data, size_t len) {

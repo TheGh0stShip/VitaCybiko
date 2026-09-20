@@ -94,6 +94,13 @@ typedef struct h8s_cpu {
     uint64_t semantic_fast_reject_cycle_budget;
     uint64_t semantic_fast_reject_branch_resolve;
     uint64_t semantic_fast_reject_target;
+    uint64_t semantic_mutable_reject_cached;
+    uint64_t semantic_mutable_reject_unsupported_block;
+    uint64_t semantic_mutable_reject_static_nonplain;
+    uint64_t semantic_mutable_reject_unsupported_exit;
+    uint64_t semantic_mutable_reject_cycle_budget;
+    uint64_t semantic_mutable_reject_execute;
+    uint64_t semantic_mutable_reject_target;
 } h8s_cpu_t;
 
 void     h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus);

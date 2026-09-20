@@ -254,6 +254,14 @@ int main(int argc, char **argv)
                (unsigned long long)stats.semantic_fast_reject_cycle_budget,
                (unsigned long long)stats.semantic_fast_reject_branch_resolve,
                (unsigned long long)stats.semantic_fast_reject_target);
+        printf("semantic_mutable_reject_cached=%llu semantic_mutable_reject_unsupported_block=%llu semantic_mutable_reject_static_nonplain=%llu semantic_mutable_reject_unsupported_exit=%llu semantic_mutable_reject_cycle_budget=%llu semantic_mutable_reject_execute=%llu semantic_mutable_reject_target=%llu\n",
+               (unsigned long long)stats.semantic_mutable_reject_cached,
+               (unsigned long long)stats.semantic_mutable_reject_unsupported_block,
+               (unsigned long long)stats.semantic_mutable_reject_static_nonplain,
+               (unsigned long long)stats.semantic_mutable_reject_unsupported_exit,
+               (unsigned long long)stats.semantic_mutable_reject_cycle_budget,
+               (unsigned long long)stats.semantic_mutable_reject_execute,
+               (unsigned long long)stats.semantic_mutable_reject_target);
     }
 
     bool screenshot_ok = argc <= frames_arg + 1 || write_screenshot(argv[frames_arg + 1], &ctx);

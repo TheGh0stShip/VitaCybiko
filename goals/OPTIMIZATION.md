@@ -1284,6 +1284,29 @@ for ordinary RAM/ROM memory only; every effective address is still checked
 against the bus plain-read/plain-write predicates at execution time, so MMIO,
 timer, LCD and peripheral side effects remain interpreter-visible.
 
+Accepted measurement split for the next Xtreme phase: semantic window rejects
+were too broad to drive further work, because they combined cached known misses,
+unsupported block shapes, hardware/peripheral boundaries and runtime execution
+failures. The CPU stats now expose mutable-fast reject counters for cached,
+unsupported-block, static-nonplain, unsupported-exit, cycle-budget, execute and
+target failures, and both the host smoke tool and Vita performance CSV include
+those columns.
+
+Validation:
+
+- focused H8S CPU, H8S block and emulator suites passed;
+- Xtreme 600-frame smoke still passed;
+- the new Xtreme distribution was:
+  cached 17,811; unsupported block 159; static nonplain 26; unsupported exit 0;
+  cycle budget 0; execute 1,478; target 0.
+
+That distribution changes the next optimization target. The remaining work is
+not mainly missing static instruction support; it is dominated by cached known
+misses plus runtime mixed-block execution failures. The next safe engineering
+step is to profile those execute failures by effective address/opcode and then
+split safe prefixes before dynamic MMIO/nonplain accesses, rather than trying to
+force every mutable window through a block that may hide hardware side effects.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
