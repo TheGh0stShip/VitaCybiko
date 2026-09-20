@@ -824,6 +824,64 @@ static void test_plain_memory_instruction_matches_long_displacement(void)
     teardown_memory_equiv_cpu(&bus);
 }
 
+static void test_plain_memory_instruction_matches_long_post_increment(void)
+{
+    const uint8_t code[] = {0x01, 0x00, 0x6d, 0x74}; /* MOV.L @ER7+,ER4 */
+    uint8_t rom[4] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+    cpu.er[7] = bus.machine->ram_base + 0x140;
+    memory_write32(&bus.external_ram, 0x140, 0x89abcdef);
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    state.er[7] = bus.machine->ram_base + 0x140;
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[4] == cpu.er[4]);
+    TEST_CHECK(state.er[7] == cpu.er[7]);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_plain_memory_instruction_matches_long_pre_decrement(void)
+{
+    const uint8_t code[] = {0x01, 0x00, 0x6d, 0xf4}; /* MOV.L ER4,@-ER7 */
+    uint8_t rom[4] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    er[4] = 0x10203040;
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+    cpu.er[4] = er[4];
+    cpu.er[7] = bus.machine->ram_base + 0x160;
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    state.er[4] = er[4];
+    state.er[7] = bus.machine->ram_base + 0x160;
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[7] == cpu.er[7]);
+    TEST_CHECK(bus_read32(&bus, state.er[7]) == bus_read32(&bus, cpu.er[7]));
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_plain_memory_instruction_matches_absolute_byte_read(void)
 {
     const uint8_t code[] = {0x6a, 0x02, 0x00, 0x80}; /* MOV.B @0x80:16,R2H */
@@ -968,6 +1026,70 @@ static void test_mixed_plain_block_exit_executes_jsr_abs24(void)
                ((bus.machine->ram_base + 6u) & 0xffffffu));
     TEST_CHECK(next == 0x412345);
     TEST_CHECK(edge_cache.misses == 1);
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_mixed_plain_block_exit_executes_jmp_er(void)
+{
+    const uint8_t code[] = {
+        0x0b, 0x00, /* ADDS #1,ER0 */
+        0x59, 0x20  /* JMP @ER2 */
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(code, sizeof(code), 0, 8, &block));
+    TEST_ASSERT(block.instructions == 1);
+    TEST_CHECK(block.branch_kind == H8S_BLOCK_BRANCH_INDIRECT);
+    TEST_CHECK(h8s_mixed_plain_block_supported(&block));
+
+    uint32_t er[8] = {0};
+    er[2] = 0x4abcde;
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    for (unsigned i = 0; i < 8; ++i) state.er[i] = er[i];
+    uint32_t next = 0;
+
+    TEST_CHECK(h8s_execute_mixed_plain_block_exit(&block, NULL, &bus,
+                                                  bus.machine->ram_base,
+                                                  &state, &next));
+    TEST_CHECK(state.er[0] == 1);
+    TEST_CHECK(next == 0x4abcde);
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_mixed_plain_block_exit_executes_jsr_er(void)
+{
+    const uint8_t code[] = {
+        0x0b, 0x00, /* ADDS #1,ER0 */
+        0x5d, 0x30  /* JSR @ER3 */
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(code, sizeof(code), 0, 8, &block));
+    TEST_ASSERT(block.instructions == 1);
+    TEST_CHECK(block.branch_kind == H8S_BLOCK_BRANCH_INDIRECT);
+    TEST_CHECK(h8s_mixed_plain_block_supported(&block));
+
+    uint32_t er[8] = {0};
+    er[3] = 0x488354;
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    for (unsigned i = 0; i < 8; ++i) state.er[i] = er[i];
+    state.er[7] = bus.machine->ram_base + 0x100;
+    uint32_t next = 0;
+
+    TEST_CHECK(h8s_execute_mixed_plain_block_exit(&block, NULL, &bus,
+                                                  bus.machine->ram_base,
+                                                  &state, &next));
+    TEST_CHECK(state.er[0] == 1);
+    TEST_CHECK(state.er[7] == bus.machine->ram_base + 0x0fc);
+    TEST_CHECK(bus_read32(&bus, state.er[7]) ==
+               ((bus.machine->ram_base + 4u) & 0xffffffu));
+    TEST_CHECK(next == 0x488354);
     teardown_memory_equiv_cpu(&bus);
 }
 
@@ -1989,11 +2111,15 @@ TEST_LIST = {
     { "mixed_plain_block_detects_static_mmio", test_mixed_plain_block_detects_static_mmio },
     { "plain_memory_instruction_matches_byte_postincrement", test_plain_memory_instruction_matches_byte_postincrement },
     { "plain_memory_instruction_matches_long_displacement", test_plain_memory_instruction_matches_long_displacement },
+    { "plain_memory_instruction_matches_long_post_increment", test_plain_memory_instruction_matches_long_post_increment },
+    { "plain_memory_instruction_matches_long_pre_decrement", test_plain_memory_instruction_matches_long_pre_decrement },
     { "plain_memory_instruction_matches_absolute_byte_read", test_plain_memory_instruction_matches_absolute_byte_read },
     { "plain_memory_instruction_matches_absolute_word_read", test_plain_memory_instruction_matches_absolute_word_read },
     { "plain_memory_instruction_matches_multi_pop", test_plain_memory_instruction_matches_multi_pop },
     { "plain_memory_instruction_matches_multi_push", test_plain_memory_instruction_matches_multi_push },
     { "mixed_plain_block_exit_executes_jsr_abs24", test_mixed_plain_block_exit_executes_jsr_abs24 },
+    { "mixed_plain_block_exit_executes_jmp_er", test_mixed_plain_block_exit_executes_jmp_er },
+    { "mixed_plain_block_exit_executes_jsr_er", test_mixed_plain_block_exit_executes_jsr_er },
     { "mixed_plain_block_exit_executes_bsr16", test_mixed_plain_block_exit_executes_bsr16 },
     { "mixed_plain_block_exit_executes_rts", test_mixed_plain_block_exit_executes_rts },
     { "counts_variable_immediates", test_counts_variable_immediates },

@@ -1190,6 +1190,36 @@ host work that was known to run every Vita frame. The next on-device check
 should inspect `performance.csv` using the split `draw_ms`/`present_ms` columns
 plus the existing semantic/backoff counters.
 
+Accepted Xtreme RAM-block coverage: the host smoke tool can now optionally dump
+raw RAM with `CYBIKO_SMOKE_DUMP_RAM`, which made it possible to decode copied
+CyOS code at runtime PCs rather than guessing from static flash. The hot
+`0x488354` reject decoded as a plain-memory block ending in `JSR @ER3`
+(`0x5d30`), so the mixed plain-memory executor now accepts safe register
+indirect `JMP @ERn`/`JSR @ERn` exits. It still rejects `@@aa:8` indirect exits.
+The executor resolves the target from the post-block register state and pushes
+the return PC for `JSR @ERn`, matching the interpreter.
+
+The same RAM dump showed hot prefixed long-memory forms such as
+`0x0100/0x6d74` and `0x0100/0x6df4`; these are now supported in the plain-memory
+executor. A small correctness bug in pre/post-index handling was fixed at the
+same time: prefixed long-memory forms must update the address register encoded
+in the second word, not the first `0x0100` prefix word.
+
+Validation:
+
+- focused scheduler/H8S block/H8S CPU/emulator tests passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 1.74 s, Classic V2 0.75 s, Xtreme
+  2.06 s;
+- direct Xtreme repeats showed semantic mutable fast cycles rising to about
+  11.62M and window rejects dropping to about 21.7k, from about 10.19M/38.6k
+  before these RAM-block changes.
+
+This is accepted because it increases executed Xtreme RAM-block coverage while
+keeping all memory accesses runtime-plain-checked. The remaining top rejects
+still include MMIO polling loops (`0x2ab3` and absolute/on-chip timer-like
+addresses) that must not be hidden behind a plain-memory fast path.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

@@ -1834,6 +1834,7 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
     uint8_t lo = (uint8_t)op;
     uint32_t address = 0;
     unsigned reg = 0;
+    unsigned address_reg = 0;
     unsigned bytes = 0;
     bool write = false;
     bool post_increment = false;
@@ -1885,6 +1886,14 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
         switch (hi2) {
         case 0x69:
             if (insn->bytes != 4) return false;
+            address_reg = (lo2 >> 4) & 0x7;
+            address = state->er[(lo2 >> 4) & 0x7];
+            break;
+        case 0x6d:
+            if (insn->bytes != 4) return false;
+            address_reg = (lo2 >> 4) & 0x7;
+            post_increment = !write;
+            pre_decrement = write;
             address = state->er[(lo2 >> 4) & 0x7];
             break;
         case 0x6b:
@@ -1898,6 +1907,7 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
             break;
         case 0x6f:
             if (insn->bytes != 6) return false;
+            address_reg = (lo2 >> 4) & 0x7;
             address = state->er[(lo2 >> 4) & 0x7] +
                       (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
             break;
@@ -1939,16 +1949,19 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
         case 0x68: /* MOV.B @ERn,Rd / Rs,@ERn */
             if (insn->bytes != 2) return false;
             bytes = 1;
+            address_reg = (lo >> 4) & 0x7;
             address = state->er[(lo >> 4) & 0x7];
             break;
         case 0x69: /* MOV.W @ERn,Rd / Rs,@ERn */
             if (insn->bytes != 2) return false;
             bytes = 2;
+            address_reg = (lo >> 4) & 0x7;
             address = state->er[(lo >> 4) & 0x7];
             break;
         case 0x6c: /* MOV.B @ERn+,Rd / Rs,@-ERn */
             if (insn->bytes != 2) return false;
             bytes = 1;
+            address_reg = (lo >> 4) & 0x7;
             post_increment = !write;
             pre_decrement = write;
             address = state->er[(lo >> 4) & 0x7];
@@ -1956,6 +1969,7 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
         case 0x6d: /* MOV.W @ERn+,Rd / Rs,@-ERn */
             if (insn->bytes != 2) return false;
             bytes = 2;
+            address_reg = (lo >> 4) & 0x7;
             post_increment = !write;
             pre_decrement = write;
             address = state->er[(lo >> 4) & 0x7];
@@ -1963,12 +1977,14 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
         case 0x6e: /* MOV.B @(d:16,ERn),Rd / Rs,@(d:16,ERn) */
             if (insn->bytes != 4) return false;
             bytes = 1;
+            address_reg = (lo >> 4) & 0x7;
             address = state->er[(lo >> 4) & 0x7] +
                       (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
             break;
         case 0x6f: /* MOV.W @(d:16,ERn),Rd / Rs,@(d:16,ERn) */
             if (insn->bytes != 4) return false;
             bytes = 2;
+            address_reg = (lo >> 4) & 0x7;
             address = state->er[(lo >> 4) & 0x7] +
                       (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
             break;
@@ -1979,8 +1995,8 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
 
     address &= 0xffffffu;
     if (pre_decrement) {
-        state->er[(lo >> 4) & 0x7] = (state->er[(lo >> 4) & 0x7] - bytes) & 0xffffffffu;
-        address = state->er[(lo >> 4) & 0x7] & 0xffffffu;
+        state->er[address_reg] = (state->er[address_reg] - bytes) & 0xffffffffu;
+        address = state->er[address_reg] & 0xffffffu;
     }
 
     if (write) {
@@ -2002,8 +2018,8 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
         const uint8_t *ptr = bus_plain_read_ptr(bus, address, bytes);
         if (!ptr) return false;
         if (post_increment) {
-            state->er[(lo >> 4) & 0x7] =
-                (state->er[(lo >> 4) & 0x7] + bytes) & 0xffffffffu;
+            state->er[address_reg] =
+                (state->er[address_reg] + bytes) & 0xffffffffu;
             post_increment = false;
         }
         if (bytes == 1) {
@@ -2024,7 +2040,7 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
         }
     }
     if (post_increment)
-        state->er[(lo >> 4) & 0x7] = (state->er[(lo >> 4) & 0x7] + bytes) & 0xffffffffu;
+        state->er[address_reg] = (state->er[address_reg] + bytes) & 0xffffffffu;
     block_set_flag(state, BLOCK_CCR_V, false);
     state->pc += insn->bytes;
     return true;
@@ -2042,7 +2058,7 @@ static bool plain_memory_instruction_supported(const h8s_block_instruction_t *in
                        (uint16_t)(insn->imm >> 16);
         uint8_t hi2 = (uint8_t)(op2 >> 8);
         uint8_t lo2 = (uint8_t)op2;
-        if (hi2 == 0x69) return insn->bytes == 4;
+        if (hi2 == 0x69 || hi2 == 0x6d) return insn->bytes == 4;
         if (hi2 == 0x6b) return (lo2 & 0x20) ? insn->bytes == 8 : insn->bytes == 6;
         if (hi2 == 0x6f) return insn->bytes == 6;
         return false;
@@ -2137,12 +2153,17 @@ static bool execute_one_semantic_instruction(const h8s_block_instruction_t *insn
 bool h8s_mixed_plain_block_supported(const h8s_block_t *block)
 {
     if (!block) return false;
+    bool register_indirect_exit =
+        block->branch_kind == H8S_BLOCK_BRANCH_INDIRECT &&
+        (((uint8_t)(block->branch_op >> 8)) == 0x59 ||
+         ((uint8_t)(block->branch_op >> 8)) == 0x5d);
     if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BSR8 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BSR16 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JSR_ABS24 &&
+        !register_indirect_exit &&
         !(block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
           block->branch_op == 0x5470))
         return false;
@@ -2239,6 +2260,11 @@ bool h8s_execute_mixed_plain_block_exit(const h8s_block_t *block,
                     ((uint32_t)ptr[2] << 8) |
                     ptr[3]) & 0xffffffu;
         updated.er[7] += 4;
+    } else if (block->branch_kind == H8S_BLOCK_BRANCH_INDIRECT &&
+               (((uint8_t)(block->branch_op >> 8)) == 0x59 ||
+                ((uint8_t)(block->branch_op >> 8)) == 0x5d)) {
+        unsigned rn = ((uint8_t)block->branch_op >> 4) & 0x7;
+        resolved = updated.er[rn] & 0xffffffu;
     } else {
         bool ok = edge_cache ?
             h8s_branch_edge_cache_get(edge_cache, block, updated.ccr, &resolved) :
@@ -2247,7 +2273,9 @@ bool h8s_execute_mixed_plain_block_exit(const h8s_block_t *block,
     }
     if (block->branch_kind == H8S_BLOCK_BRANCH_BSR8 ||
         block->branch_kind == H8S_BLOCK_BRANCH_BSR16 ||
-        block->branch_kind == H8S_BLOCK_BRANCH_JSR_ABS24) {
+        block->branch_kind == H8S_BLOCK_BRANCH_JSR_ABS24 ||
+        (block->branch_kind == H8S_BLOCK_BRANCH_INDIRECT &&
+         ((uint8_t)(block->branch_op >> 8)) == 0x5d)) {
         uint32_t return_pc = (pc_base + block->branch_fallthrough) & 0xffffffu;
         uint32_t sp = (updated.er[7] - 4u) & 0xffffffffu;
         uint32_t addr = sp & 0xffffffu;

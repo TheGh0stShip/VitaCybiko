@@ -98,6 +98,15 @@ static bool write_screenshot(const char *path, const smoke_ctx_t *ctx)
     return header > 0 && written == sizeof(ctx->pixels) && close_result == 0;
 }
 
+static bool write_raw_file(const char *path, const uint8_t *data, size_t size)
+{
+    FILE *file = fopen(path, "wb");
+    if (!file) return false;
+    size_t written = fwrite(data, 1, size, file);
+    int close_result = fclose(file);
+    return written == size && close_result == 0;
+}
+
 int main(int argc, char **argv)
 {
     cybiko_model_t model = CYBIKO_XTREME;
@@ -205,6 +214,21 @@ int main(int argc, char **argv)
     clock_t started = clock();
     for (int i = 0; i < target_frames && cybiko_is_running(emu); i++) {
         cybiko_run_frame(emu);
+    }
+
+    const char *dump_ram_path = getenv("CYBIKO_SMOKE_DUMP_RAM");
+    if (dump_ram_path) {
+        size_t dump_size = 0;
+        const uint8_t *dump = cybiko_get_nvram(emu, &dump_size);
+        if (!dump || !write_raw_file(dump_ram_path, dump, dump_size)) {
+            fprintf(stderr, "failed to write raw RAM dump '%s'\n", dump_ram_path);
+            free(cfs);
+            free(serial);
+            free(flash);
+            free(boot);
+            cybiko_destroy(emu);
+            return 6;
+        }
     }
 
     printf("cpu_seconds=%.6f changed_frames=%u\n",

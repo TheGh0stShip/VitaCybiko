@@ -2324,6 +2324,9 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
         block->branch_kind != H8S_BLOCK_BRANCH_BSR16 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JSR_ABS24 &&
+        !(block->branch_kind == H8S_BLOCK_BRANCH_INDIRECT &&
+          (((uint8_t)(block->branch_op >> 8)) == 0x59 ||
+           ((uint8_t)(block->branch_op >> 8)) == 0x5d)) &&
         !(block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
           block->branch_op == 0x5470)) {
         mutable_reject_cache_store(cpu, start_pc, block);
@@ -2347,6 +2350,7 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
     uint32_t next_pc = next_offset;
     if (block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JSR_ABS24 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_INDIRECT &&
         block->branch_kind != H8S_BLOCK_BRANCH_RETURN) {
         if (next_offset >= size)
             return false;
