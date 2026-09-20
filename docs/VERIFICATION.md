@@ -269,6 +269,49 @@ Executable payload SHA-256:
 Audible quality on the physical Vita still requires user confirmation; this is
 an audio pacing candidate, not a completed audio-accuracy claim.
 
+## 01.16 preview candidate
+
+Vita package metadata is `01.16`. Candidate VPK SHA-256:
+
+```text
+93753355a36ce2b1edd1c76fa3edc370415d12213b4135552757f961ac2e704b
+```
+
+Executable SELF SHA-256:
+
+```text
+37b59e4a2981403706398f31778d536dc6f51982042d0186ff9e98f4986eb267
+```
+
+Raw linked executable SHA-256:
+
+```text
+25b71cae3a124d5d2267c7be4591a800811a853a4b4f26e021bb750ec90928ea
+```
+
+- Package metadata, LiveArea title and runtime UI now report `01.16`.
+- The VPK contains 9 ZIP entries, all stored for VitaShell compatibility, and
+  `zipfile.testzip()` reported no corrupt member.
+- The packaged `param.sfo` contains `VitaCybiko 01.16`, `01.16`, and title ID
+  `VCYB00001`. `sce_sys/icon0.png`, `sce_sys/livearea/contents/bg.png`, and
+  `sce_sys/livearea/contents/startup.png` are present.
+- Local host verification passed all 16 default C/Python tests. The Vita VPK
+  target built successfully with VitaSDK.
+- The local Classic V2 600-frame firmware smoke passed with 599 active frames
+  and reported semantic fast-path telemetry:
+  `semantic_fast_blocks=220047`, `semantic_fast_cycles=556354`,
+  `semantic_fast_rejects=229239`,
+  `semantic_fast_cached_rejects=91655`, and
+  `semantic_fast_backoff_skips=11731834`.
+- The Vita `performance.csv` now includes per-window semantic fast-path deltas
+  so physical Vita/Vita3K traces can distinguish CPU coverage, repeated
+  reject/probe overhead, render/present cost, audio queue starvation and
+  interpolation work.
+
+This is not a completed 1:1 release. Physical Vita smoothness/audio, Xtreme
+performance, Classic V1/Xtreme app coverage, the original launch bundle and
+wireless/accessory behavior remain open.
+
 ## v0.1.3-preview candidate
 
 Vita package metadata is `01.03`. Candidate VPK SHA-256:
