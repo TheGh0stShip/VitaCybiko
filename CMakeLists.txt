@@ -53,7 +53,7 @@ if(VITA)
 
   set(VITA_APP_NAME "VitaCybiko")
   set(VITA_TITLEID  "VCYB00001")
-  set(VITA_VERSION  "01.10")
+  set(VITA_VERSION  "01.11")
 
   add_executable(${PROJECT_NAME}
     src/vita/main.c
@@ -122,6 +122,10 @@ else()
     target_link_libraries(test_models cybiko_core)
     target_include_directories(test_models PRIVATE ${CYBIKO_VENDOR_DIR}/tests)
     add_test(NAME model_profiles_and_dataflash COMMAND test_models)
+    add_executable(test_scheduler tests/test_scheduler.c)
+    target_link_libraries(test_scheduler cybiko_core)
+    target_include_directories(test_scheduler PRIVATE ${CYBIKO_VENDOR_DIR}/tests)
+    add_test(NAME event_scheduler_equivalence COMMAND test_scheduler)
     set(TEST_MODULES memory cfs keyboard timer8 timer16 rtc speaker hd66421 h8s_cpu emulator)
     foreach(mod ${TEST_MODULES})
       add_executable(test_${mod} ${CYBIKO_VENDOR_DIR}/tests/test_${mod}.c)

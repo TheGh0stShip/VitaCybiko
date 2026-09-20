@@ -36,7 +36,15 @@ struct cybiko_emu {
     bool     running;
     uint64_t total_steps;
     uint32_t frame_count;
+    int pending_timer_cycles;
+    int pending_completion_cycles;
+    bool peripheral_access;
+#ifdef CYBIKO_SCHEDULER_TEST
+    bool reference_scheduler;
+#endif
 };
+
+static void sync_peripherals(void *ctx);
 
 /* Timer16 channel 1 TIOCB1 output compare → speaker (Port 1 bit 3) */
 static void timer16_ch1_tiocb_cb(void *ctx, int level) {
@@ -118,6 +126,8 @@ cybiko_emu_t *cybiko_create_model(const cybiko_hal_t *hal, cybiko_model_t model)
 
     /* Wire CPU back into bus (for interrupt delivery, etc.) */
     emu->bus.cpu = &emu->cpu;
+    emu->bus.sync_peripherals = sync_peripherals;
+    emu->bus.sync_ctx = emu;
 
     emu->running = true;
 
@@ -223,6 +233,24 @@ static int cycles_until_next_peripheral_event(cybiko_emu_t *emu)
     return next == INT_MAX ? 0 : next;
 }
 
+static void sync_peripherals(void *ctx)
+{
+    cybiko_emu_t *emu = ctx;
+    /* Timers tick before an instruction; serial/DMA/ADC completion ticks
+     * after it. Keep separate debts to preserve that ordering at I/O reads. */
+    int timers = emu->pending_timer_cycles;
+    int completions = emu->pending_completion_cycles;
+    emu->pending_timer_cycles = emu->pending_completion_cycles = 0;
+    emu->peripheral_access = true;
+    if (timers) {
+        timer8_advance(&emu->timer8[0], timers);
+        timer8_advance(&emu->timer8[1], timers);
+        for (int i = 0; i < emu->bus.machine->timer_channels; ++i)
+            timer16_advance(&emu->timer16[i], timers);
+    }
+    bus_advance_dma_completion(&emu->bus, completions);
+}
+
 void cybiko_run_frame(cybiko_emu_t *emu) {
     const cybiko_machine_t *m = emu->bus.machine;
     int frame_cycles = (int)(m->clock_hz / CYBIKO_FPS);
@@ -259,32 +287,45 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
                 emu->speaker.frame_cycle = cycle + chunk - 1;
                 tick_peripherals(emu, chunk);
                 emu->cpu.cycle_count += (uint64_t)chunk;
-                emu->total_steps += (uint64_t)chunk;
                 cycle += chunk;
                 continue;
             }
         }
 
-        /* Track cycle position for speaker transition timestamps */
-        emu->speaker.frame_cycle = cycle;
-
-        /* Check the live prescalers: firmware can start/stop a timer during
-         * this frame, including immediately before entering SLEEP. */
-        timer8_tick(&emu->timer8[0]);
-        timer8_tick(&emu->timer8[1]);
-        for (int i = 0; i < m->timer_channels; i++) {
-            timer16_tick(&emu->timer16[i]);
+        /* Classic benefits from batching. Xtreme's frequent I/O accesses
+         * cost more deadline recalculations than they save in tick work. */
+        if (m->model == CYBIKO_XTREME || emu->cpu.halted
+#ifdef CYBIKO_SCHEDULER_TEST
+            || emu->reference_scheduler
+#endif
+        ) {
+            emu->speaker.frame_cycle = cycle;
+            timer8_tick(&emu->timer8[0]);
+            timer8_tick(&emu->timer8[1]);
+            for (int i = 0; i < m->timer_channels; ++i) timer16_tick(&emu->timer16[i]);
+            h8s_cpu_step(&emu->cpu);
+            bus_tick_dma_completion(&emu->bus);
+            ++cycle;
+            continue;
         }
-
-        /* CPU step */
-        h8s_cpu_step(&emu->cpu);
-
-        /* DMA completion */
-        bus_tick_dma_completion(&emu->bus);
-
-        emu->total_steps++;
-        cycle++;
+        /* Batch until an observable event or I/O access. The latter can
+         * change a prescaler, counter, or transfer deadline. */
+        int chunk = frame_cycles - cycle;
+        int next_event = cycles_until_next_peripheral_event(emu);
+        if (next_event > 0 && next_event < chunk) chunk = next_event;
+        emu->peripheral_access = false;
+        for (int step = 0; step < chunk; ++step) {
+            emu->speaker.frame_cycle = cycle;
+            ++emu->pending_timer_cycles;
+            if (step + 1 == chunk) sync_peripherals(emu);
+            h8s_cpu_step(&emu->cpu);
+            ++emu->pending_completion_cycles;
+            ++cycle;
+            if (emu->peripheral_access || emu->cpu.halted) break;
+        }
+        sync_peripherals(emu);
     }
+    emu->total_steps += (uint64_t)frame_cycles;
 
     /* Render the frame via HAL */
     if (emu->hal.render_frame) {

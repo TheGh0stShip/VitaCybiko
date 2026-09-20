@@ -1,5 +1,28 @@
 # Verification — 2026-09-19
 
+## 01.11 candidate
+
+01.10 was reported by the physical-Vita tester to still have low battery and
+roughly 4–5 FPS during the loading transition. Its earlier entries below record
+implementation and packaging checks, not successful resolution of those reports.
+
+See [01.11 changes, regression evidence and timing diagnostics](RELEASE-01.11.md).
+The VPK and Vita executable SHA-256 values are:
+
+```text
+92e93a38546915d15d68062ccdedf55a2f8a20aa687c10e3cb900f4e3ffd5feb  VitaCybiko.vpk
+8a2ee0c6af325a7b53481c8135754d5638f0c5268007ae7d92d2c0d92a49772e  eboot.bin
+```
+
+The ZIP integrity check passed and package metadata reports 01.11. Physical
+performance confirmation remains pending; do not describe this as verified
+60 FPS or complete Cybiko compatibility.
+
+FTP installation completed at `ux0:/app/VCYB00001/` and
+`ux0:/VPK/VitaCybiko.vpk`. Every installed VPK member and the full VPK were
+downloaded back and hash-checked. The previous app files were backed up locally;
+firmware, saves, and plugin configuration were not modified.
+
 ## 01.10 physical Vita update
 
 Vita package metadata is `01.10`. Candidate VPK SHA-256:

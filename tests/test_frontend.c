@@ -656,7 +656,55 @@ static void test_runtime_dir_creation_on_prepared_storage(void)
     TEST_CHECK(rmdir(temporary) == 0);
 }
 
+static void test_catchup_respects_presentation_budget(void)
+{
+    /* 50 ms CPU work caused 150 ms between presentations in the old loop. */
+    TEST_CHECK(catchup_frame_budget(50000, 16667, 50000, 1000) == 0);
+    TEST_CHECK(catchup_frame_budget(100000, 16667, 10000, 3000) == 0);
+    TEST_CHECK(catchup_frame_budget(50000, 16667, 4000, 3000) == 2);
+    TEST_CHECK(catchup_frame_budget(16667, 16667, 4000, 3000) == 1);
+    TEST_CHECK(catchup_frame_budget(0, 16667, 4000, 3000) == 0);
+    TEST_CHECK(catchup_frame_budget(50000, 16667, 0, 0) == 0);
+    TEST_CHECK(catchup_frame_budget(50000, 16667, 1000, 20000) == 0);
+}
+
+static void test_lcd_upload_preserves_colors_and_skips_duplicates(void)
+{
+    app_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    TEST_ASSERT(ctx != NULL);
+    TEST_ASSERT(SDL_Init(SDL_INIT_VIDEO) == 0);
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, 160, 100, 32,
+                                                         SDL_PIXELFORMAT_ARGB8888);
+    TEST_ASSERT(surface != NULL);
+    SDL_Renderer *renderer = SDL_CreateSoftwareRenderer(surface);
+    TEST_ASSERT(renderer != NULL);
+    ctx->lcd_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                         SDL_TEXTUREACCESS_STREAMING, 160, 100);
+    TEST_ASSERT(ctx->lcd_texture != NULL);
+    uint8_t pixels[160 * 100] = {0};
+    pixels[1] = 128;
+    pixels[2] = 255;
+    hal_render_frame(ctx, pixels, 160, 100);
+    TEST_CHECK(ctx->lcd_updates == 1);
+    TEST_CHECK(ctx->lcd_pixels[0] == 0xff242d26);
+    TEST_CHECK(ctx->lcd_pixels[1] == 0xff7b8575);
+    TEST_CHECK(ctx->lcd_pixels[2] == 0xffd2ddc4);
+    hal_render_frame(ctx, pixels, 160, 100);
+    TEST_CHECK(ctx->lcd_updates == 1);
+    pixels[0] = 255;
+    hal_render_frame(ctx, pixels, 160, 100);
+    TEST_CHECK(ctx->lcd_updates == 2);
+    TEST_CHECK(ctx->lcd_pixels[0] == 0xffd2ddc4);
+    SDL_DestroyTexture(ctx->lcd_texture);
+    SDL_DestroyRenderer(renderer);
+    SDL_FreeSurface(surface);
+    SDL_Quit();
+    free(ctx);
+}
+
 TEST_LIST = {
+    {"lcd_colors_and_duplicate_uploads", test_lcd_upload_preserves_colors_and_skips_duplicates},
+    {"catchup_presentation_budget", test_catchup_respects_presentation_budget},
     {"classic_ram_storage", test_classic_ram_storage},
     {"classic_input_timing_after_reset", test_classic_input_timing_after_reset},
     {"runtime_dir_creation_on_prepared_storage", test_runtime_dir_creation_on_prepared_storage},

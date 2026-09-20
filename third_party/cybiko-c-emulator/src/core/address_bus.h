@@ -37,6 +37,9 @@ typedef struct address_bus {
     speaker_t  *speaker;
     keyboard_t *keyboard;
     h8s_cpu_t  *cpu;
+    /* Synchronize deferred clocks before a guest accesses peripheral state. */
+    void (*sync_peripherals)(void *ctx);
+    void *sync_ctx;
 
     /* I/O state */
     uint8_t tstr;            /* Timer start register (0xFFFFC0) */
@@ -44,6 +47,7 @@ typedef struct address_bus {
     uint8_t isr;             /* Interrupt status register (0xFFFF2F) */
     uint8_t adcsr;           /* ADC status register */
     uint8_t adcr;            /* ADC control register */
+    int adc_completion_delay; /* CPU clocks until a conversion/scan completes */
 
     /* DMA registers (XT) */
     uint8_t dma_regs[32];    /* 0xFFFEE0-0xFFFEFF */

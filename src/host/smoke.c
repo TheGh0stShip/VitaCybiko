@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "core/cfs.h"
 #include "core/emulator.h"
@@ -11,6 +12,9 @@ typedef struct {
     unsigned frames;
     unsigned active_frames;
     unsigned audio_samples;
+    unsigned changed_frames;
+    unsigned enter_frame;
+    bool classic;
     uint8_t pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
 } smoke_ctx_t;
 
@@ -48,6 +52,7 @@ static void render_frame(void *opaque, const uint8_t *pixels, int width, int hei
         return;
     }
     ctx->frames++;
+    if (memcmp(ctx->pixels, pixels, sizeof(ctx->pixels))) ctx->changed_frames++;
     bool active = false;
     for (int i = 0; i < width * height; i++) {
         ctx->pixels[i] = pixels[i];
@@ -57,6 +62,17 @@ static void render_frame(void *opaque, const uint8_t *pixels, int width, int hei
     }
     if (active) {
         ctx->active_frames++;
+    }
+}
+
+static void keyboard_poll(void *opaque, uint16_t *matrix, int columns)
+{
+    smoke_ctx_t *ctx = opaque;
+    memset(matrix, 0, (size_t)columns * sizeof(*matrix));
+    if (ctx->enter_frame && ctx->frames >= ctx->enter_frame &&
+        ctx->frames < ctx->enter_frame + 12) {
+        int column = ctx->classic ? 5 : 4;
+        if (columns > column) matrix[column] = ctx->classic ? 0x0004 : 0x0008;
     }
 }
 
@@ -115,9 +131,13 @@ int main(int argc, char **argv)
     uint8_t *serial = classic ? load_file(argv[3], &serial_size) : NULL;
     cfs_image_t *cfs = malloc(sizeof(*cfs));
     smoke_ctx_t ctx = {0};
+    ctx.classic = classic;
+    const char *enter_frame = getenv("CYBIKO_SMOKE_ENTER_FRAME");
+    if (enter_frame) ctx.enter_frame = (unsigned)strtoul(enter_frame, NULL, 10);
     cybiko_hal_t hal = {
         .render_frame = render_frame,
         .audio_output = audio_output,
+        .keyboard_poll = keyboard_poll,
         .ctx = &ctx,
     };
     cybiko_emu_t *emu = cybiko_create_model(&hal, model);
@@ -162,10 +182,32 @@ int main(int argc, char **argv)
         return 4;
     }
 
+    /* Optional raw checkpoints let the benchmark reproduce a device boot. */
+    const char *ram_path = getenv("CYBIKO_SMOKE_RAM");
+    const char *clock_path = getenv("CYBIKO_SMOKE_CLOCK");
+    if (ram_path) {
+        size_t size = 0;
+        uint8_t *data = load_file(ram_path, &size);
+        bool ok = data && size == cybiko_machine(model)->ram_size &&
+                  cybiko_load_nvram(emu, data, size);
+        free(data);
+        if (!ok) { fprintf(stderr, "invalid raw RAM checkpoint\n"); return 4; }
+    }
+    if (clock_path) {
+        size_t size = 0;
+        uint8_t *data = load_file(clock_path, &size);
+        bool ok = data && cybiko_load_clock(emu, data, size, 0);
+        free(data);
+        if (!ok) { fprintf(stderr, "invalid raw clock checkpoint\n"); return 4; }
+    }
     cybiko_reset(emu);
+    clock_t started = clock();
     for (int i = 0; i < target_frames && cybiko_is_running(emu); i++) {
         cybiko_run_frame(emu);
     }
+
+    printf("cpu_seconds=%.6f changed_frames=%u\n",
+           (double)(clock() - started) / CLOCKS_PER_SEC, ctx.changed_frames);
 
     bool screenshot_ok = argc <= frames_arg + 1 || write_screenshot(argv[frames_arg + 1], &ctx);
     bool passed = ctx.frames == (unsigned)target_frames &&

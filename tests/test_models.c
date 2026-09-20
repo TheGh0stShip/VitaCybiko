@@ -127,23 +127,64 @@ static void test_battery_adc_stays_charged(void)
         uint16_t ch1 = bus_read16(&bus, 0xFFFF92);
         uint16_t ch2 = bus_read16(&bus, 0xFFFF94);
         if (model == CYBIKO_XTREME) {
-            TEST_CHECK(ch1 == 0x0330);
-            TEST_CHECK(ch2 == 0x0330);
+            TEST_CHECK(ch1 == 0xCC00);
+            TEST_CHECK(ch2 == 0xCC00);
             TEST_CHECK(bus_read8(&bus, 0xFFFF92) == 0xCC);
             TEST_CHECK(bus_read8(&bus, 0xFFFF93) == 0x00);
         } else {
-            TEST_CHECK(ch1 == 0x0300);
-            TEST_CHECK(ch2 == 0x0100);
+            TEST_CHECK(ch1 == 0xC000);
+            TEST_CHECK(ch2 == 0x9200);
             TEST_CHECK(bus_read8(&bus, 0xFFFF92) == 0xC0);
             TEST_CHECK(bus_read8(&bus, 0xFFFF93) == 0x00);
-            TEST_CHECK(bus_read8(&bus, 0xFFFF94) == 0x40);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF94) == 0x92);
             TEST_CHECK(bus_read8(&bus, 0xFFFF95) == 0x00);
             TEST_CHECK(ch1 > ch2 + 0x00F0);
+            /* Reproduce CyOS's filtered level, not just its charging check. */
+            int avg1 = 0, avg2 = 0;
+            for (int sample = 0; sample < 32; ++sample) {
+                avg1 = (7 * avg1 + (ch1 >> 6)) / 8;
+                avg2 = (7 * avg2 + (ch2 >> 6)) / 8;
+            }
+            TEST_CHECK(avg1 - avg2 > 15);
+            TEST_CHECK(2 * avg2 - avg1 - 341 > 31);
+            TEST_CHECK(2 * avg2 - avg1 - 341 < 64);
         }
+        /* Access width must not change the hardware register's contents. */
+        for (uint32_t address = 0xFFFF90; address <= 0xFFFF96; address += 2) {
+            uint16_t bytes = ((uint16_t)bus_read8(&bus, address) << 8) |
+                             bus_read8(&bus, address + 1);
+            TEST_CHECK(bus_read16(&bus, address) == bytes);
+        }
+        h8s_cpu_t cpu;
+        h8s_cpu_init(&cpu, &bus);
+        bus.cpu = &cpu;
         bus_write8(&bus, 0xFFFF98, 0x20 | 2);
+        TEST_CHECK(cpu.pending_irq_count == 0); /* ADIE disabled. */
+        TEST_CHECK(bus_cycles_until_dma_completion(&bus) == 266);
+        bus_advance_dma_completion(&bus, 265);
+        TEST_CHECK(!(bus_read8(&bus, 0xFFFF98) & 0x80));
+        TEST_CHECK(bus_read8(&bus, 0xFFFF98) & 0x20);
+        bus_tick_dma_completion(&bus);
         TEST_CHECK(bus_read8(&bus, 0xFFFF98) & 0x80);
         TEST_CHECK(!(bus_read8(&bus, 0xFFFF98) & 0x20));
         bus_write8(&bus, 0xFFFF98, 0);
+        TEST_CHECK(!(bus_read8(&bus, 0xFFFF98) & 0x80));
+        bus_write8(&bus, 0xFFFF98, 0x60 | 2);
+        TEST_CHECK(cpu.pending_irq_count == 0);
+        bus_advance_dma_completion(&bus, 266);
+        TEST_CHECK(cpu.pending_irq_count == 1);
+        TEST_CHECK(cpu.pending_irqs[0] == 28);
+        bus_write8(&bus, 0xFFFF98, 0x72); /* Scan channels 0..2. */
+        TEST_CHECK(cpu.pending_irq_count == 0);
+        TEST_CHECK(bus_cycles_until_dma_completion(&bus) == 778);
+        bus_advance_dma_completion(&bus, 777);
+        TEST_CHECK(cpu.pending_irq_count == 0);
+        bus_tick_dma_completion(&bus);
+        TEST_CHECK(cpu.pending_irq_count == 1);
+        bus_write8(&bus, 0xFFFF98, 0x62);
+        bus_write8(&bus, 0xFFFF98, 0); /* Abort conversion. */
+        bus_advance_dma_completion(&bus, 1000);
+        TEST_CHECK(cpu.pending_irq_count == 0);
         TEST_CHECK(!(bus_read8(&bus, 0xFFFF98) & 0x80));
         bus_free(&bus);
     }

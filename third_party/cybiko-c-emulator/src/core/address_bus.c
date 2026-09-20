@@ -222,14 +222,14 @@ static uint16_t adc_channel_value(const address_bus_t *bus, int channel)
         return 0x0330;
     }
 
-    /* Classic CyOS compares ADC channel 1 against channel 2 for the battery
-     * check. Keep a healthy spread so firmware never sees low/critical power
-     * and enters its auto-shutdown path. Values are 10-bit ADC samples; H8 ADC
-     * byte reads expose them as high=(sample >> 2), low=(sample << 6), matching
-     * MAME's H8 ADC device. */
-    if (channel == 0) return 0x0300;
+    /* Classic requires BOTH a positive charging differential and a healthy
+     * displayed level: ch1-ch2 > 15; level = 2*ch2-ch1-341. The former
+     * 768/256 pair passed the differential but produced level -597 (low).
+     * 768/584 gives differential 184 and level 59, a healthy reading without
+     * exceeding the firmware's battery scale.
+     * Samples are 10-bit; the register exposes them left-aligned in 15:6. */
     if (channel == 1) return 0x0300;
-    if (channel == 2) return 0x0100;
+    if (channel == 2) return 0x0248;
     return 0x0300;
 }
 
@@ -239,6 +239,27 @@ static uint8_t read_adc_data_byte(address_bus_t *bus, uint32_t address)
     int channel = reg / 2;
     uint16_t value = adc_channel_value(bus, channel);
     return (reg & 1) ? (uint8_t)(value << 6) : (uint8_t)(value >> 2);
+}
+
+static void complete_adc(address_bus_t *bus)
+{
+    bus->adcsr = (bus->adcsr | 0x80) & (uint8_t)~0x20;
+    if ((bus->adcsr & 0x40) && bus->cpu)
+        h8s_cpu_request_interrupt(bus->cpu, 28);
+}
+
+static int adc_conversion_clocks(const address_bus_t *bus)
+{
+    /* H8 ADC2245/2319 software-triggered single conversion or channel scan.
+     * A scan ends at CH[1:0]; constant input samples need only the final IRQ. */
+    bool fast = (bus->adcsr & 8) != 0;
+    int first = fast ? 134 : 266;
+    int subsequent = fast ? 128 : 256;
+    if (bus->machine->model == CYBIKO_XTREME && !(bus->adcr & 8)) {
+        first = fast ? 68 : 530;
+        subsequent = fast ? 64 : 512;
+    }
+    return first + ((bus->adcsr & 0x10) ? (bus->adcsr & 3) * subsequent : 0);
 }
 
 /* --- Init / Free --- */
@@ -407,6 +428,7 @@ void bus_write32(address_bus_t *bus, uint32_t address, uint32_t value)
 
 static uint8_t read_on_chip8(address_bus_t *bus, uint32_t address)
 {
+    if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
     /* Timer16 channels (non-contiguous, check first) */
     int t16 = route_timer16_read8(bus, address);
     if (t16 >= 0) return (uint8_t)t16;
@@ -492,15 +514,14 @@ static uint8_t read_on_chip8(address_bus_t *bus, uint32_t address)
 
 static uint16_t read_on_chip16(address_bus_t *bus, uint32_t address)
 {
+    if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
     /* Timer16 routing first */
     int t16 = route_timer16_read16(bus, address);
     if (t16 >= 0) return (uint16_t)t16;
 
-    if (address >= 0xFFFF90 && address <= 0xFFFF96 && (address & 1) == 0) {
-        return adc_channel_value(bus, (int)((address - 0xFFFF90) / 2));
-    }
-
-    /* I/O register region: compose from two 8-bit reads */
+    /* I/O register region: compose from two 8-bit reads. In particular the
+     * ADC sample is left-aligned in bits 15:6 even for a MOV.W access. The
+     * H8S2245 map uses addr8_r, not the unrelated raw addr16_r helper. */
     if (address >= 0xFFFE00) {
         return (read_on_chip8(bus, address) << 8) | read_on_chip8(bus, address + 1);
     }
@@ -553,6 +574,7 @@ static void update_rtc_pins(address_bus_t *bus)
 
 static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
 {
+    if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
     /* Timer16 routing (check first, non-contiguous addresses) */
     if (route_timer16_write8(bus, address, value)) return;
 
@@ -722,11 +744,13 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
     /* ADC registers */
     if (address >= 0xFFFF90 && address <= 0xFFFF99) {
         if (address == 0xFFFF98) {
-            if (value & 0x20) {
-                bus->adcsr = (value & 0x5F) | 0x80;  /* immediate conversion done: ADF set, ADST clear */
-            } else {
-                bus->adcsr = (value & 0x7F) | (bus->adcsr & value & 0x80);
-            }
+            uint8_t previous = bus->adcsr;
+            bus->adcsr = (value & 0x7F) | (previous & value & 0x80);
+            if (!(bus->adcsr & 0x20)) bus->adc_completion_delay = 0;
+            else if (!(previous & 0x20))
+                bus->adc_completion_delay = adc_conversion_clocks(bus);
+            if (!(bus->adcsr & 0x80) && bus->cpu)
+                h8s_cpu_cancel_interrupt(bus->cpu, 28);
         } else if (address == 0xFFFF99) {
             bus->adcr = value & 0xFF;
         }
@@ -741,6 +765,7 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
 
 static void write_on_chip16(address_bus_t *bus, uint32_t address, uint16_t value)
 {
+    if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
     /* Timer16 routing first */
     if (route_timer16_write16(bus, address, value)) return;
 
@@ -821,6 +846,8 @@ static void execute_dma_transfer(address_bus_t *bus, int channel)
 
 void bus_tick_dma_completion(address_bus_t *bus)
 {
+    if (bus->adc_completion_delay > 0 && --bus->adc_completion_delay == 0)
+        complete_adc(bus);
     for (int channel = 0; channel < 3; channel += 2) {
         if (bus->sci_tx_delay[channel] && --bus->sci_tx_delay[channel] == 0) {
             bus->sci_tx_status[channel] |= SSR_TDRE | SSR_TEND;
@@ -842,7 +869,7 @@ void bus_tick_dma_completion(address_bus_t *bus)
 
 int bus_cycles_until_dma_completion(const address_bus_t *bus)
 {
-    int next = 0;
+    int next = bus->adc_completion_delay;
     for (int channel = 0; channel < 3; channel += 2) {
         int delay = (int)bus->sci_tx_delay[channel];
         if (delay > 0 && (next == 0 || delay < next)) next = delay;
@@ -859,6 +886,10 @@ int bus_cycles_until_dma_completion(const address_bus_t *bus)
 void bus_advance_dma_completion(address_bus_t *bus, int cycles)
 {
     if (cycles <= 0) return;
+    if (bus->adc_completion_delay > 0) {
+        if (cycles < bus->adc_completion_delay) bus->adc_completion_delay -= cycles;
+        else { bus->adc_completion_delay = 0; complete_adc(bus); }
+    }
     for (int channel = 0; channel < 3; channel += 2) {
         if (!bus->sci_tx_delay[channel]) continue;
         if ((uint32_t)cycles < bus->sci_tx_delay[channel]) {

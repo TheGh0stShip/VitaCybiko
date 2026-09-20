@@ -77,11 +77,7 @@
 #define AUDIO_TARGET_QUEUE_FRAMES 1u
 #define AUDIO_MAX_QUEUE_FRAMES 4u
 #define AUDIO_CONVERT_MAX_SAMPLES 8192
-#ifdef VITA
 #define EMULATION_CATCHUP_MAX_FRAMES 2
-#else
-#define EMULATION_CATCHUP_MAX_FRAMES 2
-#endif
 
 /* Defaults keep old host tests and the legacy Xtreme layout valid. Selection
  * replaces all paths together; Classic never uses the legacy Xtreme save. */
@@ -310,6 +306,11 @@ typedef struct {
     bool finger_down;
     SDL_FingerID finger_id;
     uint32_t lcd_pixels[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    uint32_t lcd_palette[256];
+    uint8_t lcd_previous[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    bool lcd_palette_ready;
+    bool lcd_previous_valid;
+    unsigned lcd_updates;
     int16_t audio_s16_stereo_buf[AUDIO_CONVERT_MAX_SAMPLES * 2];
     bool ui_cache_valid;
     bool ui_cache_landscape;
@@ -336,7 +337,6 @@ typedef struct {
     bool backgrounded;
     bool focus_lost;
     bool quit_requested;
-    bool skip_lcd_upload;
     cybiko_model_t model;
     char status[128];
 } app_ctx_t;
@@ -1211,23 +1211,29 @@ static void hal_render_frame(void *ctx_ptr, const uint8_t *pixels, int width, in
 {
     app_ctx_t *ctx = ctx_ptr;
     if (!ctx->lcd_texture || width != CYBIKO_LCD_WIDTH ||
-        height != CYBIKO_LCD_HEIGHT || ctx->skip_lcd_upload) {
+        height != CYBIKO_LCD_HEIGHT) {
         return;
     }
 
-    for (int i = 0; i < width * height; i++) {
-        uint8_t g = pixels[i];
-        uint8_t r = (uint8_t)(36 + (g * 174) / 255);
-        uint8_t gg = (uint8_t)(45 + (g * 176) / 255);
-        uint8_t b = (uint8_t)(38 + (g * 158) / 255);
-        ctx->lcd_pixels[i] = 0xff000000u |
-                             ((uint32_t)r << 16) |
-                             ((uint32_t)gg << 8) |
-                             (uint32_t)b;
+    if (ctx->lcd_previous_valid &&
+        !memcmp(ctx->lcd_previous, pixels, sizeof(ctx->lcd_previous))) return;
+    if (!ctx->lcd_palette_ready) {
+        for (int g = 0; g < 256; ++g) {
+            uint32_t r = 36 + (g * 174) / 255;
+            uint32_t green = 45 + (g * 176) / 255;
+            uint32_t b = 38 + (g * 158) / 255;
+            ctx->lcd_palette[g] = 0xff000000u | (r << 16) | (green << 8) | b;
+        }
+        ctx->lcd_palette_ready = true;
     }
-
-    SDL_UpdateTexture(ctx->lcd_texture, NULL, ctx->lcd_pixels,
-                      width * (int)sizeof(uint32_t));
+    for (int i = 0; i < width * height; ++i)
+        ctx->lcd_pixels[i] = ctx->lcd_palette[pixels[i]];
+    if (SDL_UpdateTexture(ctx->lcd_texture, NULL, ctx->lcd_pixels,
+                          width * (int)sizeof(uint32_t)) == 0) {
+        memcpy(ctx->lcd_previous, pixels, sizeof(ctx->lcd_previous));
+        ctx->lcd_previous_valid = true;
+        ++ctx->lcd_updates;
+    }
 }
 
 static void hal_audio_output(void *ctx_ptr, const uint8_t *samples, int count)
@@ -1287,6 +1293,20 @@ static void advance_emulated_frame(cybiko_emu_t *emu, app_ctx_t *ctx)
     input_tick(&ctx->controller_input);
     input_tick(&ctx->touch_input);
     input_tick(&ctx->virtual_input);
+}
+
+/* Extra guest frames are useful only when they fit in a presentation period.
+ * A slow frame must be displayed immediately, not followed by more CPU work. */
+static int catchup_frame_budget(uint64_t late, uint64_t interval,
+                               uint64_t core, uint64_t overhead)
+{
+    if (!interval || !core || overhead >= interval || core >= interval - overhead)
+        return 0;
+    uint64_t budget = (interval - overhead) / core - 1;
+    uint64_t due = late / interval;
+    if (budget > due) budget = due;
+    if (budget > EMULATION_CATCHUP_MAX_FRAMES) budget = EMULATION_CATCHUP_MAX_FRAMES;
+    return (int)budget;
 }
 
 static void hal_keyboard_poll(void *ctx_ptr, uint16_t *matrix, int num_columns)
@@ -2067,7 +2087,19 @@ select_model:
     uint64_t perf_frequency = SDL_GetPerformanceFrequency();
     uint64_t frame_interval = perf_frequency / CYBIKO_FPS;
     uint64_t frame_deadline = SDL_GetPerformanceCounter();
+    uint64_t last_render_ticks = 0;
+    char perf_path[MAX_PATH_CHARS + sizeof("/performance.csv")];
+    snprintf(perf_path, sizeof(perf_path), "%s/performance.csv", runtime_root);
+    FILE *perf_log = fopen(perf_path, "w");
+    if (perf_log) {
+        fprintf(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc\n");
+        fflush(perf_log);
+    }
+    unsigned perf_presents = 0, perf_guest = 0, perf_rows = 0;
+    unsigned perf_lcd_start = ctx->lcd_updates;
+    uint64_t perf_start = frame_deadline, perf_core = 0, perf_render = 0, perf_max_core = 0;
     while (running) {
+        uint64_t work_start = SDL_GetPerformanceCounter();
         process_sdl_events(ctx, &running);
         update_controller_input(ctx, &running);
 
@@ -2089,27 +2121,58 @@ select_model:
 
         if (ctx->backgrounded || ctx->focus_lost) {
             frame_deadline = SDL_GetPerformanceCounter();
+            perf_start = frame_deadline;
+            perf_presents = perf_guest = 0;
+            perf_core = perf_render = perf_max_core = 0;
+            perf_lcd_start = ctx->lcd_updates;
             SDL_Delay(20);
             continue;
         }
 
+        uint64_t core_start = SDL_GetPerformanceCounter();
         advance_emulated_frame(emu, ctx);
 
         uint64_t frame_now = SDL_GetPerformanceCounter();
-        int catchup_frames = 0;
-        if (frame_now > frame_deadline + frame_interval) {
-            uint64_t late_frames = (frame_now - frame_deadline) / frame_interval;
-            catchup_frames = (int)(late_frames > EMULATION_CATCHUP_MAX_FRAMES ?
-                                   EMULATION_CATCHUP_MAX_FRAMES : late_frames);
-        }
+        uint64_t core_ticks = frame_now - core_start;
+        int catchup_frames = catchup_frame_budget(
+            frame_now > frame_deadline ? frame_now - frame_deadline : 0,
+            frame_interval, core_ticks, core_start - work_start + last_render_ticks);
+        int extra_frames = 0;
         for (int i = 0; i < catchup_frames; ++i) {
             frame_deadline += frame_interval;
-            ctx->skip_lcd_upload = i + 1 < catchup_frames;
             advance_emulated_frame(emu, ctx);
+            ++extra_frames;
+            /* Recheck the real cost; guest work can change between frames. */
+            if (SDL_GetPerformanceCounter() - work_start + last_render_ticks >= frame_interval) {
+                break;
+            }
         }
-        ctx->skip_lcd_upload = false;
 
+        uint64_t render_start = SDL_GetPerformanceCounter();
+        core_ticks = render_start - core_start;
         render_frame(ctx);
+        last_render_ticks = SDL_GetPerformanceCounter() - render_start;
+        perf_core += core_ticks;
+        perf_render += last_render_ticks;
+        if (core_ticks > perf_max_core) perf_max_core = core_ticks;
+        perf_guest += 1 + extra_frames;
+        if (++perf_presents == 60) {
+            uint64_t stamp = SDL_GetPerformanceCounter();
+            if (perf_log && perf_rows++ < 120) {
+                double ms = 1000.0 / (double)perf_frequency;
+                fprintf(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X\n",
+                        VITACYBIKO_VERSION, ctx->model, perf_presents, perf_guest,
+                        ctx->lcd_updates - perf_lcd_start,
+                        (stamp - perf_start) * ms, perf_core * ms,
+                        perf_render * ms, perf_max_core * ms,
+                        cybiko_get_program_counter(emu));
+                fflush(perf_log);
+            }
+            perf_start = stamp;
+            perf_presents = perf_guest = 0;
+            perf_core = perf_render = perf_max_core = 0;
+            perf_lcd_start = ctx->lcd_updates;
+        }
 
         frame_deadline += frame_interval;
         frame_now = SDL_GetPerformanceCounter();
@@ -2125,6 +2188,7 @@ select_model:
         }
     }
 
+    if (perf_log) fclose(perf_log);
     if (!save_session(emu)) {
         fprintf(stderr, "failed to save NVRAM\n");
     }
