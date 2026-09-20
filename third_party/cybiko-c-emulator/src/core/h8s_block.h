@@ -3,6 +3,8 @@
 
 #include "types.h"
 
+typedef struct address_bus address_bus_t;
+
 typedef enum {
     H8S_BLOCK_STOP_LIMIT,
     H8S_BLOCK_STOP_BRANCH,
@@ -109,6 +111,9 @@ bool h8s_semantic_instruction_supported(uint16_t op);
 bool h8s_semantic_block_supported(const h8s_block_t *block);
 bool h8s_execute_semantic_block(const h8s_block_t *block,
                                 h8s_block_cpu_state_t *state);
+bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
+                                          address_bus_t *bus,
+                                          h8s_block_cpu_state_t *state);
 bool h8s_execute_semantic_block_exit(const h8s_block_t *block,
                                      h8s_branch_edge_cache_t *edge_cache,
                                      h8s_block_cpu_state_t *state,

@@ -1,4 +1,5 @@
 #include "core/h8s_block.h"
+#include "core/address_bus.h"
 #include <string.h>
 
 #define BLOCK_CCR_C 0x01
@@ -1727,6 +1728,47 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
     }
 
     state->pc = pc;
+    return true;
+}
+
+bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
+                                          address_bus_t *bus,
+                                          h8s_block_cpu_state_t *state)
+{
+    if (!insn || !bus || !state) return false;
+    if (insn->op != 0x0100 || insn->bytes != 6) return false;
+
+    uint16_t op2 = (uint16_t)(insn->imm >> 16);
+    uint8_t hi2 = (uint8_t)(op2 >> 8);
+    uint8_t lo2 = (uint8_t)op2;
+    if (hi2 != 0x6b || (lo2 & 0x20) != 0) return false;
+
+    uint32_t address = (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+    address &= 0xffffffu;
+    unsigned reg = lo2 & 0x7;
+    bool write = (lo2 & 0x80) != 0;
+
+    if (write) {
+        uint8_t *ptr = bus_plain_write_ptr(bus, address, 4);
+        if (!ptr) return false;
+        uint32_t value = state->er[reg];
+        ptr[0] = (uint8_t)(value >> 24);
+        ptr[1] = (uint8_t)(value >> 16);
+        ptr[2] = (uint8_t)(value >> 8);
+        ptr[3] = (uint8_t)value;
+        block_set_nz_l(state, value);
+    } else {
+        const uint8_t *ptr = bus_plain_read_ptr(bus, address, 4);
+        if (!ptr) return false;
+        uint32_t value = ((uint32_t)ptr[0] << 24) |
+                         ((uint32_t)ptr[1] << 16) |
+                         ((uint32_t)ptr[2] << 8) |
+                         ptr[3];
+        state->er[reg] = value;
+        block_set_nz_l(state, value);
+    }
+    block_set_flag(state, BLOCK_CCR_V, false);
+    state->pc += insn->bytes;
     return true;
 }
 

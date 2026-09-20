@@ -789,7 +789,7 @@ Xtreme hot-block inspection shows:
 - `0x005920`: unsupported `0x2a84` is `MOV.B @0xffff84,R2L`, an on-chip
   I/O/MMIO byte read. This must remain an explicit interpreter/peripheral
   boundary unless the tier models sync and side effects.
-- `0x004a50`: unsupported `0x0100 0x6b00 ...` is a prefixed absolute word
+- `0x004a50`: unsupported `0x0100 0x6b00 ...` is a prefixed absolute long
   memory form before a static `JSR @0x0076b0`. This is a better candidate for a
   guarded memory-aware block tier, but only when the effective address is proven
   to map to ordinary RAM/ROM and not MMIO.
@@ -814,6 +814,17 @@ writable pointers for RAM/on-chip RAM, and return `NULL` for MMIO or
 page-crossing slow paths. Future memory-aware semantic blocks should use these
 pointers for direct big-endian loads/stores only after resolving an effective
 address and proving the access remains ordinary memory.
+
+The first test-only memory-form semantic helper now covers the `0x0100/0x6b`
+`MOV.L` absolute d:16 form through `bus_plain_read_ptr` /
+`bus_plain_write_ptr`. It performs 4-byte big-endian loads/stores, updates
+`ERn`/CCR like the interpreter, rejects MMIO and ROM writes, and has a focused
+interpreter-equivalence test. It is deliberately not wired into runtime yet:
+the next implementation must prove block-level PC/branch/call behavior before
+executing memory forms inside cached blocks. Validation for this checkpoint:
+focused `h8s_block` passed, full host suite 17/17 passed, and three-model smoke
+passed with Classic V1 1.25 s, Classic V2 0.81 s, Xtreme 5.84 s. Result:
+accepted as a correctness primitive only; not a runtime performance win yet.
 
 ## Goal E — Presentation budget
 

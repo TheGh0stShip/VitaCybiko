@@ -647,6 +647,70 @@ static void test_semantic_block_exit_rejects_branch_only_return(void)
     TEST_CHECK(state.pc == 0);
 }
 
+static void setup_memory_equiv_cpu(address_bus_t *bus, h8s_cpu_t *cpu,
+                                   const uint8_t *code, size_t size,
+                                   const uint32_t er[8], uint8_t ccr)
+{
+    setup_equiv_cpu(bus, cpu, code, size, er, ccr);
+    memory_init(&bus->boot_rom, 32768, true);
+    memory_init(&bus->external_ram, bus->machine->ram_size, true);
+    bus_build_memory_map(bus);
+}
+
+static void teardown_memory_equiv_cpu(address_bus_t *bus)
+{
+    memory_free(&bus->boot_rom);
+    memory_free(&bus->external_ram);
+    teardown_equiv_cpu(bus);
+}
+
+static void test_plain_memory_instruction_reads_absolute_long_rom(void)
+{
+    const uint8_t code[] = {0x01, 0x00, 0x6b, 0x00, 0x01, 0x20};
+    uint8_t rom[6] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0xff);
+    memory_write32(&bus.boot_rom, 0x120, 0x80010002);
+
+    h8s_block_cpu_state_t state = {.ccr = 0xff, .pc = 0};
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[0] == cpu.er[0]);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    TEST_CHECK(cpu.pc == EQUIV_CODE_BASE + sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_plain_memory_instruction_rejects_mmio_and_rom_write(void)
+{
+    h8s_block_instruction_t mmio = {.op = 0x2a84, .bytes = 2};
+    h8s_block_instruction_t rom_write = {
+        .op = 0x0100,
+        .imm = ((uint32_t)0x6b80 << 16) | 0x0120,
+        .bytes = 6
+    };
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    const uint8_t nop[] = {0x00, 0x00};
+    uint32_t er[8] = {0};
+    setup_memory_equiv_cpu(&bus, &cpu, nop, sizeof(nop), er, 0);
+    h8s_block_cpu_state_t state = {.pc = 0};
+
+    TEST_CHECK(!h8s_execute_plain_memory_instruction(&mmio, &bus, &state));
+    TEST_CHECK(!h8s_execute_plain_memory_instruction(&rom_write, &bus, &state));
+    TEST_CHECK(state.pc == 0);
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1511,6 +1575,8 @@ TEST_LIST = {
     { "semantic_block_exit_rejects_calls_without_mutation", test_semantic_block_exit_rejects_calls_without_mutation },
     { "semantic_block_exit_executes_branch_only_bcc", test_semantic_block_exit_executes_branch_only_bcc },
     { "semantic_block_exit_rejects_branch_only_return", test_semantic_block_exit_rejects_branch_only_return },
+    { "plain_memory_instruction_reads_absolute_long_rom", test_plain_memory_instruction_reads_absolute_long_rom },
+    { "plain_memory_instruction_rejects_mmio_and_rom_write", test_plain_memory_instruction_rejects_mmio_and_rom_write },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },
