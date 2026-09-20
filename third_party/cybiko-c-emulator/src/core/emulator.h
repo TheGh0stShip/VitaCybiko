@@ -11,6 +11,7 @@ typedef struct {
     uint64_t semantic_fast_blocks;
     uint64_t semantic_fast_cycles;
     uint64_t semantic_fast_rejects;
+    uint64_t semantic_fast_cached_rejects;
 } cybiko_cpu_stats_t;
 
 cybiko_emu_t *cybiko_create(const cybiko_hal_t *hal);

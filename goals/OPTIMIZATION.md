@@ -154,12 +154,18 @@ Current block-discovery gate:
   runtime from repeatedly paying decoded-block support checks at hot unsupported
   PCs. On the locally staged Classic V2 candidate smoke command
   (`emu_rom.bin`, `emu_cyos.bin`, `emu_flash.bin`, 600 frames), CPU time moved
-  from 3.986120 s to 3.605913 s while semantic fast-path counters remained
-  `blocks=3460`, `cycles=11721`, `rejects=110559225`. The unchanged reject
-  count is expected because it records rejected attempts; the speedup comes
-  from making repeated static rejects cheaper. This is a narrow dispatch-cost
-  fix, not proof that the current semantic tier is broad enough for Vita
-  smoothness.
+  from 3.986120 s to a corrected 3.779400 s with conditional-branch safety
+  tightened. The smoke counters were `blocks=3460`, `cycles=11721`,
+  `rejects=110559225`, and `cached_rejects=110559017`, showing that nearly
+  every semantic fast-path rejection is a repeated static reject. The speedup
+  comes from making repeated static rejects cheaper. This is a narrow
+  dispatch-cost fix, not proof that the current semantic tier is broad enough
+  for Vita smoothness.
+- The negative cache deliberately does not remember state-dependent conditional
+  branch target failures. A regression test covers the same PC rejecting when
+  CCR takes an out-of-window Bcc target, then succeeding when CCR falls through
+  inside immutable ROM. Only state-independent unsupported blocks/exits are
+  cached.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware

@@ -137,6 +137,7 @@ static void test_cpu_stats_expose_fast_path_counters(void)
     cybiko_cpu_stats_t stats = {0};
     TEST_CHECK(cybiko_get_cpu_stats(emu, &stats));
     TEST_CHECK(stats.semantic_fast_blocks == 0);
+    TEST_CHECK(stats.semantic_fast_cached_rejects == 0);
     cybiko_run_frame(emu);
     TEST_CHECK(cybiko_get_cpu_stats(emu, &stats));
     TEST_CHECK(stats.semantic_fast_blocks > 0);

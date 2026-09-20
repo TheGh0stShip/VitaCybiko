@@ -60,6 +60,7 @@ typedef struct h8s_cpu {
     uint64_t semantic_fast_blocks;
     uint64_t semantic_fast_cycles;
     uint64_t semantic_fast_rejects;
+    uint64_t semantic_fast_cached_rejects;
 } h8s_cpu_t;
 
 void     h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus);

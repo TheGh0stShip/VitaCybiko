@@ -511,6 +511,49 @@ static void test_cpu_run_fast_path_preserves_sync_boundary(void) {
     teardown();
 }
 
+static void test_semantic_reject_cache_does_not_cache_conditional_target_state(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x7FFA, 0x0B01); /* ADDS #2, ER1; flags unchanged. */
+    memory_write16(&bus.boot_rom, 0x7FFC, 0x4604); /* BNE target exits boot window. */
+    memory_write16(&bus.boot_rom, 0x7FFE, 0x0B02); /* Fall-through remains in window. */
+    bus_build_memory_map(&bus);
+
+    int cycles = 0;
+    cpu.pc = 0xFFFA;
+    cpu.ccr = CCR_I; /* Z clear: branch target is outside the immutable window. */
+    TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cpu.pc == 0xFFFA);
+    TEST_CHECK(cpu.semantic_fast_rejects == 1);
+    TEST_CHECK(cpu.semantic_fast_cached_rejects == 0);
+
+    cpu.pc = 0xFFFA;
+    cpu.ccr = CCR_I | CCR_Z; /* Z set: BNE falls through inside the window. */
+    TEST_CHECK(h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cycles == 2);
+    TEST_CHECK(cpu.pc == 0xFFFE);
+    TEST_CHECK(cpu.semantic_fast_blocks == 1);
+    teardown();
+}
+
+static void test_semantic_reject_cache_counts_state_independent_hits(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0x5470); /* RTS: unsupported fast exit. */
+    bus_build_memory_map(&bus);
+
+    int cycles = 0;
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+    TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cpu.semantic_fast_rejects == 1);
+    TEST_CHECK(cpu.semantic_fast_cached_rejects == 0);
+    TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cpu.semantic_fast_rejects == 2);
+    TEST_CHECK(cpu.semantic_fast_cached_rejects == 1);
+    teardown();
+}
+
 static void test_cpu_run_semantic_fast_path_matches_jmp_steps(void) {
     setup();
     memory_init(&bus.boot_rom, 32768, true);
@@ -797,6 +840,8 @@ TEST_LIST = {
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},
     {"cpu_run_fast_path_preserves_sync_boundary", test_cpu_run_fast_path_preserves_sync_boundary},
+    {"semantic_reject_cache_does_not_cache_conditional_target_state", test_semantic_reject_cache_does_not_cache_conditional_target_state},
+    {"semantic_reject_cache_counts_state_independent_hits", test_semantic_reject_cache_counts_state_independent_hits},
     {"cpu_run_semantic_fast_path_matches_jmp_steps", test_cpu_run_semantic_fast_path_matches_jmp_steps},
     {"long_displacement_store", test_long_displacement_store},
     {"interrupt_frame", test_interrupt_frame},

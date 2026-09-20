@@ -211,10 +211,11 @@ int main(int argc, char **argv)
            (double)(clock() - started) / CLOCKS_PER_SEC, ctx.changed_frames);
     cybiko_cpu_stats_t stats = {0};
     if (cybiko_get_cpu_stats(emu, &stats)) {
-        printf("semantic_fast_blocks=%llu semantic_fast_cycles=%llu semantic_fast_rejects=%llu\n",
+        printf("semantic_fast_blocks=%llu semantic_fast_cycles=%llu semantic_fast_rejects=%llu semantic_fast_cached_rejects=%llu\n",
                (unsigned long long)stats.semantic_fast_blocks,
                (unsigned long long)stats.semantic_fast_cycles,
-               (unsigned long long)stats.semantic_fast_rejects);
+               (unsigned long long)stats.semantic_fast_rejects,
+               (unsigned long long)stats.semantic_fast_cached_rejects);
     }
 
     bool screenshot_ok = argc <= frames_arg + 1 || write_screenshot(argv[frames_arg + 1], &ctx);

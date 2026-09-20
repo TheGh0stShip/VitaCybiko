@@ -1873,6 +1873,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->semantic_fast_blocks = 0;
     cpu->semantic_fast_cycles = 0;
     cpu->semantic_fast_rejects = 0;
+    cpu->semantic_fast_cached_rejects = 0;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
@@ -1976,6 +1977,7 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     }
     if (semantic_reject_cached(cpu, data, start_pc)) {
         cpu->semantic_fast_rejects++;
+        cpu->semantic_fast_cached_rejects++;
         return false;
     }
 
@@ -2024,7 +2026,6 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
         }
     } else {
         if (next_offset >= size) {
-            semantic_reject_cache_store(cpu, data, start_pc);
             cpu->semantic_fast_rejects++;
             return false;
         }
