@@ -106,6 +106,10 @@ Current block-discovery gate:
   absolute JMP/JSR. Indirect, return, trap, and sleep exits are explicitly
   classified. This is the first data-structure step toward a branch-aware
   cached-block or native translation tier.
+- A branch resolver now maps decoded static branch exits plus CCR to the next
+  PC for Bcc d:8/d:16, BSR d:8/d:16, absolute JMP, and absolute JSR. Dynamic
+  exits (return, indirect, trap, sleep) deliberately reject resolution so a
+  future dispatcher cannot accidentally chain through state-dependent exits.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. This turns branch-aware cached-block work into a measurable
   target instead of guessing from aggregate stop counts.
@@ -163,6 +167,14 @@ narrow: even the boot/CyOS images repeatedly exit on branch-heavy control flow.
 The next implementation target should use the static metadata to design a
 branch-aware block tier with explicit exits for conditional fall-through/target,
 call/return/indirect exits, and event deadlines.
+
+Branch resolver gate:
+
+- `h8s_block_resolve_static_branch` resolves every Bcc condition from CCR to
+  fall-through or target and resolves static BSR/JMP/JSR exits to their target.
+- Unit tests cover unconditional/never, equality, sign/overflow, signed
+  greater/less, d:8/d:16 forms, absolute jump/call targets, and rejection of
+  RTS/RTE/TRAPA/indirect/SLEEP exits.
 
 Do not make semantic block execution the default Vita runtime path until the
 guarded runtime experiment proves an actual speedup without breaking

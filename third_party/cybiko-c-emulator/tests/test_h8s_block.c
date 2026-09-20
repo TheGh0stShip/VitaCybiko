@@ -311,6 +311,66 @@ static void test_branch_metadata_for_indirect_and_system_exits(void)
     }
 }
 
+static void test_resolves_static_branch_exits(void)
+{
+    struct branch_case {
+        const char *name;
+        uint8_t rom[4];
+        size_t size;
+        uint8_t ccr;
+        uint32_t expected;
+    } cases[] = {
+        {"BRA d:8", {0x40, 0x06}, 2, 0x00, 8},
+        {"BRN d:8", {0x41, 0x06}, 2, 0x00, 2},
+        {"BNE taken", {0x46, 0x06}, 2, 0x00, 8},
+        {"BNE fallthrough", {0x46, 0x06}, 2, 0x04, 2},
+        {"BEQ taken", {0x47, 0x06}, 2, 0x04, 8},
+        {"BVS taken", {0x49, 0x06}, 2, 0x02, 8},
+        {"BMI taken", {0x4b, 0x06}, 2, 0x08, 8},
+        {"BGE fallthrough", {0x4c, 0x06}, 2, 0x08, 2},
+        {"BLT taken", {0x4d, 0x06}, 2, 0x08, 8},
+        {"BGT taken", {0x4e, 0x06}, 2, 0x00, 8},
+        {"BLE taken zero", {0x4f, 0x06}, 2, 0x04, 8},
+        {"BGT d:16 taken", {0x58, 0xe0, 0x00, 0x06}, 4, 0x00, 10},
+        {"BGT d:16 fallthrough", {0x58, 0xe0, 0x00, 0x06}, 4, 0x04, 4},
+        {"BSR d:8", {0x55, 0x06}, 2, 0xff, 8},
+        {"BSR d:16", {0x5c, 0x00, 0x00, 0x06}, 4, 0xff, 10},
+        {"JMP abs24", {0x5a, 0x12, 0x34, 0x56}, 4, 0xff, 0x123456},
+        {"JSR abs24", {0x5e, 0xab, 0xcd, 0xef}, 4, 0xff, 0xabcdef},
+    };
+
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        h8s_block_t block;
+        uint32_t next = 0xdeadbeef;
+        TEST_ASSERT_(h8s_analyze_rom_block(cases[i].rom, cases[i].size, 0, 16, &block),
+                     "%s should analyze", cases[i].name);
+        TEST_CHECK_(h8s_block_resolve_static_branch(&block, cases[i].ccr, &next),
+                    "%s should resolve", cases[i].name);
+        TEST_CHECK_(next == cases[i].expected,
+                    "%s next=0x%06x expected=0x%06x",
+                    cases[i].name, next, cases[i].expected);
+    }
+}
+
+static void test_rejects_dynamic_branch_exits(void)
+{
+    const uint8_t *roms[] = {
+        (const uint8_t[]){0x54, 0x70}, /* RTS */
+        (const uint8_t[]){0x56, 0x70}, /* RTE */
+        (const uint8_t[]){0x57, 0x00}, /* TRAPA */
+        (const uint8_t[]){0x59, 0x00}, /* JMP @ERn */
+        (const uint8_t[]){0x5d, 0x00}, /* JSR @ERn */
+        (const uint8_t[]){0x01, 0x80}, /* SLEEP */
+    };
+
+    for (unsigned i = 0; i < sizeof(roms) / sizeof(roms[0]); ++i) {
+        h8s_block_t block;
+        uint32_t next = 0;
+        TEST_ASSERT(h8s_analyze_rom_block(roms[i], 2, 0, 16, &block));
+        TEST_CHECK(!h8s_block_resolve_static_branch(&block, 0, &next));
+    }
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1119,6 +1179,8 @@ TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "branch_metadata_for_static_exits", test_branch_metadata_for_static_exits },
     { "branch_metadata_for_indirect_and_system_exits", test_branch_metadata_for_indirect_and_system_exits },
+    { "resolves_static_branch_exits", test_resolves_static_branch_exits },
+    { "rejects_dynamic_branch_exits", test_rejects_dynamic_branch_exits },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },

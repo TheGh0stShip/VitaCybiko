@@ -155,6 +155,59 @@ static void describe_control_transfer(const uint8_t *rom, size_t rom_size,
     }
 }
 
+static bool block_evaluate_condition(uint8_t ccr, unsigned cond)
+{
+    bool c = (ccr & BLOCK_CCR_C) != 0;
+    bool z = (ccr & BLOCK_CCR_Z) != 0;
+    bool n = (ccr & BLOCK_CCR_N) != 0;
+    bool v = (ccr & BLOCK_CCR_V) != 0;
+
+    switch (cond & 0xf) {
+    case 0x0: return true;          /* BRA/BT */
+    case 0x1: return false;         /* BRN/BF */
+    case 0x2: return !c;            /* BHI */
+    case 0x3: return c;             /* BLS */
+    case 0x4: return !c;            /* BCC/BHS */
+    case 0x5: return c;             /* BCS/BLO */
+    case 0x6: return !z;            /* BNE */
+    case 0x7: return z;             /* BEQ */
+    case 0x8: return !v;            /* BVC */
+    case 0x9: return v;             /* BVS */
+    case 0xa: return !n;            /* BPL */
+    case 0xb: return n;             /* BMI */
+    case 0xc: return !(n ^ v);      /* BGE */
+    case 0xd: return n ^ v;         /* BLT */
+    case 0xe: return !(z || (n ^ v)); /* BGT */
+    case 0xf: return z || (n ^ v);  /* BLE */
+    default: return false;
+    }
+}
+
+bool h8s_block_resolve_static_branch(const h8s_block_t *block,
+                                     uint8_t ccr, uint32_t *next_pc)
+{
+    if (!block || !next_pc || block->stop != H8S_BLOCK_STOP_BRANCH)
+        return false;
+
+    switch (block->branch_kind) {
+    case H8S_BLOCK_BRANCH_BCC8:
+    case H8S_BLOCK_BRANCH_BCC16:
+        if (!block->branch_has_target) return false;
+        *next_pc = block_evaluate_condition(ccr, block->branch_condition) ?
+            block->branch_target : block->branch_fallthrough;
+        return true;
+    case H8S_BLOCK_BRANCH_BSR8:
+    case H8S_BLOCK_BRANCH_BSR16:
+    case H8S_BLOCK_BRANCH_JMP_ABS24:
+    case H8S_BLOCK_BRANCH_JSR_ABS24:
+        if (!block->branch_has_target) return false;
+        *next_pc = block->branch_target;
+        return true;
+    default:
+        return false;
+    }
+}
+
 static bool is_shift_rotate_form(uint8_t lo)
 {
     switch ((lo >> 4) & 0xf) {
