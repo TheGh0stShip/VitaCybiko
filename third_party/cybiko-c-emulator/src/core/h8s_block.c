@@ -613,6 +613,11 @@ bool h8s_semantic_instruction_supported(uint16_t op)
     case 0x14: case 0x15: case 0x16:
     case 0x18: case 0x19: case 0x1c: case 0x1d: case 0x1e:
         return true;
+    case 0x60: case 0x61: case 0x62: case 0x63:
+    case 0x64: case 0x65: case 0x66:
+    case 0x70: case 0x71: case 0x72: case 0x73:
+    case 0x74: case 0x75: case 0x76: case 0x77:
+        return true;
     case 0x10: case 0x11: case 0x12: case 0x13:
         return block_shift_rotate_form(lo);
     case 0x0a: case 0x1a:
@@ -995,6 +1000,101 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
                 block_set_arithmetic_l(state, d, s, d - s, true);
             }
             break;
+        case 0x60: {
+            unsigned rn = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            unsigned bit = block_get_reg_b(state, rn) & 0x7;
+            block_set_reg_b(state, rd, (uint8_t)(block_get_reg_b(state, rd) | (1u << bit)));
+            break;
+        }
+        case 0x61: {
+            unsigned rn = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            unsigned bit = block_get_reg_b(state, rn) & 0x7;
+            block_set_reg_b(state, rd, (uint8_t)(block_get_reg_b(state, rd) ^ (1u << bit)));
+            break;
+        }
+        case 0x62: {
+            unsigned rn = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            unsigned bit = block_get_reg_b(state, rn) & 0x7;
+            block_set_reg_b(state, rd, (uint8_t)(block_get_reg_b(state, rd) & ~(1u << bit)));
+            break;
+        }
+        case 0x63: {
+            unsigned rn = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            unsigned bit = block_get_reg_b(state, rn) & 0x7;
+            block_set_flag(state, BLOCK_CCR_Z, (block_get_reg_b(state, rd) & (1u << bit)) == 0);
+            break;
+        }
+        case 0x64: {
+            unsigned rs = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            int result = block_get_r(state, rd) | block_get_r(state, rs);
+            block_set_r(state, rd, (uint16_t)result);
+            block_set_nz_w(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0x65: {
+            unsigned rs = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            int result = block_get_r(state, rd) ^ block_get_r(state, rs);
+            block_set_r(state, rd, (uint16_t)result);
+            block_set_nz_w(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0x66: {
+            unsigned rs = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            int result = block_get_r(state, rd) & block_get_r(state, rs);
+            block_set_r(state, rd, (uint16_t)result);
+            block_set_nz_w(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0x70: {
+            unsigned bit = (lo >> 4) & 0x7;
+            unsigned rd = lo & 0xf;
+            block_set_reg_b(state, rd, (uint8_t)(block_get_reg_b(state, rd) | (1u << bit)));
+            break;
+        }
+        case 0x71: {
+            unsigned bit = (lo >> 4) & 0x7;
+            unsigned rd = lo & 0xf;
+            block_set_reg_b(state, rd, (uint8_t)(block_get_reg_b(state, rd) ^ (1u << bit)));
+            break;
+        }
+        case 0x72: {
+            unsigned bit = (lo >> 4) & 0x7;
+            unsigned rd = lo & 0xf;
+            block_set_reg_b(state, rd, (uint8_t)(block_get_reg_b(state, rd) & ~(1u << bit)));
+            break;
+        }
+        case 0x73: {
+            unsigned bit = (lo >> 4) & 0x7;
+            unsigned rd = lo & 0xf;
+            block_set_flag(state, BLOCK_CCR_Z, (block_get_reg_b(state, rd) & (1u << bit)) == 0);
+            break;
+        }
+        case 0x74: case 0x75: case 0x76: case 0x77: {
+            unsigned bit = (lo >> 4) & 0x7;
+            unsigned rd = lo & 0xf;
+            bool bit_value = (block_get_reg_b(state, rd) & (1u << bit)) != 0;
+            if (lo & 0x80) bit_value = !bit_value;
+            bool carry = (state->ccr & BLOCK_CCR_C) != 0;
+            switch (hi) {
+            case 0x74: carry = carry || bit_value; break;
+            case 0x75: carry = carry != bit_value; break;
+            case 0x76: carry = carry && bit_value; break;
+            case 0x77: carry = bit_value; break;
+            default: return false;
+            }
+            block_set_flag(state, BLOCK_CCR_C, carry);
+            break;
+        }
         case 0x80: case 0x81: case 0x82: case 0x83:
         case 0x84: case 0x85: case 0x86: case 0x87:
         case 0x88: case 0x89: case 0x8a: case 0x8b:

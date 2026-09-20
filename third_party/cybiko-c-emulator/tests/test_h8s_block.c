@@ -259,7 +259,7 @@ static void test_semantic_block_executes_register_ops(void)
 static void test_semantic_block_rejects_unsupported_tier1(void)
 {
     const uint8_t rom[] = {
-        0x70, 0x00, /* BSET/BCLR-style immediate bit op: classified for future tier */
+        0x0f, 0x00, /* DAA-style tier-one opcode not yet covered by semantic executor */
         0x54, 0x70
     };
     h8s_block_t block;
@@ -533,6 +533,71 @@ static void test_semantic_block_executes_zero_a_inc_dec_forms(void)
     TEST_CHECK(state.ccr & 0x02);
 }
 
+static void test_semantic_block_executes_register_bit_and_word_logic(void)
+{
+    const uint8_t rom[] = {
+        0x60, 0x89, /* BSET R0L bit, R1L */
+        0x61, 0x89, /* BNOT R0L bit, R1L */
+        0x62, 0x89, /* BCLR R0L bit, R1L */
+        0x64, 0x23, /* OR.W R2,R3 */
+        0x65, 0x45, /* XOR.W R4,R5 */
+        0x66, 0x67, /* AND.W R6,R7 */
+        0x63, 0x89, /* BTST R0L bit, R1L -> Z */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(h8s_semantic_block_supported(&block));
+    h8s_block_cpu_state_t state = {
+        .er = {
+            0x00000003,
+            0x00000008,
+            0x00001200,
+            0x00000034,
+            0x000000f0,
+            0x0000000f,
+            0x000000f0,
+            0x000000cc
+        },
+        .ccr = 0xff
+    };
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK((state.er[1] & 0xff) == 0x00);
+    TEST_CHECK((state.er[3] & 0xffff) == 0x1234);
+    TEST_CHECK((state.er[5] & 0xffff) == 0x00ff);
+    TEST_CHECK((state.er[7] & 0xffff) == 0x00c0);
+    TEST_CHECK(state.pc == 14);
+    TEST_CHECK(state.ccr & 0x04);
+    TEST_CHECK(!(state.ccr & 0x02));
+}
+
+static void test_semantic_block_executes_immediate_bit_ops(void)
+{
+    const uint8_t rom[] = {
+        0x70, 0x08, /* BSET #0,R0L */
+        0x71, 0x18, /* BNOT #1,R0L */
+        0x72, 0x08, /* BCLR #0,R0L */
+        0x73, 0x28, /* BTST #2,R0L -> Z clear */
+        0x74, 0x28, /* BOR #2,R0L -> C set */
+        0x75, 0xa8, /* BIXOR #2,R0L -> C unchanged true xor false */
+        0x76, 0x28, /* BAND #2,R0L -> C remains true */
+        0x77, 0xa8, /* BILD #2,R0L -> C false */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(h8s_semantic_block_supported(&block));
+    h8s_block_cpu_state_t state = {
+        .er = {0x00000004, 0, 0, 0, 0, 0, 0, 0},
+        .ccr = 0
+    };
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK((state.er[0] & 0xff) == 0x06);
+    TEST_CHECK(state.pc == 16);
+    TEST_CHECK(!(state.ccr & 0x01));
+    TEST_CHECK(!(state.ccr & 0x04));
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -559,5 +624,7 @@ TEST_LIST = {
     { "semantic_block_executes_shift_rotate_ops", test_semantic_block_executes_shift_rotate_ops },
     { "semantic_block_executes_inc_dec_forms", test_semantic_block_executes_inc_dec_forms },
     { "semantic_block_executes_zero_a_inc_dec_forms", test_semantic_block_executes_zero_a_inc_dec_forms },
+    { "semantic_block_executes_register_bit_and_word_logic", test_semantic_block_executes_register_bit_and_word_logic },
+    { "semantic_block_executes_immediate_bit_ops", test_semantic_block_executes_immediate_bit_ops },
     { NULL, NULL }
 };
