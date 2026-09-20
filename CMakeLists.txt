@@ -9,6 +9,13 @@ project(VitaCybiko C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+if(VITA)
+  # The Vita SDK already selects hard-float NEON.  Explicit Cortex-A9 tuning
+  # lets GCC schedule the interpreter for the Vita CPU instead of generic
+  # ARMv7; host builds remain portable.
+  add_compile_options(-mtune=cortex-a9)
+endif()
+
 set(CYBIKO_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cybiko-c-emulator")
 
 add_library(cybiko_core STATIC
