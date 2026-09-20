@@ -84,6 +84,11 @@ Current block-discovery gate:
 - The semantic executor now covers direct register-only bit and word-logic
   families in `0x60`-`0x66` and `0x70`-`0x77`. Memory and compound bit
   operations remain excluded from this tier.
+- The semantic executor now covers the register-only prefixed long logic forms
+  `0x01f0 0x64xx`/`0x65xx`/`0x66xx` (`OR.L`/`XOR.L`/`AND.L`). The analyzer
+  still rejects `0x0100` long memory moves for semantic execution because those
+  can touch RAM/I/O and must remain explicit memory exits until a memory-aware
+  block tier exists.
 - Tier-one classification now rejects unsupported register subforms instead of
   counting them as executable semantic gaps. On local Classic V2 candidate
   blobs, every tier-one executable block is now covered by the isolated
@@ -237,12 +242,12 @@ Local block-scan coverage, max 32 instructions per candidate start:
 
 | Image | Avg insns | Tier1 blocks | Tier1 prefix insns | Semantic blocks | Semantic insns | Stop branch | Stop prefix | Stop unsupported |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Classic V1 boot | 13.19 | 5,451 | 128,763 | 5,077 | 120,583 | 11,634 | 0 | 0 |
-| Classic V1 flash | 9.29 | 47,638 | 490,464 | 32,340 | 120,014 | 250,552 | 0 | 0 |
-| Classic V2 boot | 11.91 | 4,835 | 100,540 | 4,275 | 90,118 | 12,384 | 0 | 0 |
-| Classic V2 flash | 5.65 | 21,645 | 75,613 | 19,756 | 33,738 | 123,488 | 0 | 0 |
-| Xtreme boot | 8.11 | 3,425 | 40,759 | 2,810 | 29,043 | 14,591 | 0 | 0 |
-| Xtreme flash | 8.68 | 55,432 | 631,234 | 39,631 | 276,777 | 246,250 | 0 | 0 |
+| Classic V1 boot | 13.19 | 5,435 | 128,529 | 5,435 | 121,705 | 11,634 | 0 | 0 |
+| Classic V1 flash | 9.29 | 44,599 | 461,587 | 44,599 | 168,823 | 250,552 | 0 | 0 |
+| Classic V2 boot | 11.91 | 4,800 | 99,413 | 4,800 | 91,774 | 12,384 | 0 | 0 |
+| Classic V2 flash | 9.10 | 43,124 | 391,383 | 43,124 | 115,681 | 250,935 | 0 | 0 |
+| Xtreme boot | 8.11 | 3,386 | 39,512 | 3,386 | 30,847 | 14,591 | 0 | 0 |
+| Xtreme flash | 8.68 | 51,692 | 599,073 | 51,692 | 321,850 | 246,250 | 0 | 0 |
 
 The scan shows branch boundaries now dominate; unsupported and prefix length
 decoding are no longer the blocker. The next decoded-block step should begin
@@ -473,9 +478,11 @@ Top exact 16-bit opcodes over the same 600-frame smoke runs:
 Exact opcode profiling changes the next optimization target: any branch-aware
 cached-interpreter or ARMv7 translation tier that still exits on the hot
 `0x01xx` prefix forms will leave the largest executed class in the interpreter.
-The first useful design checkpoint is therefore coverage for `0x0100` and
-`0x01f0`-class prefix forms plus the already-hot branch/call/return exits,
-not another single-family ALU shortcut.
+The first useful design checkpoint is therefore memory-aware handling for
+`0x0100` long MOV plus the already-hot branch/call/return exits. The
+register-only `0x01f0` long logic subset is now covered by the isolated
+semantic executor, but this does not by itself improve runtime speed until a
+broader branch-aware block dispatcher uses the coverage.
 
 Dynamic branch profile on the locally staged Classic V2 600-frame smoke:
 

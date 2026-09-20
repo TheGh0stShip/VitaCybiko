@@ -102,6 +102,9 @@ void h8s_block_cache_clear(h8s_block_cache_t *cache);
 const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
                                        const uint8_t *rom, size_t rom_size,
                                        uint32_t start);
+/* Single-word helper for non-prefixed opcodes. Use h8s_semantic_block_supported
+ * for decoded blocks because prefixed instructions need their retained second
+ * word/immediate to determine semantic coverage. */
 bool h8s_semantic_instruction_supported(uint16_t op);
 bool h8s_semantic_block_supported(const h8s_block_t *block);
 bool h8s_execute_semantic_block(const h8s_block_t *block,

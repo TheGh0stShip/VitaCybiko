@@ -1229,6 +1229,9 @@ static void test_semantic_block_matches_interpreter_representative_ops(void)
     const uint8_t add_b_imm[] = {0x88, 0x7f};
     const uint8_t mov_w_imm[] = {0x79, 0x04, 0x80, 0x00};
     const uint8_t xor_l_imm[] = {0x7a, 0x53, 0x12, 0x34, 0x56, 0x78};
+    const uint8_t prefixed_or_l_reg[] = {0x01, 0xf0, 0x64, 0x01};
+    const uint8_t prefixed_xor_l_reg[] = {0x01, 0xf0, 0x65, 0x23};
+    const uint8_t prefixed_and_l_reg[] = {0x01, 0xf0, 0x66, 0x45};
 
     for (unsigned e = 0; e < sizeof(ers) / sizeof(ers[0]); ++e) {
         for (unsigned c = 0; c < sizeof(ccrs) / sizeof(ccrs[0]); ++c) {
@@ -1247,6 +1250,9 @@ static void test_semantic_block_matches_interpreter_representative_ops(void)
             check_semantic_matches_interpreter("ADD.B #0x7f,R0L", add_b_imm, sizeof(add_b_imm), ers[e], ccrs[c]);
             check_semantic_matches_interpreter("MOV.W #0x8000,R4", mov_w_imm, sizeof(mov_w_imm), ers[e], ccrs[c]);
             check_semantic_matches_interpreter("XOR.L #0x12345678,ER3", xor_l_imm, sizeof(xor_l_imm), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("OR.L ER0,ER1", prefixed_or_l_reg, sizeof(prefixed_or_l_reg), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("XOR.L ER2,ER3", prefixed_xor_l_reg, sizeof(prefixed_xor_l_reg), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("AND.L ER4,ER5", prefixed_and_l_reg, sizeof(prefixed_and_l_reg), ers[e], ccrs[c]);
         }
     }
 }
@@ -1342,6 +1348,37 @@ static void test_semantic_block_matches_interpreter_generated_immediate_word_lon
     }
 }
 
+static void test_semantic_block_matches_interpreter_generated_prefix_long_logic(void)
+{
+    const uint32_t ers[][8] = {
+        {
+            0x12345678, 0x87654321, 0x7fffffff, 0x80000001,
+            0x0000f0f0, 0x00000f0f, 0xffffffff, 0x00000000
+        },
+        {
+            0x00000000, 0xffffffff, 0x00ff00ff, 0xff00ff00,
+            0xaaaaaaaa, 0x55555555, 0x80000000, 0x7fffffff
+        }
+    };
+    const uint8_t ccrs[] = {0x00, 0x01, 0x25, 0xff};
+    const uint8_t hi2s[] = {0x64, 0x65, 0x66};
+
+    for (unsigned h = 0; h < sizeof(hi2s) / sizeof(hi2s[0]); ++h) {
+        for (unsigned rs = 0; rs < 8; ++rs) {
+            for (unsigned rd = 0; rd < 8; ++rd) {
+                uint8_t code[] = {0x01, 0xf0, hi2s[h], (uint8_t)((rs << 4) | rd)};
+                for (unsigned e = 0; e < sizeof(ers) / sizeof(ers[0]); ++e) {
+                    for (unsigned c = 0; c < sizeof(ccrs) / sizeof(ccrs[0]); ++c) {
+                        check_semantic_matches_interpreter("prefixed long logic",
+                                                           code, sizeof(code),
+                                                           ers[e], ccrs[c]);
+                    }
+                }
+            }
+        }
+    }
+}
+
 static void test_semantic_block_matches_interpreter_mixed_multi_instruction_blocks(void)
 {
     static const uint32_t ers[][8] = {
@@ -1392,6 +1429,11 @@ static void test_semantic_block_matches_interpreter_mixed_multi_instruction_bloc
         0x7a, 0x15, 0x00, 0x00, 0x00, 0x01, /* ADD.L #1,ER5 */
         0x7a, 0x35, 0x00, 0x00, 0x00, 0x02  /* SUB.L #2,ER5 */
     };
+    const uint8_t prefix_long_logic_chain[] = {
+        0x01, 0xf0, 0x64, 0x01, /* OR.L ER0,ER1 */
+        0x01, 0xf0, 0x65, 0x12, /* XOR.L ER1,ER2 */
+        0x01, 0xf0, 0x66, 0x23  /* AND.L ER2,ER3 */
+    };
 
     for (unsigned e = 0; e < sizeof(ers) / sizeof(ers[0]); ++e) {
         for (unsigned c = 0; c < sizeof(ccrs) / sizeof(ccrs[0]); ++c) {
@@ -1403,6 +1445,8 @@ static void test_semantic_block_matches_interpreter_mixed_multi_instruction_bloc
                                                      logic_shift_bit_chain, sizeof(logic_shift_bit_chain), ers[e], ccrs[c]);
             check_semantic_block_matches_interpreter("immediate logic chain",
                                                      immediate_logic_chain, sizeof(immediate_logic_chain), ers[e], ccrs[c]);
+            check_semantic_block_matches_interpreter("prefix long logic chain",
+                                                     prefix_long_logic_chain, sizeof(prefix_long_logic_chain), ers[e], ccrs[c]);
         }
     }
 }
@@ -1451,6 +1495,7 @@ TEST_LIST = {
     { "semantic_block_matches_interpreter_representative_ops", test_semantic_block_matches_interpreter_representative_ops },
     { "semantic_block_matches_interpreter_generated_two_byte_ops", test_semantic_block_matches_interpreter_generated_two_byte_ops },
     { "semantic_block_matches_interpreter_generated_immediate_word_long_ops", test_semantic_block_matches_interpreter_generated_immediate_word_long_ops },
+    { "semantic_block_matches_interpreter_generated_prefix_long_logic", test_semantic_block_matches_interpreter_generated_prefix_long_logic },
     { "semantic_block_matches_interpreter_mixed_multi_instruction_blocks", test_semantic_block_matches_interpreter_mixed_multi_instruction_blocks },
     { NULL, NULL }
 };

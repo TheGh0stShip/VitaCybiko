@@ -373,6 +373,15 @@ static bool is_tier1_executable(uint16_t op)
     return false;
 }
 
+static bool is_tier1_decoded_executable(uint16_t op, uint32_t imm, unsigned bytes)
+{
+    if (op == 0x01f0 && bytes == 4) {
+        uint8_t hi2 = (uint8_t)(imm >> 8);
+        return hi2 == 0x64 || hi2 == 0x65 || hi2 == 0x66;
+    }
+    return is_tier1_executable(op);
+}
+
 static bool prefixed_01_length(const uint8_t *rom, size_t rom_size,
                                uint32_t pc, uint16_t op, unsigned *bytes,
                                bool *control_stop)
@@ -541,8 +550,6 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
             describe_control_transfer(rom, rom_size, pc, op, &block);
             break;
         }
-        if (!is_tier1_executable(op)) block.executable = false;
-
         unsigned bytes = 0;
         bool prefix_stop = false;
         bool control_stop = false;
@@ -563,6 +570,7 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
         pc += bytes;
         block.bytes += bytes;
         block.decoded[block.instructions].op = op;
+        block.decoded[block.instructions].imm = 0;
         if (bytes == 4) {
             block.decoded[block.instructions].imm = read_be16(rom + block.stop_pc + 2);
         } else if (bytes >= 6) {
@@ -571,6 +579,8 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
                 read_be16(rom + block.stop_pc + 4);
         }
         block.decoded[block.instructions].bytes = (uint8_t)bytes;
+        if (!is_tier1_decoded_executable(op, block.decoded[block.instructions].imm, bytes))
+            block.executable = false;
         block.instructions++;
         if (block.executable) block.executable_prefix_instructions++;
         block.stop_pc = pc;
@@ -933,7 +943,9 @@ bool h8s_semantic_block_supported(const h8s_block_t *block)
 {
     if (!block || !block->executable || block->instructions == 0) return false;
     for (unsigned i = 0; i < block->instructions; ++i) {
-        if (!h8s_semantic_instruction_supported(block->decoded[i].op))
+        if (!is_tier1_decoded_executable(block->decoded[i].op,
+                                         block->decoded[i].imm,
+                                         block->decoded[i].bytes))
             return false;
     }
     return true;
@@ -951,6 +963,30 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
         uint8_t lo = (uint8_t)op;
 
         switch (hi) {
+        case 0x01: {
+            if (lo != 0xf0 || block->decoded[i].bytes != 4) return false;
+            uint16_t op2 = (uint16_t)block->decoded[i].imm;
+            uint8_t hi2 = (uint8_t)(op2 >> 8);
+            uint8_t lo2 = (uint8_t)op2;
+            unsigned rs = (lo2 >> 4) & 0x7;
+            unsigned rd = lo2 & 0x7;
+            switch (hi2) {
+            case 0x64:
+                state->er[rd] |= state->er[rs];
+                break;
+            case 0x65:
+                state->er[rd] ^= state->er[rs];
+                break;
+            case 0x66:
+                state->er[rd] &= state->er[rs];
+                break;
+            default:
+                return false;
+            }
+            block_set_nz_l(state, state->er[rd]);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
         case 0x08: {
             unsigned rs = (lo >> 4) & 0xf;
             unsigned rd = lo & 0xf;
