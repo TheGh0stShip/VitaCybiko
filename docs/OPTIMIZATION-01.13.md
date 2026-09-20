@@ -200,6 +200,39 @@ WSL reads of an open Windows log returned stale contents during this session;
 reading/copying through Windows showed the current version. Validate version
 and collect a closed/new copy before interpreting these logs.
 
+## Xtreme mutable-code optimization evidence after 01.13
+
+Xtreme is specifically harder than the Classic profiles because CyOS executes
+large RAM-resident code regions after boot. ROM-only decoded blocks therefore
+miss the most expensive startup/menu path. Recent core work added generation
+watched mutable block caching, mixed semantic/plain-memory execution, and safe
+static call/return exits for Xtreme RAM code.
+
+The shipped Xtreme fast path now covers these formerly expensive cases:
+
+- mutable RAM blocks ending in absolute `JSR @aa:24`;
+- mutable RAM blocks ending in `RTS` (`0x5470`) with a plain-readable stack;
+- mutable RAM blocks ending in relative `BSR d:8/d:16`;
+- 8-byte long absolute memory forms, preserving the final decoded word instead
+  of truncating the address metadata;
+- fixed absolute MMIO forms as generation-checked static rejects, not as
+  executable plain-memory operations.
+
+The current profiled 600-frame Xtreme run after `6a85752` recorded roughly
+994,921 mutable fast blocks and 10,198,467 mutable fast cycles. The previous
+long-absolute-memory build reduced the dominant `0x49b928` reject group from
+about 13.9k to about 6.9k in the same 600-frame smoke window; the subsequent
+static-MMIO reject cache reduced total window rejects further to about 31.7k.
+These are host smoke/profile counters, not a physical-Vita smoothness claim.
+
+A tested global cached-reject backoff increase from 2,048 to 8,192 cycles was
+rejected: it reduced cached-reject probes but starved nearby valid mutable
+blocks, dropping mutable fast blocks to about 270k over the same Xtreme smoke.
+A tested decrease to 1,024 cycles was also rejected: it increased fast-path
+coverage but greatly increased reject/probe work. Keep the global cached-reject
+backoff at 2,048 unless a future change proves a better policy with all three
+firmware profiles and physical-Vita timing.
+
 ## Release gates still open
 
 1. Native Vita startup and game execution must fit the frame/audio budget;
