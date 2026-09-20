@@ -34,6 +34,8 @@ static void compare_state(cybiko_emu_t *a, cybiko_emu_t *b)
         timer16_t x = a->timer16[i], y = b->timer16[i];
         x.cpu = y.cpu = NULL;
         x.output_b_ctx = y.output_b_ctx = NULL;
+        x.cached_cpu_event_cycles = y.cached_cpu_event_cycles = 0;
+        x.cached_cpu_event_valid = y.cached_cpu_event_valid = false;
         TEST_CHECK(!memcmp(&x, &y, sizeof(x)));
     }
     TEST_CHECK(!memcmp(&a->speaker, &b->speaker, sizeof(a->speaker)));

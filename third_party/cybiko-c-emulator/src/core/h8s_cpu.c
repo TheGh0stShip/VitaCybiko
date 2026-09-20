@@ -2472,19 +2472,32 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
                 int *timer_debt, int *completion_debt, bool *io_access) {
     int done = 0;
     while (done < limit) {
+        if (cpu->semantic_reject_backoff) {
+            int backoff_cycles = cpu->semantic_reject_backoff;
+            int remaining = limit - done;
+            if (backoff_cycles > remaining) backoff_cycles = remaining;
+            for (int i = 0; i < backoff_cycles; ++i) {
+                cpu->bus->speaker->frame_cycle = frame_cycle + done;
+                cpu->semantic_reject_backoff--;
+                cpu->semantic_fast_backoff_skips++;
+                ++*timer_debt;
+                if (done + 1 == limit && cpu->bus->sync_peripherals)
+                    cpu->bus->sync_peripherals(cpu->bus->sync_ctx);
+                execute_step(cpu);
+                ++*completion_debt;
+                ++done;
+                if (CPU_UNLIKELY(*io_access || cpu->halted)) break;
+            }
+            if (CPU_UNLIKELY(*io_access || cpu->halted) || done >= limit)
+                break;
+        }
         cpu->bus->speaker->frame_cycle = frame_cycle + done;
         int fast_cycles = 0;
         int remaining = limit - done;
         bool can_skip_mid_block_sync =
             !cpu->bus->sync_peripherals ||
             remaining > (H8S_BLOCK_MAX_INSTRUCTIONS + 1);
-        bool can_probe_fast_path = cpu->semantic_reject_backoff == 0;
-        if (cpu->semantic_reject_backoff) {
-            cpu->semantic_reject_backoff--;
-            cpu->semantic_fast_backoff_skips++;
-        }
         if (can_skip_mid_block_sync &&
-            can_probe_fast_path &&
             h8s_cpu_try_execute_semantic_rom_block(cpu, remaining, &fast_cycles)) {
             *timer_debt += fast_cycles;
             *completion_debt += fast_cycles;

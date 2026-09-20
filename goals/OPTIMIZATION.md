@@ -1165,6 +1165,31 @@ Validation:
   counted as window rejects; the win is avoiding repeated mutable
   decode/support analysis on those PCs, not changing accepted block coverage.
 
+Accepted Vita-oriented scheduler/backoff reduction: timer16 now memoizes only
+positive CPU-visible event deadlines and decrements that deadline during
+batched no-event advances. Register writes, enable changes, counter events, and
+inline ticks invalidate the memoized value. Zero/no-event answers are not
+cached, which keeps flag-clearing and direct state changes conservative. The
+CPU runner also consumes semantic fast-path reject backoff in a tight
+interpreter batch instead of revisiting the fast-path decision tree every guest
+cycle; it still executes one interpreter step per guest cycle and exits on the
+same I/O/halt boundaries.
+
+Validation:
+
+- focused scheduler/timer16/H8S CPU/emulator tests passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 0.09 s, Classic V2 0.54 s, Xtreme
+  1.99 s;
+- pre-change smoke in the same turn was approximately Classic V1 1.50 s,
+  Classic V2 0.81 s, Xtreme 2.84 s, so the host evidence shows a broad
+  scheduler/backoff win and a meaningful Xtreme improvement.
+
+This still does not prove physical Vita smoothness by itself; it reduces core
+host work that was known to run every Vita frame. The next on-device check
+should inspect `performance.csv` using the split `draw_ms`/`present_ms` columns
+plus the existing semantic/backoff counters.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

@@ -12,7 +12,9 @@ typedef struct {
     uint16_t tcnt, tgra, tgrb;
     int      prescale_counter;
     int      cached_divisor;
+    int      cached_cpu_event_cycles;
     bool     enabled;
+    bool     cached_cpu_event_valid;
     int      channel, tgr_count;
     int      vec_tgia, vec_tgib, vec_ovf;
     const int *clock_divisors;
@@ -29,12 +31,14 @@ void     timer16_init(timer16_t *t, int channel, int tgr_count, int base_vector,
 void     timer16_counter_tick(timer16_t *t);
 int      timer16_cycles_until_counter_tick(const timer16_t *t);
 int      timer16_cycles_until_event(const timer16_t *t);
-int      timer16_cycles_until_cpu_event(const timer16_t *t);
+int      timer16_cycles_until_cpu_event(timer16_t *t);
 void     timer16_advance(timer16_t *t, int cycles);
 static inline void timer16_tick(timer16_t *t) {
     if (t->cached_divisor == 0) return;
     if (++t->prescale_counter < t->cached_divisor) return;
     t->prescale_counter = 0;
+    t->cached_cpu_event_valid = false;
+    t->cached_cpu_event_cycles = 0;
     timer16_counter_tick(t);
 }
 uint8_t  timer16_read8(const timer16_t *t, int reg);

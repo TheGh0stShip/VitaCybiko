@@ -71,6 +71,20 @@ static void update_cached_divisor(timer16_t *t) {
     }
 }
 
+TIMER16_INLINE void timer16_invalidate_cpu_event_cache(timer16_t *t) {
+    t->cached_cpu_event_valid = false;
+    t->cached_cpu_event_cycles = 0;
+}
+
+TIMER16_INLINE void timer16_decrement_cpu_event_cache(timer16_t *t, int cycles) {
+    if (!t->cached_cpu_event_valid) return;
+    if (t->cached_cpu_event_cycles > cycles) {
+        t->cached_cpu_event_cycles -= cycles;
+    } else {
+        timer16_invalidate_cpu_event_cache(t);
+    }
+}
+
 /*
  * Get the initial output level from a TIOR nibble.
  * Returns 0 (LOW), 1 (HIGH), or -1 (output disabled/input capture).
@@ -116,7 +130,9 @@ void timer16_init(timer16_t *t, int channel, int tgr_count, int base_vector, h8s
     t->tgrb  = 0xFFFF;
     t->prescale_counter = 0;
     t->cached_divisor   = 0;
+    t->cached_cpu_event_cycles = 0;
     t->enabled = false;
+    t->cached_cpu_event_valid = false;
     t->channel   = channel;
     t->tgr_count = tgr_count;
     t->vec_tgia = base_vector;
@@ -168,39 +184,50 @@ void timer16_write8(timer16_t *t, int reg, uint8_t value) {
     case 0:
         t->tcr = value;
         update_cached_divisor(t);
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 1:
         t->tmdr = value;
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 2:
         t->tior = value;
         /* Set output pins to initial level when TIOR is configured */
         set_output_b(t, tior_initial_level((value >> 4) & 0x0F));
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 4:
         t->tier = value;
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 5:
         /* Flags: write-0-to-clear for TGFA, TGFB, OVF */
         t->tsr = t->tsr & (value | (uint8_t)~(TSR_TGFA | TSR_TGFB | TSR_OVF));
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 6:
         t->tcnt = ((uint16_t)(value) << 8) | (t->tcnt & 0xFF);
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 7:
         t->tcnt = (t->tcnt & 0xFF00) | value;
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 8:
         t->tgra = ((uint16_t)(value) << 8) | (t->tgra & 0xFF);
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 9:
         t->tgra = (t->tgra & 0xFF00) | value;
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 0xA:
         t->tgrb = ((uint16_t)(value) << 8) | (t->tgrb & 0xFF);
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 0xB:
         t->tgrb = (t->tgrb & 0xFF00) | value;
+        timer16_invalidate_cpu_event_cache(t);
         break;
     default:
         break;
@@ -211,12 +238,15 @@ void timer16_write16(timer16_t *t, int reg, uint16_t value) {
     switch (reg) {
     case 6:
         t->tcnt = value;
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 8:
         t->tgra = value;
+        timer16_invalidate_cpu_event_cache(t);
         break;
     case 0xA:
         t->tgrb = value;
+        timer16_invalidate_cpu_event_cache(t);
         break;
     default:
         timer16_write8(t, reg, (uint8_t)(value >> 8));
@@ -228,6 +258,7 @@ void timer16_write16(timer16_t *t, int reg, uint16_t value) {
 void timer16_set_enabled(timer16_t *t, bool enabled) {
     t->enabled = enabled;
     update_cached_divisor(t);
+    timer16_invalidate_cpu_event_cache(t);
     /* When timer starts, ensure output is at initial level */
     if (enabled) {
         set_output_b(t, tior_initial_level((t->tior >> 4) & 0x0F));
@@ -235,6 +266,7 @@ void timer16_set_enabled(timer16_t *t, bool enabled) {
 }
 
 void timer16_counter_tick(timer16_t *t) {
+    timer16_invalidate_cpu_event_cache(t);
     uint16_t prev_tcnt = t->tcnt;
     t->tcnt = (t->tcnt + 1) & 0xFFFF;
 
@@ -336,7 +368,8 @@ static bool timer16_overflow_observable(const timer16_t *t)
     return (t->tier & TIER_OVIE) && !(t->tsr & TSR_OVF);
 }
 
-int timer16_cycles_until_cpu_event(const timer16_t *t) {
+int timer16_cycles_until_cpu_event(timer16_t *t) {
+    if (t->cached_cpu_event_valid) return t->cached_cpu_event_cycles;
     int first_tick = timer16_cycles_until_counter_tick_inline(t);
     if (first_tick <= 0) return 0;
 
@@ -353,10 +386,15 @@ int timer16_cycles_until_cpu_event(const timer16_t *t) {
     if (obs_o && dist_o < best) best = dist_o;
 
     int clear_mode = (t->tcr >> 5) & 0x03;
-    if (clear_mode == 1 && !obs_a && dist_a <= best) return 0;
-    if (clear_mode == 2 && !obs_b && dist_b <= best) return 0;
-    if (best == INT_MAX) return 0;
-    return first_tick + (best - 1) * t->cached_divisor;
+    int cycles = 0;
+    if (clear_mode == 1 && !obs_a && dist_a <= best) cycles = 0;
+    else if (clear_mode == 2 && !obs_b && dist_b <= best) cycles = 0;
+    else if (best != INT_MAX) cycles = first_tick + (best - 1) * t->cached_divisor;
+    if (cycles > 0) {
+        t->cached_cpu_event_cycles = cycles;
+        t->cached_cpu_event_valid = true;
+    }
+    return cycles;
 }
 
 TIMER16_INLINE void timer16_advance_no_event(timer16_t *t, int cycles) {
@@ -364,12 +402,14 @@ TIMER16_INLINE void timer16_advance_no_event(timer16_t *t, int cycles) {
     int ticks = total / t->cached_divisor;
     t->prescale_counter = total % t->cached_divisor;
     t->tcnt = (uint16_t)(t->tcnt + ticks);
+    timer16_decrement_cpu_event_cache(t, cycles);
 }
 
 void timer16_advance(timer16_t *t, int cycles) {
     if (TIMER16_LIKELY(cycles > 0 && t->cached_divisor != 0 &&
         cycles < t->cached_divisor - t->prescale_counter)) {
         t->prescale_counter += cycles;
+        timer16_decrement_cpu_event_cache(t, cycles);
         return;
     }
     while (TIMER16_LIKELY(cycles > 0 && t->cached_divisor != 0)) {
