@@ -1603,6 +1603,25 @@ Validation:
   Xtreme: scheduler run calls dropped from about 1.5M to 18,725 and I/O breaks
   to 17,562 per 600 frames, while active LCD/audio smoke output remained valid.
 
+Accepted selective scheduler-dirty refinement: the first I/O batching patch
+still marked every on-chip MMIO write dirty. That was safe but over-broad: many
+hot writes target harmless system stubs, GPIO/RTC pins, speaker level, or plain
+on-chip storage and do not alter the next timer/DMA/ADC/serial deadline. Dirty
+marking is now limited to timer16 writes, timer8 writes, TSTR, SCI/DTC writes,
+DMA trigger edges, and ADC control writes. Harmless MMIO writes still
+synchronize deferred cycles before the access, but no longer force a stale
+batch exit.
+
+Validation:
+
+- focused H8S CPU tests now cover read-only MMIO continuation, scheduler-dirty
+  timer writes, and harmless system-control writes;
+- scheduler equivalence tests passed;
+- three-model 600-frame smoke passed with Classic V1 0.82s, Classic V2 0.32s,
+  and Xtreme 1.12s in the direct release-host smoke;
+- the Xtreme scheduler profile showed run calls dropping again from 18,725 to
+  5,596 per 600 frames and I/O breaks from 17,562 to 4,433.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

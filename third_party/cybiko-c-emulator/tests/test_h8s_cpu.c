@@ -796,12 +796,12 @@ static void test_cpu_run_breaks_after_scheduler_dirty_mmio_write(void) {
     int sync_count = 0;
     bus.sync_peripherals = count_sync_callback;
     bus.sync_ctx = &sync_count;
-    write_code16(0, 0x6890); /* MOV.B R0H,@ER1; on-chip I/O write */
+    write_code16(0, 0x6890); /* MOV.B R0H,@ER1; timer8 write */
     write_code16(2, 0x0000); /* Must not execute in the same stale chunk. */
     cpu.pc = CODE_BASE;
     cpu.ccr = CCR_I;
     cpu.er[0] = 0x1200;
-    cpu.er[1] = 0xFFFF38; /* System-control stub; still scheduler-dirty. */
+    cpu.er[1] = 0xFFFFB0; /* Timer8 TCR changes the next event deadline. */
 
     int timer_debt = 0, completion_debt = 0;
     bool io_access = false;
@@ -812,6 +812,30 @@ static void test_cpu_run_breaks_after_scheduler_dirty_mmio_write(void) {
     TEST_CHECK(bus.scheduler_dirty);
     TEST_CHECK(sync_count == 1);
     TEST_CHECK(cpu.pc == CODE_BASE + 2);
+    teardown();
+}
+
+static void test_cpu_run_continues_after_harmless_mmio_write(void) {
+    setup();
+    int sync_count = 0;
+    bus.sync_peripherals = count_sync_callback;
+    bus.sync_ctx = &sync_count;
+    write_code16(0, 0x6890); /* MOV.B R0H,@ER1; system-control stub */
+    write_code16(2, 0x0000); /* NOP */
+    cpu.pc = CODE_BASE;
+    cpu.ccr = CCR_I;
+    cpu.er[0] = 0x1200;
+    cpu.er[1] = 0xFFFF38; /* SBYCR stub: no timer/DMA/ADC deadline change. */
+
+    int timer_debt = 0, completion_debt = 0;
+    bool io_access = false;
+    int done = h8s_cpu_run(&cpu, 2, 10, &timer_debt, &completion_debt, &io_access);
+
+    TEST_CHECK(done == 2);
+    TEST_CHECK(!io_access);
+    TEST_CHECK(!bus.scheduler_dirty);
+    TEST_CHECK(sync_count == 2);
+    TEST_CHECK(cpu.pc == CODE_BASE + 4);
     teardown();
 }
 
@@ -1195,6 +1219,7 @@ TEST_LIST = {
     {"cpu_run_fast_path_preserves_sync_boundary", test_cpu_run_fast_path_preserves_sync_boundary},
     {"cpu_run_continues_after_read_only_mmio_sync", test_cpu_run_continues_after_read_only_mmio_sync},
     {"cpu_run_breaks_after_scheduler_dirty_mmio_write", test_cpu_run_breaks_after_scheduler_dirty_mmio_write},
+    {"cpu_run_continues_after_harmless_mmio_write", test_cpu_run_continues_after_harmless_mmio_write},
     {"semantic_reject_cache_does_not_cache_conditional_target_state", test_semantic_reject_cache_does_not_cache_conditional_target_state},
     {"semantic_reject_cache_counts_state_independent_hits", test_semantic_reject_cache_counts_state_independent_hits},
     {"semantic_fast_reject_reason_counters", test_semantic_fast_reject_reason_counters},

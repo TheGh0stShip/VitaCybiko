@@ -680,14 +680,17 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
     }
     if (address >= 0xFFFC00) {
         sync_peripherals_for_io(bus);
-        mark_scheduler_dirty(bus);
     }
     /* Timer16 routing (check first, non-contiguous addresses) */
-    if (route_timer16_write8(bus, address, value)) return;
+    if (route_timer16_write8(bus, address, value)) {
+        mark_scheduler_dirty(bus);
+        return;
+    }
 
     /* Timer8 Channel 0/1: 0xFFFFB0-0xFFFFB9 */
     if (address >= 0xFFFFB0 && address <= 0xFFFFB9) {
         write_timer8(bus, address - 0xFFFFB0, value);
+        mark_scheduler_dirty(bus);
         return;
     }
 
@@ -700,6 +703,7 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
         if (bus->timer16[3]) timer16_set_enabled(bus->timer16[3], (bus->tstr & 0x08) != 0);
         if (bus->timer16[4]) timer16_set_enabled(bus->timer16[4], (bus->tstr & 0x10) != 0);
         if (bus->timer16[5]) timer16_set_enabled(bus->timer16[5], (bus->tstr & 0x20) != 0);
+        mark_scheduler_dirty(bus);
         return;
     }
 
@@ -761,6 +765,7 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
         }
         if (channel == 1 && reg == 4 && !(value & SSR_RDRF)) bus->sci1_rdrf = false;
         if (channel == 1 && reg == 2) execute_spi_dtc(bus, value);
+        mark_scheduler_dirty(bus);
         return;
     }
 
@@ -826,19 +831,23 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
             /* Channel 0: bit 4 (0x10) or bit 5 (0x20) rising edge */
             if ((value & 0x10) && !(old_val & 0x10)) {
                 execute_dma_transfer(bus, 0);
+                mark_scheduler_dirty(bus);
                 ch0_triggered = true;
             }
             if (!ch0_triggered && (value & 0x20) && !(old_val & 0x20)) {
                 execute_dma_transfer(bus, 0);
+                mark_scheduler_dirty(bus);
             }
             bool ch1_triggered = false;
             /* Channel 1: bit 6 (0x40) or bit 7 (0x80) rising edge */
             if ((value & 0x40) && !(old_val & 0x40)) {
                 execute_dma_transfer(bus, 1);
+                mark_scheduler_dirty(bus);
                 ch1_triggered = true;
             }
             if (!ch1_triggered && (value & 0x80) && !(old_val & 0x80)) {
                 execute_dma_transfer(bus, 1);
+                mark_scheduler_dirty(bus);
             }
         }
         return;
@@ -858,6 +867,7 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
                 bus->adc_completion_delay = adc_conversion_clocks(bus);
             if (!(bus->adcsr & 0x80) && bus->cpu)
                 h8s_cpu_cancel_interrupt(bus->cpu, 28);
+            mark_scheduler_dirty(bus);
         } else if (address == 0xFFFF99) {
             bus->adcr = value & 0xFF;
         }
@@ -880,10 +890,12 @@ static void write_on_chip16(address_bus_t *bus, uint32_t address, uint16_t value
     }
     if (address >= 0xFFFC00) {
         sync_peripherals_for_io(bus);
-        mark_scheduler_dirty(bus);
     }
     /* Timer16 routing first */
-    if (route_timer16_write16(bus, address, value)) return;
+    if (route_timer16_write16(bus, address, value)) {
+        mark_scheduler_dirty(bus);
+        return;
+    }
 
     /* I/O register region: split into two 8-bit writes */
     if (address >= 0xFFFE00) {
