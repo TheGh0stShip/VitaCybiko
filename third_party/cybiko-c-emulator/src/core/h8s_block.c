@@ -57,6 +57,43 @@ static bool is_control_transfer(uint16_t op)
     return false;
 }
 
+static bool is_shift_rotate_form(uint8_t lo)
+{
+    switch ((lo >> 4) & 0xf) {
+    case 0x0: case 0x1: case 0x3:
+    case 0x4: case 0x5: case 0x7:
+    case 0x8: case 0x9: case 0xb:
+    case 0xc: case 0xd: case 0xf:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool is_tier1_inc_dec_form(uint8_t lo, bool allow_short_add_sub)
+{
+    if ((lo & 0x80) != 0 && !allow_short_add_sub) return true;
+    switch (lo & 0xf0) {
+    case 0x00: case 0x50: case 0x70:
+        return true;
+    case 0x80: case 0x90: case 0xd0: case 0xf0:
+        return allow_short_add_sub;
+    default:
+        return false;
+    }
+}
+
+static bool is_tier1_unary_form(uint8_t lo)
+{
+    switch ((lo >> 4) & 0xf) {
+    case 0x0: case 0x1: case 0x3: case 0x5: case 0x7:
+    case 0x8: case 0x9: case 0xb: case 0xd: case 0xf:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static bool is_tier1_executable(uint16_t op)
 {
     uint8_t hi = (uint8_t)(op >> 8);
@@ -66,13 +103,18 @@ static bool is_tier1_executable(uint16_t op)
 
     switch (hi) {
     case 0x08: case 0x09: case 0x0c: case 0x0d: case 0x0e:
-    case 0x0a: case 0x0b: case 0x0f:
     case 0x18: case 0x19: case 0x1c: case 0x1d: case 0x1e:
-    case 0x1a: case 0x1b: case 0x1f:
-        return true;
-    case 0x14: case 0x15: case 0x16: case 0x17:
+    case 0x14: case 0x15: case 0x16:
     case 0x64: case 0x65: case 0x66:
         return true;
+    case 0x0a: case 0x1a:
+        return is_tier1_inc_dec_form(lo, false);
+    case 0x0b: case 0x1b:
+        return is_tier1_inc_dec_form(lo, true);
+    case 0x0f: case 0x1f:
+        return (lo & 0x80) != 0;
+    case 0x17:
+        return is_tier1_unary_form(lo);
     case 0x70: case 0x71: case 0x72: case 0x73:
     case 0x74: case 0x75: case 0x76: case 0x77:
         return true;
@@ -80,7 +122,7 @@ static bool is_tier1_executable(uint16_t op)
         break;
     }
 
-    if (hi >= 0x10 && hi <= 0x13) return true; /* shifts/rotates */
+    if (hi >= 0x10 && hi <= 0x13) return is_shift_rotate_form(lo);
     if (hi == 0x60 || hi == 0x61 || hi == 0x62 || hi == 0x63) return true;
     if (hi == 0x79 && ((lo >> 4) & 0xf) <= 6) return true;
     if (hi == 0x7a && ((lo >> 4) & 0xf) <= 6) return true;
@@ -390,15 +432,7 @@ static void block_set_arithmetic_l(h8s_block_cpu_state_t *state, uint32_t d,
 
 static bool block_shift_rotate_form(uint8_t lo)
 {
-    switch ((lo >> 4) & 0xf) {
-    case 0x0: case 0x1: case 0x3:
-    case 0x4: case 0x5: case 0x7:
-    case 0x8: case 0x9: case 0xb:
-    case 0xc: case 0xd: case 0xf:
-        return true;
-    default:
-        return false;
-    }
+    return is_shift_rotate_form(lo);
 }
 
 static void block_shift_b(h8s_block_cpu_state_t *state, unsigned rd,

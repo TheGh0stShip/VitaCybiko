@@ -147,6 +147,22 @@ static void test_memory_instruction_makes_block_non_executable(void)
     TEST_CHECK(block.executable_prefix_instructions == 1);
 }
 
+static void test_invalid_register_subforms_make_block_non_executable(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x2b, /* invalid/unsupported ADDS/INC subform */
+        0x0a, 0x61, /* invalid/unsupported INC/SUB.L subform */
+        0x10, 0x20, /* invalid/unsupported shift subform */
+        0x17, 0xc0, /* invalid/unsupported unary subform */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.instructions == 4);
+    TEST_CHECK(!block.executable);
+    TEST_CHECK(block.executable_prefix_instructions == 0);
+}
+
 static void test_cache_hit_and_miss_accounting(void)
 {
     const uint8_t rom[] = {
@@ -259,13 +275,13 @@ static void test_semantic_block_executes_register_ops(void)
 static void test_semantic_block_rejects_unsupported_tier1(void)
 {
     const uint8_t rom[] = {
-        0x0f, 0x00, /* DAA-style tier-one opcode not yet covered by semantic executor */
+        0x0f, 0x00, /* DAA-style opcode: not a straight-line semantic tier candidate */
         0x54, 0x70
     };
     h8s_block_t block;
     TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
     h8s_block_cpu_state_t state = {.pc = 0};
-    TEST_CHECK(block.executable);
+    TEST_CHECK(!block.executable);
     TEST_CHECK(!h8s_semantic_block_supported(&block));
     TEST_CHECK(!h8s_execute_semantic_block(&block, &state));
 }
@@ -607,6 +623,7 @@ TEST_LIST = {
     { "truncated_instruction", test_truncated_instruction },
     { "executable_prefix_immediate_block", test_executable_prefix_immediate_block },
     { "memory_instruction_makes_block_non_executable", test_memory_instruction_makes_block_non_executable },
+    { "invalid_register_subforms_make_block_non_executable", test_invalid_register_subforms_make_block_non_executable },
     { "cache_hit_and_miss_accounting", test_cache_hit_and_miss_accounting },
     { "cache_collision_evicts", test_cache_collision_evicts },
     { "cache_clear_preserves_limit", test_cache_clear_preserves_limit },

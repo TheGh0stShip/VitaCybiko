@@ -81,6 +81,10 @@ Current block-discovery gate:
 - The semantic executor now covers direct register-only bit and word-logic
   families in `0x60`-`0x66` and `0x70`-`0x77`. Memory and compound bit
   operations remain excluded from this tier.
+- Tier-one classification now rejects unsupported register subforms instead of
+  counting them as executable semantic gaps. On local Classic V2 candidate
+  blobs, every tier-one executable block is now covered by the isolated
+  semantic executor.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -112,13 +116,13 @@ locally available Classic V2 candidate blobs:
 
 Next semantic-executor targets, in order:
 
-1. Investigate remaining low-count `0x0a`/`0x0b`/`0x1a`/`0x1f` misses by exact
-   low-byte form; the common non-memory variants are now implemented, so any
-   remainder is either a rare valid subform or over-broad tier-one
-   classification.
-2. Tighten tier-one classification for invalid/unsupported subforms now that
-   exact opcode reports show many remaining gaps are not broadly valid
-   register-only instructions.
+1. Build an interpreter-equivalence harness for isolated semantic blocks before
+   any runtime wiring. It should compare CPU register/CCR/PC results for each
+   supported two-byte form and immediate form against the existing interpreter
+   decode path.
+2. Only after equivalence is proven, prototype a runtime semantic-block call
+   at safe immutable-ROM/event-deadline boundaries and benchmark against the
+   current interpreter. Remove it if it repeats prior slowdown behavior.
 
 Do not wire semantic block execution into the Vita runtime until these expanded
 families pass standalone CPU-state tests and the scanner shows materially higher
@@ -165,6 +169,20 @@ The exact scan suggests the next action is classification tightening, not blind
 semantic expansion: many top forms do not match the interpreter's supported
 subop masks for INC/DEC/ADDS/SUBS or shift/rotate. Treat them as block
 boundaries unless verified against the H8S manual and interpreter.
+
+After tightening tier-one classification, local Classic V2 candidate scans show
+the semantic executor covers every executable tier-one block:
+
+| Image | Tier-one blocks | Tier-one prefix insns | Semantic blocks | Semantic insns | Gap blocks | Unsupported insns |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Classic V2 boot (`emu_rom.bin`) | 4,787 | 99,353 | 4,787 | 91,710 | 0 | 0 |
+| Classic V2 flash (`emu_flash.bin`) | 43,124 | 391,383 | 43,124 | 115,681 | 0 | 0 |
+| Classic V2 flash 512K (`emu_flash_512k.bin`) | 42,998 | 386,154 | 42,998 | 115,555 | 0 | 0 |
+| Classic V2 CyOS (`emu_cyos.bin`) | 21,552 | 75,025 | 21,552 | 38,101 | 0 | 0 |
+
+This does not mean runtime speed is fixed. It means the isolated executor's
+eligibility predicate is now honest enough to move to equivalence testing and
+careful runtime integration experiments.
 
 Executed opcode profile gate:
 
