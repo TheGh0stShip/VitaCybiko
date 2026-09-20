@@ -42,13 +42,19 @@ only.
 ## Goal D — Peripheral-event cost reduction
 
 Status: partial — disabled timers now skip event-query calls in `5216028`;
-deadline caching for active timers remains open.
+empty bus completion scans are bypassed, and timer8/timer16 deadline helpers
+now inline their hot internal paths in the 01.15 worktree. Deadline caching for
+active timers remains open.
 
 The latest host profile attributes material time to
 `timer16_cycles_until_event`, `cycles_until_next_peripheral_event`, and
 `sync_peripherals`. Add cached next-event deadlines only after proving timer
 register writes, compare matches, DMA completion, and interrupt ordering remain
 equivalent.
+
+Latest gate: all 16 host tests pass. The Xtreme 600-frame smoke moved from the
+previous optimized 14.87 s run to 13.50 s on the same host gate after the
+completion-bypass and timer helper cleanup; Classic V1/V2 remained smoke-pass.
 
 ## Goal E — Presentation budget
 

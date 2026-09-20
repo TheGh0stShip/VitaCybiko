@@ -235,8 +235,10 @@ static int cycles_until_next_peripheral_event(cybiko_emu_t *emu)
         if (t > 0 && t < next) next = t;
     }
 
-    t = bus_cycles_until_dma_completion(&emu->bus);
-    if (t > 0 && t < next) next = t;
+    if (bus_has_pending_completion(&emu->bus)) {
+        t = bus_cycles_until_dma_completion(&emu->bus);
+        if (t > 0 && t < next) next = t;
+    }
     return next == INT_MAX ? 0 : next;
 }
 
@@ -255,7 +257,8 @@ static void sync_peripherals(void *ctx)
         for (int i = 0; i < emu->bus.machine->timer_channels; ++i)
             timer16_advance(&emu->timer16[i], timers);
     }
-    bus_advance_dma_completion(&emu->bus, completions);
+    if (completions && bus_has_pending_completion(&emu->bus))
+        bus_advance_dma_completion(&emu->bus, completions);
 }
 
 void cybiko_run_frame(cybiko_emu_t *emu) {

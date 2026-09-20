@@ -58,9 +58,9 @@ if(VITA)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   pkg_check_modules(SDL2_GFX REQUIRED IMPORTED_TARGET SDL2_gfx)
 
-  set(VITA_APP_NAME "VitaCybiko 01.14")
+  set(VITA_APP_NAME "VitaCybiko 01.15")
   set(VITA_TITLEID  "VCYB00001")
-  set(VITA_VERSION  "01.14")
+  set(VITA_VERSION  "01.15")
 
   add_executable(${PROJECT_NAME}
     src/vita/main.c

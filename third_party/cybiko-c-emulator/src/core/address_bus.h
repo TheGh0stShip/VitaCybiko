@@ -133,6 +133,13 @@ static inline void bus_write32(address_bus_t *bus, uint32_t address, uint32_t va
 void     bus_tick_dma_completion(address_bus_t *bus);
 int      bus_cycles_until_dma_completion(const address_bus_t *bus);
 void     bus_advance_dma_completion(address_bus_t *bus, int cycles);
+static inline bool bus_has_pending_completion(const address_bus_t *bus) {
+    return bus->adc_completion_delay > 0 ||
+           bus->dtc_completion_delay > 0 ||
+           bus->dma_completion_delay > 0 ||
+           bus->sci_tx_delay[0] > 0 ||
+           bus->sci_tx_delay[2] > 0;
+}
 void     bus_tick_rtc(address_bus_t *bus);
 
 #endif

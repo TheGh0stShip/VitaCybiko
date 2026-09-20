@@ -11,6 +11,14 @@
 #include "core/timer8.h"
 #include "core/h8s_cpu.h"
 
+#if defined(__GNUC__) || defined(__clang__)
+#define TIMER8_INLINE static inline __attribute__((always_inline))
+#define TIMER8_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define TIMER8_INLINE static inline
+#define TIMER8_UNLIKELY(x) (x)
+#endif
+
 /* TCR bits */
 #define TCR_CMIEB 0x80  /* Compare Match Interrupt Enable B */
 #define TCR_CMIEA 0x40  /* Compare Match Interrupt Enable A */
@@ -123,14 +131,18 @@ void timer8_counter_tick(timer8_t *t) {
     }
 }
 
-int timer8_cycles_until_counter_tick(const timer8_t *t) {
-    if (t->cached_divisor == 0) return 0;
+TIMER8_INLINE int timer8_cycles_until_counter_tick_inline(const timer8_t *t) {
+    if (TIMER8_UNLIKELY(t->cached_divisor == 0)) return 0;
     int remaining = t->cached_divisor - t->prescale_counter;
     return remaining > 0 ? remaining : 1;
 }
 
-static int timer8_counter_ticks_until_event(const timer8_t *t) {
-    if (t->cached_divisor == 0) return 0;
+int timer8_cycles_until_counter_tick(const timer8_t *t) {
+    return timer8_cycles_until_counter_tick_inline(t);
+}
+
+TIMER8_INLINE int timer8_counter_ticks_until_event(const timer8_t *t) {
+    if (TIMER8_UNLIKELY(t->cached_divisor == 0)) return 0;
     /* The next event is the nearest comparator or natural wrap. Previously
      * every deadline query simulated up to 256 counter increments, including
      * millions of queries made before the counter had advanced at all. */
@@ -143,13 +155,13 @@ static int timer8_counter_ticks_until_event(const timer8_t *t) {
 }
 
 int timer8_cycles_until_event(const timer8_t *t) {
-    int first_tick = timer8_cycles_until_counter_tick(t);
+    int first_tick = timer8_cycles_until_counter_tick_inline(t);
     if (first_tick <= 0) return 0;
     int ticks = timer8_counter_ticks_until_event(t);
     return first_tick + (ticks - 1) * t->cached_divisor;
 }
 
-static void timer8_advance_no_event(timer8_t *t, int cycles) {
+TIMER8_INLINE void timer8_advance_no_event(timer8_t *t, int cycles) {
     int total = t->prescale_counter + cycles;
     int ticks = total / t->cached_divisor;
     t->prescale_counter = total % t->cached_divisor;

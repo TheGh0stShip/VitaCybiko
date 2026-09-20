@@ -29,6 +29,16 @@
 #include "core/timer16.h"
 #include "core/h8s_cpu.h"
 
+#if defined(__GNUC__) || defined(__clang__)
+#define TIMER16_INLINE static inline __attribute__((always_inline))
+#define TIMER16_LIKELY(x)   __builtin_expect(!!(x), 1)
+#define TIMER16_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define TIMER16_INLINE static inline
+#define TIMER16_LIKELY(x)   (x)
+#define TIMER16_UNLIKELY(x) (x)
+#endif
+
 /* TIER bits */
 #define TIER_TGIEA 0x01
 #define TIER_TGIEB 0x02
@@ -272,19 +282,23 @@ void timer16_counter_tick(timer16_t *t) {
     }
 }
 
-int timer16_cycles_until_counter_tick(const timer16_t *t) {
-    if (t->cached_divisor == 0) return 0;
+TIMER16_INLINE int timer16_cycles_until_counter_tick_inline(const timer16_t *t) {
+    if (TIMER16_UNLIKELY(t->cached_divisor == 0)) return 0;
     int remaining = t->cached_divisor - t->prescale_counter;
     return remaining > 0 ? remaining : 1;
 }
 
-static int timer16_counter_distance(uint16_t from, uint16_t target) {
+int timer16_cycles_until_counter_tick(const timer16_t *t) {
+    return timer16_cycles_until_counter_tick_inline(t);
+}
+
+TIMER16_INLINE int timer16_counter_distance(uint16_t from, uint16_t target) {
     int distance = (int)((target - from) & 0xFFFF);
     return distance == 0 ? 0x10000 : distance;
 }
 
-static int timer16_counter_ticks_until_event(const timer16_t *t) {
-    if (t->cached_divisor == 0) return 0;
+TIMER16_INLINE int timer16_counter_ticks_until_event(const timer16_t *t) {
+    if (TIMER16_UNLIKELY(t->cached_divisor == 0)) return 0;
     int next = timer16_counter_distance(t->tcnt, t->tgra);
     int dist = timer16_counter_distance(t->tcnt, t->tgrb);
     if (dist < next) next = dist;
@@ -294,13 +308,13 @@ static int timer16_counter_ticks_until_event(const timer16_t *t) {
 }
 
 int timer16_cycles_until_event(const timer16_t *t) {
-    int first_tick = timer16_cycles_until_counter_tick(t);
+    int first_tick = timer16_cycles_until_counter_tick_inline(t);
     if (first_tick <= 0) return 0;
     int ticks = timer16_counter_ticks_until_event(t);
     return first_tick + (ticks - 1) * t->cached_divisor;
 }
 
-static void timer16_advance_no_event(timer16_t *t, int cycles) {
+TIMER16_INLINE void timer16_advance_no_event(timer16_t *t, int cycles) {
     int total = t->prescale_counter + cycles;
     int ticks = total / t->cached_divisor;
     t->prescale_counter = total % t->cached_divisor;
@@ -308,14 +322,14 @@ static void timer16_advance_no_event(timer16_t *t, int cycles) {
 }
 
 void timer16_advance(timer16_t *t, int cycles) {
-    if (cycles > 0 && t->cached_divisor != 0 &&
-        cycles < t->cached_divisor - t->prescale_counter) {
+    if (TIMER16_LIKELY(cycles > 0 && t->cached_divisor != 0 &&
+        cycles < t->cached_divisor - t->prescale_counter)) {
         t->prescale_counter += cycles;
         return;
     }
-    while (cycles > 0 && t->cached_divisor != 0) {
+    while (TIMER16_LIKELY(cycles > 0 && t->cached_divisor != 0)) {
         int remaining = timer16_cycles_until_event(t);
-        if (remaining <= 0) return;
+        if (TIMER16_UNLIKELY(remaining <= 0)) return;
         if (cycles < remaining) {
             timer16_advance_no_event(t, cycles);
             return;
