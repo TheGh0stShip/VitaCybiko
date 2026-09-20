@@ -26,7 +26,7 @@ typedef struct address_bus address_bus_t;
 /* Cached static rejects are already proven not to enter the current semantic
  * fast path. Probe them less often than first-time misses while preserving
  * regular opportunities to discover phase changes or future coverage wins. */
-#define H8S_SEMANTIC_CACHED_REJECT_BACKOFF 1024
+#define H8S_SEMANTIC_CACHED_REJECT_BACKOFF 2048
 
 typedef struct {
     bool valid;

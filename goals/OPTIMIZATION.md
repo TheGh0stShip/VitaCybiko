@@ -702,6 +702,28 @@ with cached rejects down from 87,603 to 22,961. Accepted semantic fast blocks
 also fell substantially, so this is a probe-overhead reduction, not a substitute
 for the broader branch-aware/translation tier still needed for Vita smoothness.
 
+A final bounded cached-reject backoff check moved the cached-reject-specific
+window from 1024 to 2048 cycles. This further reduces repeated cached-reject
+probe overhead but also cuts accepted semantic fast blocks again, so this should
+be treated as the end of backoff tuning unless physical Vita logs contradict
+the host trend.
+
+Gate after the 2048-cycle cached-reject backoff:
+
+- focused CPU tests passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 0.96 s, Classic V2 0.38 s, Xtreme
+  5.11 s on the wrapper run;
+- direct repeat smokes: Classic V2 0.465761/0.351684 s; Xtreme
+  5.082200/4.411509 s.
+
+The reason counters show Classic V2 total fast rejects around 17.5k and Xtreme
+around 11.8k. Xtreme cached rejects fell to 11,538, but accepted semantic fast
+blocks also fell to 51,191 from 93,637 at the 1024 gate. Do not keep increasing
+the backoff as a substitute for real coverage; the next meaningful optimization
+must make more hot PCs executable through a branch-aware cached interpreter or
+ARMv7 translation tier.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
