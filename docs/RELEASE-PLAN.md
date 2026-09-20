@@ -10,7 +10,7 @@ completion goal remains open.
 | Usable frontend, input and safe model-separated storage | Host regressions pass; V2 setup, desktop, Pinball, Calculator, text save/reopen and clock continuity exercised |
 | Real screenshots from Windows Vita3K | Captured; published in verification record |
 | Reproducible source, tests, VPK and documentation | Prepared, with proprietary images and saves excluded |
-| Public repository/release | Repository is public; 01.16 source/VPK candidate is built and documented locally but the GitHub release still needs publication, with unresolved acceptance items explicit |
+| Public repository/release | Published as preview releases, latest [v0.1.16-preview](https://github.com/TheGh0stShip/VitaCybiko/releases/tag/v0.1.16-preview), with unresolved acceptance items explicit |
 | 1:1 Cybiko hardware and entire original launch set | Not achieved; see remaining requirements below |
 
 ## Completed implementation work
