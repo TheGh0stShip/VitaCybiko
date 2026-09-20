@@ -1941,7 +1941,8 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     if (!block || !h8s_semantic_block_supported(block))
         return false;
     if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
-        block->branch_kind != H8S_BLOCK_BRANCH_BCC16)
+        block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24)
         return false;
 
     int block_cycles = (int)block->instructions + 1; /* Include branch exit. */
@@ -1956,14 +1957,25 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     if (!h8s_execute_semantic_block_exit(block, &cpu->semantic_edge_cache,
                                          &state, &next_offset))
         return false;
-    if (next_offset >= size)
-        return false;
+    uint32_t next_pc = next_offset;
+    if (block->branch_kind == H8S_BLOCK_BRANCH_JMP_ABS24) {
+        const cybiko_machine_t *m = cpu->bus->machine;
+        bool immutable_target =
+            next_pc <= m->boot_end ||
+            (m->flash_size && next_pc >= m->flash_base && next_pc <= m->flash_end);
+        if (!immutable_target)
+            return false;
+    } else {
+        if (next_offset >= size)
+            return false;
+        next_pc = (base + next_offset) & 0xffffff;
+    }
 
     cpu->last_start_pc = start_pc;
     for (unsigned i = 0; i < 8; ++i)
         cpu->er[i] = state.er[i];
     cpu->ccr = state.ccr;
-    cpu->pc = (base + next_offset) & 0xffffff;
+    cpu->pc = next_pc & 0xffffff;
     cpu->cycle_count += (uint64_t)block_cycles;
     *cycles = block_cycles;
     return true;

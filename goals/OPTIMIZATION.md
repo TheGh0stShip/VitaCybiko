@@ -140,6 +140,9 @@ Current block-discovery gate:
   whenever any guard rejects the cached block. The fast path is also suppressed
   when it could cross the existing end-of-run peripheral synchronization
   boundary.
+- The guarded runtime fast path now also accepts static absolute JMP exits.
+  Bcc exits remain ROM-window-relative, while JMP @aa:24 exits are treated as
+  absolute machine addresses and must still land in immutable boot ROM or flash.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -240,6 +243,9 @@ Branch edge-cache gate:
   debt.
 - A synchronization-boundary regression test proves that the fast path does not
   skip the existing `sync_peripherals` callback at the end of a bounded run.
+- A JMP @aa:24 frame-runner equivalence test covers the absolute-target path
+  and caught the distinction between window-relative branch offsets and absolute
+  H8S jump addresses.
 
 Current Classic V2 static chain-edge scan:
 
