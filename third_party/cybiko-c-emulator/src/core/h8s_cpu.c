@@ -19,7 +19,12 @@
 #endif
 
 #ifdef CYBIKO_OPCODE_PROFILE
+#define BRANCH_PROFILE_TARGET_SLOTS 4096
 static uint64_t opcode_profile_hi[256];
+static uint64_t branch_profile_kind[12];
+static uint64_t branch_profile_taken_kind[12];
+static uint32_t branch_profile_target_tag[BRANCH_PROFILE_TARGET_SLOTS];
+static uint64_t branch_profile_target_count[BRANCH_PROFILE_TARGET_SLOTS];
 static bool opcode_profile_registered;
 
 static void opcode_profile_dump(void) {
@@ -27,6 +32,32 @@ static void opcode_profile_dump(void) {
         if (opcode_profile_hi[i])
             fprintf(stderr, "opcode_hi_%02x=%llu\n", i,
                     (unsigned long long)opcode_profile_hi[i]);
+    }
+    static const char *names[] = {
+        "none", "bcc8", "bcc16", "bsr8", "bsr16", "jmp_abs24",
+        "jsr_abs24", "indirect", "return", "trap", "sleep", "unknown"
+    };
+    for (unsigned i = 0; i < sizeof(branch_profile_kind) / sizeof(branch_profile_kind[0]); ++i) {
+        if (branch_profile_kind[i])
+            fprintf(stderr, "branch_%s=%llu taken=%llu\n", names[i],
+                    (unsigned long long)branch_profile_kind[i],
+                    (unsigned long long)branch_profile_taken_kind[i]);
+    }
+    bool printed[BRANCH_PROFILE_TARGET_SLOTS] = {0};
+    for (unsigned rank = 0; rank < 12; ++rank) {
+        unsigned best = 0;
+        uint64_t best_count = 0;
+        for (unsigned i = 0; i < BRANCH_PROFILE_TARGET_SLOTS; ++i) {
+            if (!printed[i] && branch_profile_target_count[i] > best_count) {
+                best_count = branch_profile_target_count[i];
+                best = i;
+            }
+        }
+        if (!best_count) break;
+        printed[best] = true;
+        fprintf(stderr, "branch_target_top%02u_pc=0x%06x count=%llu\n",
+                rank + 1, branch_profile_target_tag[best],
+                (unsigned long long)best_count);
     }
 }
 
@@ -37,9 +68,29 @@ CPU_INLINE void opcode_profile_record(uint16_t op) {
     }
     opcode_profile_hi[op >> 8]++;
 }
+
+CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target) {
+    if (!opcode_profile_registered) {
+        atexit(opcode_profile_dump);
+        opcode_profile_registered = true;
+    }
+    if (kind >= sizeof(branch_profile_kind) / sizeof(branch_profile_kind[0]))
+        kind = sizeof(branch_profile_kind) / sizeof(branch_profile_kind[0]) - 1;
+    branch_profile_kind[kind]++;
+    if (!taken) return;
+    branch_profile_taken_kind[kind]++;
+    unsigned index = ((target >> 1) ^ (target >> 13)) & (BRANCH_PROFILE_TARGET_SLOTS - 1);
+    if (branch_profile_target_count[index] == 0 || branch_profile_target_tag[index] == target) {
+        branch_profile_target_tag[index] = target;
+        branch_profile_target_count[index]++;
+    }
+}
 #else
 CPU_INLINE void opcode_profile_record(uint16_t op) {
     (void)op;
+}
+CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target) {
+    (void)kind; (void)taken; (void)target;
 }
 #endif
 
@@ -1362,9 +1413,11 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
         }
         case 0x55: { /* BSR d:8 */
             int8_t disp = (int8_t)lo;
+            uint32_t target = (cpu->pc + disp) & 0xFFFFFF;
             cpu->er[7] -= 4;
             bus_write32(cpu->bus, cpu->er[7], cpu->pc);
-            cpu->pc = (cpu->pc + disp) & 0xFFFFFF;
+            cpu->pc = target;
+            branch_profile_record(3, true, target);
             break;
         }
         case 0x56: { /* RTE */
@@ -1391,8 +1444,10 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
         case 0x58: { /* Bcc d:16 */
             int cond = (lo >> 4) & 0xF;
             int16_t disp = (int16_t)fetch16(cpu);
-            if (evaluate_condition(cpu, cond))
-                cpu->pc = (cpu->pc + disp) & 0xFFFFFF;
+            uint32_t target = (cpu->pc + disp) & 0xFFFFFF;
+            bool taken = evaluate_condition(cpu, cond);
+            if (taken) cpu->pc = target;
+            branch_profile_record(2, taken, target);
             break;
         }
         case 0x59: { /* JMP @ERn */
@@ -1403,6 +1458,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
         case 0x5A: { /* JMP @aa:24 */
             uint32_t addr = ((uint32_t)lo << 16) | fetch16(cpu);
             cpu->pc = addr & 0xFFFFFF;
+            branch_profile_record(5, true, cpu->pc);
             break;
         }
         case 0x5B: { /* JMP @@aa:8 */
@@ -1411,9 +1467,11 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
         }
         case 0x5C: { /* BSR d:16 */
             int16_t disp = (int16_t)fetch16(cpu);
+            uint32_t target = (cpu->pc + disp) & 0xFFFFFF;
             cpu->er[7] -= 4;
             bus_write32(cpu->bus, cpu->er[7], cpu->pc);
-            cpu->pc = (cpu->pc + disp) & 0xFFFFFF;
+            cpu->pc = target;
+            branch_profile_record(4, true, target);
             break;
         }
         case 0x5D: { /* JSR @ERn */
@@ -1428,6 +1486,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
             cpu->er[7] -= 4;
             bus_write32(cpu->bus, cpu->er[7], cpu->pc);
             cpu->pc = addr & 0xFFFFFF;
+            branch_profile_record(6, true, cpu->pc);
             break;
         }
         case 0x5F: { /* JSR @@aa:8 */
@@ -1670,7 +1729,9 @@ CPU_INLINE void decode(h8s_cpu_t *cpu, uint16_t op) {
             int cond = (op >> 8) & 0xF;
             int8_t disp = (int8_t)(op & 0xFF);
             uint32_t target = (cpu->pc + disp) & 0xFFFFFF;
-            if (evaluate_condition(cpu, cond)) cpu->pc = target;
+            bool taken = evaluate_condition(cpu, cond);
+            if (taken) cpu->pc = target;
+            branch_profile_record(1, taken, target);
             break;
         }
         case 0x5: decode5(cpu, op, hi, lo); break;

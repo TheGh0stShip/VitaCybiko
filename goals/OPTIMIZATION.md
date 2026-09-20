@@ -260,7 +260,8 @@ Executed opcode profile gate:
 
 - `CYBIKO_OPCODE_PROFILE=ON` now builds a host-only profiler that dumps H8S
   opcode high-byte counts at process exit; normal release/Vita builds leave it
-  disabled.
+  disabled. It now also reports dynamic static-branch execution/taken counts
+  and a direct-mapped top target sample for Bcc/BSR/JMP/JSR static targets.
 - 600-frame smoke profiles show that byte-immediate opcodes are not the right
   first runtime tier. The hottest groups are prefix `0x01`, `0x0f` MOV.L
   register, branches (`0x40`-`0x4f`), shifts/rotates (`0x10`/`0x11`), ADDS/SUBS
@@ -274,6 +275,23 @@ Top executed high-byte opcodes over 600 smoke frames:
 | Classic V1 | 01 14.14% | 11 9.09% | 0f 8.16% | 0b 4.95% | 46 4.38% |
 | Classic V2 | 01 8.76% | 0f 8.55% | 47 5.84% | 11 5.53% | 0b 5.22% |
 | Xtreme | 01 9.69% | 0f 9.63% | 47 5.95% | 0b 5.59% | 11 4.93% |
+
+Dynamic branch profile on the locally staged Classic V2 600-frame smoke:
+
+| Branch kind | Executed | Taken | Notes |
+| --- | ---: | ---: | --- |
+| Bcc d:8 | 5,393,726 | 3,942,735 | Main branch-aware tier target; ~73% taken |
+| Bcc d:16 | 86,653 | 47,022 | Secondary conditional path |
+| BSR d:8 | 33,452 | 33,452 | Direct call edge |
+| BSR d:16 | 19 | 19 | Rare |
+| JMP abs24 | 423 | 423 | Rare static exit |
+| JSR abs24 | 584,470 | 584,470 | Important static call edge |
+
+Top sampled dynamic branch targets included `0x001598` (562,841),
+`0x0061e0` (481,591), `0x002418` (278,288), and `0x0061ea`
+(198,809). This is much stronger evidence than the static scan: the next
+runtime experiment must prioritize Bcc d:8 taken/fall-through dispatch and hot
+JSR/static-target linking, with explicit event-deadline exits.
 
 Rejected runtime experiment on 2026-09-20:
 
