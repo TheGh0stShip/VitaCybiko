@@ -381,6 +381,38 @@ semantic resolver treated BHI as `!C` and BLS as `C`; the interpreter uses
   is a real Xtreme correctness/boot-progress fix rather than a cosmetic timing
   change.
 
+## 01.18 preview candidate
+
+Vita package metadata is `01.18`. Candidate VPK SHA-256:
+
+```text
+2befe6984c4eca573cf5ce2d33b70c89c977f86b227ea1d338d44a5819f8c392
+```
+
+Executable SELF SHA-256:
+
+```text
+94c81f075491aae03a42790bd494aac45ecfe11336f73c0230418aacae4d154d
+```
+
+Raw linked executable SHA-256:
+
+```text
+406ef73c4d6b218a54c2331d1717da97aeff0fd4807b5ea4a495aa688a941a62
+```
+
+- Package metadata, LiveArea title and runtime UI report `01.18`.
+- LiveArea `content-rev` is `18`, so upgraded installs have a new LiveArea
+  revision after the previous stale-icon/version reports.
+- The VPK contains 9 ZIP entries, all stored for VitaShell compatibility, and
+  `zipfile.testzip()` reported no corrupt member.
+- The packaged `param.sfo` contains `VitaCybiko 01.18`, `01.18`, and title ID
+  `VCYB00001`.
+- This candidate includes the H8S BHI/BLS semantic branch fix and the 256-cycle
+  semantic cached-reject backoff tuning.
+- Local host verification passed `test_h8s_cpu`, the full 16-test Release host
+  suite and the three-model firmware smoke benchmark documented above.
+
 ## v0.1.3-preview candidate
 
 Vita package metadata is `01.03`. Candidate VPK SHA-256:

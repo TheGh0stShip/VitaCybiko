@@ -74,7 +74,7 @@ static void render_model_menu(app_ctx_t *ctx, int selected)
         stringRGBA(ctx->renderer, 145, y + 49,
                    row == 0 ? "Original / stock hardware - experimental" :
                    row == 1 ? "Revised Classic / CyOS v1.3.58 - desktop verified" :
-                              "Xtreme / CyOS v1.5.08 - awaiting runtime validation", 175, 200, 215, 255);
+                              "Xtreme / CyOS v1.5.08 - host smoke verified", 175, 200, 215, 255);
     }
     stringRGBA(ctx->renderer, 120, 440, "D-pad / arrows: choose    Cross / Enter / tap: boot    Circle / Esc: exit", 190, 210, 220, 255);
     stringRGBA(ctx->renderer, 120, 473, "In device: Start+Select saves and returns here.", 155, 178, 195, 255);
