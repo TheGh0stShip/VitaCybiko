@@ -613,15 +613,23 @@ static void test_hot_branch8_step_fast_path(void) {
 static void test_hot_register_bit_step_fast_path(void) {
     setup();
     write_code16(0, 0x735a); /* BTST #5,R2L */
+    write_code16(2, 0x775a); /* BLD #5,R2L -> C=1 */
+    write_code16(4, 0x752a); /* BXOR #2,R2L -> C toggles to 0 */
+    write_code16(6, 0x746a); /* BOR #6,R2L -> C stays 0 */
+    write_code16(8, 0x760a); /* BAND #0,R2L -> C stays 0 */
+    write_code16(10, 0x704a); /* BSET #4,R2L */
     cpu.pc = CODE_BASE;
     cpu.ccr = CCR_I;
     cpu.er[2] = 0x20;
 
-    h8s_cpu_step(&cpu);
-    TEST_CHECK(cpu.pc == CODE_BASE + 2);
-    TEST_CHECK(cpu.hot_register_bit_instructions == 1);
-    TEST_CHECK(cpu.cycle_count == 1);
+    for (unsigned i = 0; i < 6; ++i)
+        h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.pc == CODE_BASE + 12);
+    TEST_CHECK(cpu.hot_register_bit_instructions == 6);
+    TEST_CHECK(cpu.cycle_count == 6);
     TEST_CHECK(!(cpu.ccr & CCR_Z));
+    TEST_CHECK(!(cpu.ccr & CCR_C));
+    TEST_CHECK((cpu.er[2] & 0xff) == 0x30);
     teardown();
 }
 

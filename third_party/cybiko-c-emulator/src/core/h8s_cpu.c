@@ -809,31 +809,36 @@ CPU_INLINE bool execute_hot_register_bit(h8s_cpu_t *cpu, uint16_t op)
     uint8_t lo = (uint8_t)op;
     int bit = (lo >> 4) & 0x7;
     int rd = lo & 0xf;
-    bool bit_value = (get_reg_b(cpu, rd) & (1 << bit)) != 0;
+    uint8_t value = get_reg_b(cpu, rd);
+    uint8_t mask = (uint8_t)(1u << bit);
+    bool bit_value = (value & mask) != 0;
+    bool operand_value = (lo & 0x80) ? !bit_value : bit_value;
     switch (hi) {
     case 0x70:
-        set_reg_b(cpu, rd, (uint8_t)(get_reg_b(cpu, rd) | (1 << bit)));
+        set_reg_b(cpu, rd, (uint8_t)(value | mask));
         break;
     case 0x71:
-        set_reg_b(cpu, rd, (uint8_t)(get_reg_b(cpu, rd) ^ (1 << bit)));
+        set_reg_b(cpu, rd, (uint8_t)(value ^ mask));
         break;
     case 0x72:
-        set_reg_b(cpu, rd, (uint8_t)(get_reg_b(cpu, rd) & ~(1 << bit)));
+        set_reg_b(cpu, rd, (uint8_t)(value & (uint8_t)~mask));
         break;
     case 0x73:
-        set_flag(cpu, BIT_Z, !bit_value);
+        cpu->ccr = (uint8_t)((cpu->ccr & (uint8_t)~CCR_Z) |
+                             (!bit_value ? CCR_Z : 0));
         break;
     case 0x74:
-        set_flag(cpu, BIT_C, get_flag(cpu, BIT_C) | ((lo & 0x80) ? !bit_value : bit_value));
+        if (operand_value) cpu->ccr |= CCR_C;
         break;
     case 0x75:
-        set_flag(cpu, BIT_C, get_flag(cpu, BIT_C) ^ ((lo & 0x80) ? !bit_value : bit_value));
+        if (operand_value) cpu->ccr ^= CCR_C;
         break;
     case 0x76:
-        set_flag(cpu, BIT_C, get_flag(cpu, BIT_C) & ((lo & 0x80) ? !bit_value : bit_value));
+        if (!operand_value) cpu->ccr &= (uint8_t)~CCR_C;
         break;
     case 0x77:
-        set_flag(cpu, BIT_C, (lo & 0x80) ? !bit_value : bit_value);
+        cpu->ccr = (uint8_t)((cpu->ccr & (uint8_t)~CCR_C) |
+                             (operand_value ? CCR_C : 0));
         break;
     default:
         return false;

@@ -1622,6 +1622,22 @@ Validation:
 - the Xtreme scheduler profile showed run calls dropping again from 18,725 to
   5,596 per 600 frames and I/O breaks from 17,562 to 4,433.
 
+Accepted hot register-bit CCR cleanup: after scheduler batching, callgrind still
+showed generic flag helper traffic in the hot interpreter. The one-word
+register bit fast path now reuses the byte value it already loaded and updates
+`CCR_Z`/`CCR_C` directly for BTST/BOR/BXOR/BAND/BLD forms instead of routing
+through generic `get_flag`/`set_flag` helpers. This keeps the optimization
+inside the existing tested hot helper rather than reattempting the rejected
+broad branch-condition rewrite.
+
+Validation:
+
+- the focused H8S CPU test for the hot register-bit path now covers BTST, BLD,
+  BXOR, BOR, BAND and BSET flag/writeback behavior;
+- focused H8S CPU tests passed;
+- three-model 600-frame smoke passed with Classic V1 0.81s, Classic V2 0.32s,
+  and Xtreme 1.11s in the direct release-host smoke.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
