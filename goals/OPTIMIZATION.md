@@ -68,6 +68,10 @@ Current block-discovery gate:
   make a tier-one block miss semantic-executor coverage. This turns the next
   executor expansion into a measured backlog rather than another broad
   interpreter tweak.
+- The semantic executor now covers valid `0x10`-`0x13` shift/rotate register
+  forms (byte/word/long, one/two-bit, logical/arithmetic, and with/without
+  carry), with standalone tests for flags, carry flow, register width, and PC
+  advancement.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -99,17 +103,27 @@ locally available Classic V2 candidate blobs:
 
 Next semantic-executor targets, in order:
 
-1. Complete non-memory shift/rotate coverage for `0x10`-`0x13`; this is the
-   largest boot-ROM gap and appears in every local image.
-2. Complete remaining `ADDS`/`SUBS` register/immediate subforms in `0x0b` and
+1. Complete remaining `ADDS`/`SUBS` register/immediate subforms in `0x0b` and
    `0x1b`; these are especially visible in flash scans.
-3. Split `0x60`-`0x65` and `0x72`-`0x74` by exact addressing mode before adding
+2. Split `0x60`-`0x65` and `0x72`-`0x74` by exact addressing mode before adding
    semantics. Only pure register or immutable-ROM-immediate forms belong in the
    first executor tier; RAM/I/O forms must remain interpreter exits.
+3. Investigate remaining `0x0a`/`0x1a`/`0x1f` misses by low-byte form; the
+   executor already handles the current long-register forms but not every
+   tier-one-classified variant.
 
 Do not wire semantic block execution into the Vita runtime until these expanded
 families pass standalone CPU-state tests and the scanner shows materially higher
 cross-firmware coverage.
+
+After adding shift/rotate semantics, local Classic V2 coverage moved to:
+
+| Image | Semantic blocks | Semantic insns | Gap blocks | Unsupported insns in tier-one blocks | New top gap families |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Classic V2 boot (`emu_rom.bin`) | 4,522 | 90,835 | 313 | 424 | `0x1a` 20.99%, `0x64` 20.99%, `0x1b` 12.03%, `0x73` 8.49%, `0x0b` 6.13% |
+| Classic V2 flash (`emu_flash.bin`) | 34,099 | 81,455 | 13,436 | 16,277 | `0x0b` 9.27%, `0x60` 6.23%, `0x62` 5.30%, `0x0a` 5.25%, `0x74` 4.75% |
+| Classic V2 flash 512K (`emu_flash_512k.bin`) | 33,973 | 81,329 | 12,998 | 15,713 | `0x0b` 7.20%, `0x60` 6.45%, `0x62` 5.49%, `0x74` 4.92%, `0x65` 4.87% |
+| Classic V2 CyOS (`emu_cyos.bin`) | 20,310 | 35,860 | 1,335 | 1,471 | `0x73` 31.82%, `0x64` 15.23%, `0x72` 12.24%, `0x74` 5.57%, `0x70` 5.44% |
 
 Executed opcode profile gate:
 

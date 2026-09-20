@@ -426,6 +426,39 @@ static void test_semantic_block_executes_unary_register_ops(void)
     TEST_CHECK(state.ccr & 0x08);
 }
 
+static void test_semantic_block_executes_shift_rotate_ops(void)
+{
+    const uint8_t rom[] = {
+        0x10, 0x08, /* SHAL.B R0L: 0x81 -> 0x02, C/V */
+        0x11, 0xd1, /* SHAR.W #2,R1: 0x8003 -> 0xe000, C */
+        0x12, 0xb2, /* ROTL.L ER2: 0x80000000 -> 0x00000001, C */
+        0x13, 0x04, /* ROTXR.B R4H: old C -> bit 7 */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(h8s_semantic_block_supported(&block));
+    h8s_block_cpu_state_t state = {
+        .er = {
+            0x00000081,
+            0x00008003,
+            0x80000000,
+            0,
+            0x00000000,
+            0, 0, 0
+        },
+        .ccr = 0
+    };
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK((state.er[0] & 0xff) == 0x02);
+    TEST_CHECK((state.er[1] & 0xffff) == 0xe000);
+    TEST_CHECK(state.er[2] == 0x00000001);
+    TEST_CHECK(((state.er[4] >> 8) & 0xff) == 0x80);
+    TEST_CHECK(state.pc == 8);
+    TEST_CHECK(!(state.ccr & 0x02));
+    TEST_CHECK(state.ccr & 0x08);
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -449,5 +482,6 @@ TEST_LIST = {
     { "semantic_block_executes_register_alu_ops", test_semantic_block_executes_register_alu_ops },
     { "semantic_block_executes_byte_word_register_ops", test_semantic_block_executes_byte_word_register_ops },
     { "semantic_block_executes_unary_register_ops", test_semantic_block_executes_unary_register_ops },
+    { "semantic_block_executes_shift_rotate_ops", test_semantic_block_executes_shift_rotate_ops },
     { NULL, NULL }
 };

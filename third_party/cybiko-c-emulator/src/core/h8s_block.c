@@ -388,6 +388,221 @@ static void block_set_arithmetic_l(h8s_block_cpu_state_t *state, uint32_t d,
         (subtract ? d < s : result < d));
 }
 
+static bool block_shift_rotate_form(uint8_t lo)
+{
+    switch ((lo >> 4) & 0xf) {
+    case 0x0: case 0x1: case 0x3:
+    case 0x4: case 0x5: case 0x7:
+    case 0x8: case 0x9: case 0xb:
+    case 0xc: case 0xd: case 0xf:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void block_shift_b(h8s_block_cpu_state_t *state, unsigned rd,
+                          bool left, bool logical, int count)
+{
+    int val = block_get_reg_b(state, rd);
+    for (int i = 0; i < count; ++i) {
+        if (left) {
+            block_set_flag(state, BLOCK_CCR_C, (val & 0x80) != 0);
+            int old = val;
+            val = (val << 1) & 0xff;
+            if (!logical) block_set_flag(state, BLOCK_CCR_V, ((old ^ val) & 0x80) != 0);
+        } else {
+            block_set_flag(state, BLOCK_CCR_C, (val & 1) != 0);
+            val = logical ? ((val >> 1) & 0x7f) : (((int8_t)val >> 1) & 0xff);
+        }
+    }
+    block_set_reg_b(state, rd, (uint8_t)val);
+    block_set_nz_b(state, val);
+    if ((left && logical) || !left) block_set_flag(state, BLOCK_CCR_V, false);
+}
+
+static void block_shift_w(h8s_block_cpu_state_t *state, unsigned rd,
+                          bool left, bool logical, int count)
+{
+    int val = block_get_r(state, rd);
+    for (int i = 0; i < count; ++i) {
+        if (left) {
+            block_set_flag(state, BLOCK_CCR_C, (val & 0x8000) != 0);
+            int old = val;
+            val = (val << 1) & 0xffff;
+            if (!logical) block_set_flag(state, BLOCK_CCR_V, ((old ^ val) & 0x8000) != 0);
+        } else {
+            block_set_flag(state, BLOCK_CCR_C, (val & 1) != 0);
+            val = logical ? ((val >> 1) & 0x7fff) : (((int16_t)val >> 1) & 0xffff);
+        }
+    }
+    block_set_r(state, rd, (uint16_t)val);
+    block_set_nz_w(state, val);
+    if ((left && logical) || !left) block_set_flag(state, BLOCK_CCR_V, false);
+}
+
+static void block_shift_l(h8s_block_cpu_state_t *state, unsigned erd,
+                          bool left, bool logical, int count)
+{
+    uint32_t val = state->er[erd];
+    for (int i = 0; i < count; ++i) {
+        if (left) {
+            block_set_flag(state, BLOCK_CCR_C, (val & 0x80000000u) != 0);
+            uint32_t old = val;
+            val <<= 1;
+            if (!logical) block_set_flag(state, BLOCK_CCR_V, ((old ^ val) & 0x80000000u) != 0);
+        } else {
+            block_set_flag(state, BLOCK_CCR_C, (val & 1) != 0);
+            val = logical ? (val >> 1) : ((val >> 1) | (val & 0x80000000u));
+        }
+    }
+    state->er[erd] = val;
+    block_set_nz_l(state, val);
+    if ((left && logical) || !left) block_set_flag(state, BLOCK_CCR_V, false);
+}
+
+static void block_rotate_b(h8s_block_cpu_state_t *state, unsigned rd,
+                           bool left, bool through_carry, int count)
+{
+    int val = block_get_reg_b(state, rd);
+    for (int i = 0; i < count; ++i) {
+        if (left) {
+            int msb = (val >> 7) & 1;
+            int old_c = (state->ccr & BLOCK_CCR_C) ? 1 : 0;
+            block_set_flag(state, BLOCK_CCR_C, msb != 0);
+            val = ((val << 1) | (through_carry ? old_c : msb)) & 0xff;
+        } else {
+            int lsb = val & 1;
+            int old_c = (state->ccr & BLOCK_CCR_C) ? 0x80 : 0;
+            block_set_flag(state, BLOCK_CCR_C, lsb != 0);
+            val = ((val >> 1) | (through_carry ? old_c : (lsb << 7))) & 0xff;
+        }
+    }
+    block_set_reg_b(state, rd, (uint8_t)val);
+    block_set_nz_b(state, val);
+    block_set_flag(state, BLOCK_CCR_V, false);
+}
+
+static void block_rotate_w(h8s_block_cpu_state_t *state, unsigned rd,
+                           bool left, bool through_carry, int count)
+{
+    int val = block_get_r(state, rd);
+    for (int i = 0; i < count; ++i) {
+        if (left) {
+            int msb = (val >> 15) & 1;
+            int old_c = (state->ccr & BLOCK_CCR_C) ? 1 : 0;
+            block_set_flag(state, BLOCK_CCR_C, msb != 0);
+            val = ((val << 1) | (through_carry ? old_c : msb)) & 0xffff;
+        } else {
+            int lsb = val & 1;
+            int old_c = (state->ccr & BLOCK_CCR_C) ? 0x8000 : 0;
+            block_set_flag(state, BLOCK_CCR_C, lsb != 0);
+            val = ((val >> 1) | (through_carry ? old_c : (lsb << 15))) & 0xffff;
+        }
+    }
+    block_set_r(state, rd, (uint16_t)val);
+    block_set_nz_w(state, val);
+    block_set_flag(state, BLOCK_CCR_V, false);
+}
+
+static void block_rotate_l(h8s_block_cpu_state_t *state, unsigned erd,
+                           bool left, bool through_carry, int count)
+{
+    uint32_t val = state->er[erd];
+    for (int i = 0; i < count; ++i) {
+        if (left) {
+            uint32_t msb = (val >> 31) & 1;
+            uint32_t old_c = (state->ccr & BLOCK_CCR_C) ? 1u : 0u;
+            block_set_flag(state, BLOCK_CCR_C, msb != 0);
+            val = (val << 1) | (through_carry ? old_c : msb);
+        } else {
+            uint32_t lsb = val & 1;
+            uint32_t old_c = (state->ccr & BLOCK_CCR_C) ? 0x80000000u : 0u;
+            block_set_flag(state, BLOCK_CCR_C, lsb != 0);
+            val = (val >> 1) | (through_carry ? old_c : (lsb << 31));
+        }
+    }
+    state->er[erd] = val;
+    block_set_nz_l(state, val);
+    block_set_flag(state, BLOCK_CCR_V, false);
+}
+
+static bool block_execute_shift_rotate(h8s_block_cpu_state_t *state, uint8_t hi, uint8_t lo)
+{
+    unsigned subop = (lo >> 4) & 0xf;
+    unsigned rd = lo & 0xf;
+    unsigned erd = lo & 0x7;
+
+    switch (hi) {
+    case 0x10:
+        switch (subop) {
+        case 0x0: block_shift_b(state, rd, true, true, 1); return true;
+        case 0x1: block_shift_w(state, rd, true, true, 1); return true;
+        case 0x3: block_shift_l(state, erd, true, true, 1); return true;
+        case 0x4: block_shift_b(state, rd, true, true, 2); return true;
+        case 0x5: block_shift_w(state, rd, true, true, 2); return true;
+        case 0x7: block_shift_l(state, erd, true, true, 2); return true;
+        case 0x8: block_shift_b(state, rd, true, false, 1); return true;
+        case 0x9: block_shift_w(state, rd, true, false, 1); return true;
+        case 0xb: block_shift_l(state, erd, true, false, 1); return true;
+        case 0xc: block_shift_b(state, rd, true, false, 2); return true;
+        case 0xd: block_shift_w(state, rd, true, false, 2); return true;
+        case 0xf: block_shift_l(state, erd, true, false, 2); return true;
+        default: return false;
+        }
+    case 0x11:
+        switch (subop) {
+        case 0x0: block_shift_b(state, rd, false, true, 1); return true;
+        case 0x1: block_shift_w(state, rd, false, true, 1); return true;
+        case 0x3: block_shift_l(state, erd, false, true, 1); return true;
+        case 0x4: block_shift_b(state, rd, false, true, 2); return true;
+        case 0x5: block_shift_w(state, rd, false, true, 2); return true;
+        case 0x7: block_shift_l(state, erd, false, true, 2); return true;
+        case 0x8: block_shift_b(state, rd, false, false, 1); return true;
+        case 0x9: block_shift_w(state, rd, false, false, 1); return true;
+        case 0xb: block_shift_l(state, erd, false, false, 1); return true;
+        case 0xc: block_shift_b(state, rd, false, false, 2); return true;
+        case 0xd: block_shift_w(state, rd, false, false, 2); return true;
+        case 0xf: block_shift_l(state, erd, false, false, 2); return true;
+        default: return false;
+        }
+    case 0x12:
+        switch (subop) {
+        case 0x0: block_rotate_b(state, rd, true, true, 1); return true;
+        case 0x1: block_rotate_w(state, rd, true, true, 1); return true;
+        case 0x3: block_rotate_l(state, erd, true, true, 1); return true;
+        case 0x4: block_rotate_b(state, rd, true, true, 2); return true;
+        case 0x5: block_rotate_w(state, rd, true, true, 2); return true;
+        case 0x7: block_rotate_l(state, erd, true, true, 2); return true;
+        case 0x8: block_rotate_b(state, rd, true, false, 1); return true;
+        case 0x9: block_rotate_w(state, rd, true, false, 1); return true;
+        case 0xb: block_rotate_l(state, erd, true, false, 1); return true;
+        case 0xc: block_rotate_b(state, rd, true, false, 2); return true;
+        case 0xd: block_rotate_w(state, rd, true, false, 2); return true;
+        case 0xf: block_rotate_l(state, erd, true, false, 2); return true;
+        default: return false;
+        }
+    case 0x13:
+        switch (subop) {
+        case 0x0: block_rotate_b(state, rd, false, true, 1); return true;
+        case 0x1: block_rotate_w(state, rd, false, true, 1); return true;
+        case 0x3: block_rotate_l(state, erd, false, true, 1); return true;
+        case 0x4: block_rotate_b(state, rd, false, true, 2); return true;
+        case 0x5: block_rotate_w(state, rd, false, true, 2); return true;
+        case 0x7: block_rotate_l(state, erd, false, true, 2); return true;
+        case 0x8: block_rotate_b(state, rd, false, false, 1); return true;
+        case 0x9: block_rotate_w(state, rd, false, false, 1); return true;
+        case 0xb: block_rotate_l(state, erd, false, false, 1); return true;
+        case 0xc: block_rotate_b(state, rd, false, false, 2); return true;
+        case 0xd: block_rotate_w(state, rd, false, false, 2); return true;
+        case 0xf: block_rotate_l(state, erd, false, false, 2); return true;
+        default: return false;
+        }
+    default:
+        return false;
+    }
+}
+
 bool h8s_semantic_instruction_supported(uint16_t op)
 {
     uint8_t hi = (uint8_t)(op >> 8);
@@ -398,6 +613,8 @@ bool h8s_semantic_instruction_supported(uint16_t op)
     case 0x14: case 0x15: case 0x16:
     case 0x18: case 0x19: case 0x1c: case 0x1d: case 0x1e:
         return true;
+    case 0x10: case 0x11: case 0x12: case 0x13:
+        return block_shift_rotate_form(lo);
     case 0x0a: case 0x1a: case 0x1f:
         return (lo & 0x80) != 0;
     case 0x0b: case 0x1b:
@@ -517,6 +734,9 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
             block_set_flag(state, BLOCK_CCR_N, (result & 0x80) != 0);
             break;
         }
+        case 0x10: case 0x11: case 0x12: case 0x13:
+            if (!block_execute_shift_rotate(state, hi, lo)) return false;
+            break;
         case 0x14: {
             unsigned rs = (lo >> 4) & 0xf;
             unsigned rd = lo & 0xf;
