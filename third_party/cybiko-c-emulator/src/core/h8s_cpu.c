@@ -2575,7 +2575,11 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     uint32_t offset = start_pc - base;
     const h8s_block_t *block =
         h8s_block_cache_get(&cpu->semantic_block_cache, data, size, offset);
-    if (!block || !h8s_semantic_block_supported(block)) {
+    bool rom_return_block = block &&
+        block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
+        block->branch_op == 0x5470 &&
+        h8s_mixed_plain_block_supported(block);
+    if (!block || (!h8s_semantic_block_supported(block) && !rom_return_block)) {
         semantic_reject_cache_store(cpu, data, start_pc);
         return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_unsupported_block,
                                                  SEM_REJECT_UNSUPPORTED_BLOCK, start_pc);

@@ -1429,6 +1429,26 @@ This is accepted as a narrow branch-aware cached interpretation step. It does
 not implement a general call/return tier; it only handles the common immutable
 ROM helper-return case with explicit stack and target guards.
 
+Accepted branch-only immutable-ROM RTS fast path: after enabling helper blocks
+with semantic instructions plus `RTS`, the next top cached reject was
+`0x004a5e`, a pure branch-only `RTS` block immediately after a ROM call helper.
+The support gate now lets branch-only `RTS` reach the same guarded mixed-block
+return executor used above. The same safety restrictions apply: the stack read
+must be plain and the resolved return target must be immutable boot ROM/flash.
+
+Validation:
+
+- focused H8S CPU suite passed, including a new pure-ROM-`RTS` test;
+- full host suite passed 17/17;
+- Xtreme direct 600-frame smoke passed and improved to
+  `cpu_seconds=1.151049`;
+- three-model smoke passed using Vita-pulled fixtures:
+  Classic V1 1.00 s, Classic V2 0.47 s, Xtreme 1.64 s wall time.
+
+This is accepted as the second small branch-aware cached interpretation step:
+it removes a hot ROM helper return probe without permitting arbitrary dynamic
+return targets through the fast path.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

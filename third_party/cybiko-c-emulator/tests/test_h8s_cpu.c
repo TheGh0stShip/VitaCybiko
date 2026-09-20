@@ -457,6 +457,33 @@ static void test_semantic_rom_block_fast_path_executes_rts_to_rom(void) {
     teardown();
 }
 
+static void test_semantic_rom_block_fast_path_executes_branch_only_rts(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    memory_write16(&bus.boot_rom, 0x100, 0x5470); /* RTS only */
+    memory_write16(&bus.boot_rom, 0x140, 0x0B01); /* immutable return target */
+    bus_build_memory_map(&bus);
+
+    uint32_t sp = bus.machine->ram_base + 0x240;
+    bus_write32(&bus, sp, 0x8140);
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+    cpu.er[7] = sp;
+    int cycles = 0;
+    TEST_CHECK(h8s_cpu_try_execute_semantic_rom_block(&cpu, 4, &cycles));
+    TEST_CHECK(cycles == 1);
+    TEST_CHECK(cpu.pc == 0x8140);
+    TEST_CHECK(cpu.er[7] == sp + 4);
+    TEST_CHECK(cpu.cycle_count == 1);
+    TEST_CHECK(cpu.semantic_fast_blocks == 1);
+    TEST_CHECK(cpu.semantic_fast_cycles == 1);
+
+    memory_free(&bus.external_ram);
+    memory_free(&bus.boot_rom);
+    teardown();
+}
+
 static void test_semantic_mutable_block_fast_path_matches_steps(void) {
     setup();
     memory_init(&bus.external_ram, bus.machine->ram_size, true);
@@ -1004,6 +1031,7 @@ TEST_LIST = {
     {"semantic_rom_block_fast_path_executes_bcc", test_semantic_rom_block_fast_path_executes_bcc},
     {"semantic_rom_block_fast_path_executes_branch_only_bcc", test_semantic_rom_block_fast_path_executes_branch_only_bcc},
     {"semantic_rom_block_fast_path_executes_rts_to_rom", test_semantic_rom_block_fast_path_executes_rts_to_rom},
+    {"semantic_rom_block_fast_path_executes_branch_only_rts", test_semantic_rom_block_fast_path_executes_branch_only_rts},
     {"semantic_mutable_block_fast_path_matches_steps", test_semantic_mutable_block_fast_path_matches_steps},
     {"semantic_mutable_reject_cache_invalidates_on_code_write", test_semantic_mutable_reject_cache_invalidates_on_code_write},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
