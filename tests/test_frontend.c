@@ -309,6 +309,9 @@ static void test_audio_queue_bounds_latency(void)
         reset_audio(ctx);
         hal_audio_output(ctx, frame, (int)sizeof(frame));
         hal_audio_output(ctx, frame, (int)sizeof(frame));
+        hal_audio_output(ctx, frame, (int)sizeof(frame));
+        TEST_CHECK(!ctx->audio_started);
+        hal_audio_output(ctx, frame, (int)sizeof(frame));
         TEST_CHECK(ctx->audio_started);
         TEST_CHECK(SDL_GetAudioDeviceStatus(ctx->audio_dev) == SDL_AUDIO_PLAYING);
     }

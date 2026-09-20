@@ -76,8 +76,8 @@
 #define AUTOSAVE_INTERVAL_MS 60000u
 #define AUDIO_DEVICE_SAMPLES 512
 #define AUDIO_FRAME_SAMPLES (SPEAKER_SAMPLE_RATE / CYBIKO_FPS)
-#define AUDIO_TARGET_QUEUE_FRAMES 2u
-#define AUDIO_MAX_QUEUE_FRAMES 8u
+#define AUDIO_TARGET_QUEUE_FRAMES 4u
+#define AUDIO_MAX_QUEUE_FRAMES 12u
 #define AUDIO_CONVERT_MAX_SAMPLES 8192
 
 /* Defaults keep old host tests and the legacy Xtreme layout valid. Selection
