@@ -314,6 +314,27 @@ static void test_audio_queue_bounds_latency(void)
         hal_audio_output(ctx, frame, (int)sizeof(frame));
         TEST_CHECK(ctx->audio_started);
         TEST_CHECK(SDL_GetAudioDeviceStatus(ctx->audio_dev) == SDL_AUDIO_PLAYING);
+
+        SDL_PauseAudioDevice(ctx->audio_dev, 1);
+        SDL_ClearQueuedAudio(ctx->audio_dev);
+        ctx->audio_started = true;
+        ctx->audio_last_valid = true;
+        ctx->audio_last_count = (int)sizeof(frame);
+        memset(ctx->audio_last_frame, 255, sizeof(ctx->audio_last_frame));
+        service_audio_continuity(ctx);
+        Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
+        TEST_CHECK(queued == ctx->audio_target_queue_bytes);
+        uint8_t queued_audio[65536];
+        TEST_ASSERT(queued <= sizeof(queued_audio));
+        Uint32 got = SDL_DequeueAudio(ctx->audio_dev, queued_audio, queued);
+        TEST_CHECK(got == queued);
+        if (ctx->audio_s16_stereo) {
+            for (Uint32 i = 0; i < got; ++i)
+                TEST_CHECK(queued_audio[i] == 0);
+        } else {
+            for (Uint32 i = 0; i < got; ++i)
+                TEST_CHECK(queued_audio[i] == 128);
+        }
     }
     cleanup(ctx);
 }
