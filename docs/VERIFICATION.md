@@ -1,5 +1,33 @@
 # Verification — 2026-09-19
 
+## 2026-09-20 continuation — three-model host smoke restored
+
+After commit `814c2a0`, the physical Vita FTP server at
+`10.0.0.202:1337` was reachable. Operator-owned VitaCybiko firmware fixtures
+were pulled from `ux0:/data/VitaCybiko` into the untracked local scratch tree
+`vita_runtime_pull/current`; no proprietary firmware or save data is tracked in
+Git.
+
+Classic V2 fixture hashes pulled from the Vita:
+
+| File | Size | CRC32 | SHA-1 |
+| --- | ---: | --- | --- |
+| `classic-v2/roms/boot.bin` | 32768 | `268da7bf` | `135eaf9e3905e69582aabd9b06bc4de0a66780d5` |
+| `classic-v2/roms/flash.bin` | 262144 | `05ca4ece` | `eee329e8541e1e36c22acb1317378ce23ccd1e12` |
+| `classic-v2/roms/dataflash.bin` | 540672 | `e485880f` | `e414d6d2f876c7c811946bcdfcb6212999412381` |
+
+The Release host `cybiko-smoke` gate passed all three profiles for 600 frames:
+
+| Profile | Result | CPU seconds | Active frames | Final PC |
+| --- | --- | ---: | ---: | --- |
+| Classic V1 | PASS | 1.308243 | 586 / 600 | `0x219C8E` |
+| Classic V2 | PASS | 0.605239 | 596 / 600 | `0x11ED98` |
+| Xtreme | PASS | 1.959807 | 600 / 600 | `0x4A3C40` |
+
+This restores the cross-model smoke evidence that was missing when only local
+Classic V1/Xtreme MAME fixtures were available. It remains host smoke evidence,
+not a physical Vita smoothness pass.
+
 ## 01.13 workbench — not released or hardware-qualified
 
 ### Physical Vita deployment — execution pending

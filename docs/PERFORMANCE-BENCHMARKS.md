@@ -34,3 +34,37 @@ tools/benchmark_models.sh \
 
 Any future core optimization must preserve the smoke `PASS` lines and compare
 the resulting times against this gate before it is described as an improvement.
+
+## Current smoke gate after timer8 deadline caching
+
+After `814c2a0` and the follow-up fixture pull from the physical Vita's
+operator-owned `ux0:/data/VitaCybiko` tree, all three firmware profiles passed
+the 600-frame host smoke gate:
+
+| Profile | CPU seconds | Active frames | Final PC |
+| --- | ---: | ---: | --- |
+| Classic V1 | 1.308243 s | 586 / 600 | `0x219C8E` |
+| Classic V2 | 0.605239 s | 596 / 600 | `0x11ED98` |
+| Xtreme | 1.959807 s | 600 / 600 | `0x4A3C40` |
+
+This is still a host core smoke benchmark, not a physical Vita smoothness
+claim. It is useful because it proves the latest core changes still run all
+three model profiles with matching firmware, including Classic V2.
+
+If the Vita has already been staged with user-owned firmware, the local fixture
+tree can be refreshed without committing proprietary data:
+
+```sh
+tools/pull_vita_fixtures.sh \
+  ftp://10.0.0.202:1337/ux0:/data/VitaCybiko
+
+tools/benchmark_models.sh \
+  build-ci-release-host/cybiko-smoke \
+  vita_runtime_pull/current/classic-v1/roms/boot.bin \
+  vita_runtime_pull/current/classic-v1/roms/dataflash.bin \
+  vita_runtime_pull/current/classic-v2/roms/boot.bin \
+  vita_runtime_pull/current/classic-v2/roms/flash.bin \
+  vita_runtime_pull/current/classic-v2/roms/dataflash.bin \
+  vita_runtime_pull/current/xtreme/roms/boot.bin \
+  vita_runtime_pull/current/xtreme/roms/flash.bin
+```
