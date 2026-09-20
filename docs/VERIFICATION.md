@@ -373,8 +373,9 @@ semantic resolver treated BHI as `!C` and BLS as `C`; the interpreter uses
   pass.
 - Local MAME-reference firmware smoke benchmark after the fix:
   Classic V1 `PASS`, 600 frames, 586 active, PC `219C8E`, 1.02 s wall;
-  Classic V2 `PASS`, 600 frames, 596 active, PC `11ED98`, 0.39 s wall;
-  Xtreme `PASS`, 600 frames, 600 active, PC `4A3C40`, 4.43 s wall.
+  Classic V2 `PASS`, 600 frames, 596 active, PC `11ED98`, 0.38 s wall;
+  Xtreme `PASS`, 600 frames, 600 active, PC `4A3C40`, 2.25 s wall after
+  raising the cached-reject backoff to 256 cycles.
 - The Xtreme smoke was checked against a baseline without the fix and failed
   with unmapped `0xF00000` execution, 0 active frames and PC `FFFAD2`, so this
   is a real Xtreme correctness/boot-progress fix rather than a cosmetic timing

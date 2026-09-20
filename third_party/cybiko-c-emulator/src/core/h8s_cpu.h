@@ -19,7 +19,10 @@ typedef struct address_bus address_bus_t;
 
 #define H8S_ROM_FETCH_BLOCK_WORDS 16
 #define H8S_SEMANTIC_REJECT_CACHE_ENTRIES 512
-#define H8S_SEMANTIC_REJECT_BACKOFF 128
+/* Optional semantic ROM fast-path probes are expensive at hot unsupported PCs.
+ * A 256-cycle fixed backoff preserves the three-model smoke gates while
+ * reducing repeated cached-reject probes on Xtreme after the BHI/BLS fix. */
+#define H8S_SEMANTIC_REJECT_BACKOFF 256
 
 typedef struct {
     bool valid;

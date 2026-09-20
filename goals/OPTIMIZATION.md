@@ -204,6 +204,12 @@ Current block-discovery gate:
   `active=600`, `pc=4A3C40`, `semantic_fast_blocks=874500`, and
   `semantic_fast_cycles=2205420`. This is a correctness fix that also removes
   the largest current Xtreme host-smoke blocker.
+- After the BHI/BLS fix, the fixed cached-reject backoff was retested at 128,
+  256, 384, and 512 cycles. A 256-cycle window preserved the three-model smoke
+  gates and reduced repeated cached-reject probe overhead on Xtreme. The final
+  Release host gate measured Classic V1 1.02 s, Classic V2 0.38 s, and Xtreme
+  2.25 s for 600 frames. Host wall times have visible run-to-run variance, so
+  this is a smoke benchmark gate, not a physical-Vita smoothness claim.
 
 Rejected follow-up experiment on 2026-09-20:
 
