@@ -28,6 +28,7 @@ add_library(cybiko_core STATIC
   ${CYBIKO_VENDOR_DIR}/src/core/rtc.c
   ${CYBIKO_VENDOR_DIR}/src/core/speaker.c
   ${CYBIKO_VENDOR_DIR}/src/core/keyboard.c
+  ${CYBIKO_VENDOR_DIR}/src/core/h8s_block.c
   ${CYBIKO_VENDOR_DIR}/src/core/h8s_cpu.c
   ${CYBIKO_VENDOR_DIR}/src/core/address_bus.c
   ${CYBIKO_VENDOR_DIR}/src/core/cfs.c
@@ -148,7 +149,7 @@ else()
     target_link_libraries(test_scheduler cybiko_core)
     target_include_directories(test_scheduler PRIVATE ${CYBIKO_VENDOR_DIR}/tests)
     add_test(NAME event_scheduler_equivalence COMMAND test_scheduler)
-    set(TEST_MODULES memory cfs keyboard timer8 timer16 rtc speaker hd66421 h8s_cpu emulator)
+    set(TEST_MODULES memory cfs keyboard timer8 timer16 rtc speaker hd66421 h8s_block h8s_cpu emulator)
     foreach(mod ${TEST_MODULES})
       add_executable(test_${mod} ${CYBIKO_VENDOR_DIR}/tests/test_${mod}.c)
       target_link_libraries(test_${mod} cybiko_core)

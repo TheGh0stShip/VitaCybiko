@@ -14,8 +14,9 @@ per 600 frames.
 
 ## Goal B — Immutable-ROM decoded blocks
 
-Status: partial — raw immutable-ROM fetch blocks landed in `495aa2a`; semantic
-decoded blocks remain open.
+Status: partial — raw immutable-ROM fetch blocks landed in `495aa2a`; a
+conservative straight-line ROM block analyzer and `h8s_block` test gate landed
+after `dfce4b2`; semantic decoded block execution remains open.
 
 Build a bounded cache keyed by ROM PC. A block ends before branches, interrupts,
 I/O, event deadlines, or any instruction whose operands leave immutable ROM.
@@ -28,6 +29,14 @@ Gates:
 - event-scheduler equivalence for all three models;
 - invalidation tests for reset, IRQ, branch, and ROM/RAM boundary transitions;
 - no regression in Classic V1/V2 boot smoke.
+
+Current block-discovery gate:
+
+- stops before Bcc/RTS/RTE/TRAPA/JMP/JSR/SLEEP control transfers;
+- treats prefix and unknown variable-length forms as conservative boundaries;
+- validates fixed and immediate instruction lengths before any runtime cache
+  can use the ranges;
+- all 17 host test groups pass with `h8s_block` included.
 
 ## Goal C — ARMv7 translation backend
 
