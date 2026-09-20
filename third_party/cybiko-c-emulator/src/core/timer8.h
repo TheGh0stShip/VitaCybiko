@@ -8,6 +8,8 @@ typedef struct {
     uint8_t  tcr, tcsr, tcora, tcorb, tcnt;
     int      prescale_counter;
     int      cached_divisor;
+    int      cached_cpu_event_cycles;
+    bool     cached_cpu_event_valid;
     int      vec_cmia, vec_cmib, vec_ovi;
     h8s_cpu_t *cpu;
 } timer8_t;
@@ -18,11 +20,26 @@ void    timer8_init(timer8_t *t, int channel, h8s_cpu_t *cpu);
 void    timer8_counter_tick(timer8_t *t);
 int     timer8_cycles_until_counter_tick(const timer8_t *t);
 int     timer8_cycles_until_event(const timer8_t *t);
-int     timer8_cycles_until_cpu_event(const timer8_t *t);
+int     timer8_cycles_until_cpu_event(timer8_t *t);
 void    timer8_advance(timer8_t *t, int cycles);
+static inline void timer8_invalidate_cpu_event_cache(timer8_t *t) {
+    t->cached_cpu_event_valid = false;
+    t->cached_cpu_event_cycles = 0;
+}
+static inline void timer8_decrement_cpu_event_cache(timer8_t *t, int cycles) {
+    if (!t->cached_cpu_event_valid) return;
+    if (cycles < t->cached_cpu_event_cycles) {
+        t->cached_cpu_event_cycles -= cycles;
+    } else {
+        timer8_invalidate_cpu_event_cache(t);
+    }
+}
 static inline void timer8_tick(timer8_t *t) {
     if (t->cached_divisor == 0) return;
-    if (++t->prescale_counter < t->cached_divisor) return;
+    if (++t->prescale_counter < t->cached_divisor) {
+        timer8_decrement_cpu_event_cache(t, 1);
+        return;
+    }
     t->prescale_counter = 0;
     timer8_counter_tick(t);
 }

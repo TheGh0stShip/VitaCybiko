@@ -233,6 +233,7 @@ static void test_cpu_event_deadline_filters_unobservable_flags(void) {
     TEST_CHECK(timer8_cycles_until_cpu_event(&t) == (5 - 2) * 8 - 3);
 
     t.tcsr = 0x40; /* CMFA already pending: no new interrupt edge. */
+    timer8_invalidate_cpu_event_cache(&t);
     TEST_CHECK(timer8_cycles_until_cpu_event(&t) == 0);
 
     timer8_write(&t, 0, 0x01); /* Flags can still change, but only MMIO observes them. */
@@ -251,13 +252,38 @@ static void test_cpu_event_deadline_respects_unobservable_clear(void) {
     TEST_CHECK(timer8_cycles_until_cpu_event(&t) == 8);
 
     t.tcsr = 0x40; /* A will clear TCNT before any later observable overflow. */
+    timer8_invalidate_cpu_event_cache(&t);
     TEST_CHECK(timer8_cycles_until_cpu_event(&t) == 0);
+}
+
+static void test_cpu_event_deadline_cache_decrements_and_invalidates(void) {
+    timer8_t t;
+    cpu_init_stub();
+    timer8_init(&t, 0, &cpu);
+
+    timer8_write(&t, 0, 0x41); /* CMIEA + /8. */
+    timer8_write(&t, 4, 5);
+    timer8_write(&t, 8, 2);
+    t.prescale_counter = 3;
+
+    TEST_CHECK(timer8_cycles_until_cpu_event(&t) == 21);
+    TEST_CHECK(t.cached_cpu_event_valid);
+    TEST_CHECK(timer8_cycles_until_cpu_event(&t) == 21);
+
+    timer8_advance(&t, 5);
+    TEST_CHECK(t.cached_cpu_event_valid);
+    TEST_CHECK(timer8_cycles_until_cpu_event(&t) == 16);
+
+    timer8_write(&t, 4, 4);
+    TEST_CHECK(!t.cached_cpu_event_valid);
+    TEST_CHECK(timer8_cycles_until_cpu_event(&t) == 8);
 }
 
 TEST_LIST = {
     { "deadline_matches_counter_scan", test_deadline_matches_counter_scan },
     { "cpu_event_deadline_filters_unobservable_flags", test_cpu_event_deadline_filters_unobservable_flags },
     { "cpu_event_deadline_respects_unobservable_clear", test_cpu_event_deadline_respects_unobservable_clear },
+    { "cpu_event_deadline_cache_decrements_and_invalidates", test_cpu_event_deadline_cache_decrements_and_invalidates },
     { "init_defaults",                  test_init_defaults },
     { "init_channel_vectors",           test_init_channel_vectors },
     { "not_running_cks_zero",           test_not_running_cks_zero },

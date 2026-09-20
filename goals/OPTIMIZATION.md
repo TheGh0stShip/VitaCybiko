@@ -1330,6 +1330,31 @@ access almost immediately. The next larger optimization needs address/opcode
 histograms for those dynamic nonplain writes so repeated safe MMIO-adjacent
 patterns can get hand-specialized without hiding the device access itself.
 
+Accepted scheduler cleanup: timer8 CPU-event deadline queries now use the same
+cache/decrement/invalidation model already used by timer16. The cache is
+invalidated on timer8 register writes and counter events, decremented during
+cycle advancement, and covered by a regression test that verifies reuse,
+decrementing and deadline-changing invalidation. This reduces repeated
+deadline recomputation inside `cycles_until_next_peripheral_event` without
+changing timer/interrupt ordering.
+
+Validation:
+
+- focused timer8 and timer16 tests passed;
+- event-scheduler equivalence passed;
+- Classic V1 and Xtreme 600-frame smoke passed with available fixtures;
+- Classic V2 smoke was not run in this iteration because matching local V2
+  firmware/dataflash fixtures were not present in the workspace.
+
+Measured host smoke timings were within normal run-to-run variance rather than
+a decisive speedup: the `fa72b47` baseline measured Classic V1/Xtreme at about
+1.19 s / 1.63 s for 600 frames, while the timer8-cache build measured about
+1.04-1.56 s / 1.73-2.07 s across repeated runs. Keep this as a small scheduler
+cost cleanup, not as a claimed physical-Vita smoothness fix. The next material
+work remains a broader core-throughput change: branch-aware cached
+interpretation, a bounded ARMv7 tier, or a measured peripheral scheduling
+optimization with stronger before/after evidence.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

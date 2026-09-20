@@ -42,6 +42,8 @@ void timer8_init(timer8_t *t, int channel, h8s_cpu_t *cpu) {
     t->tcnt  = 0;
     t->prescale_counter = 0;
     t->cached_divisor   = 0;
+    t->cached_cpu_event_cycles = 0;
+    t->cached_cpu_event_valid = false;
     t->cpu = cpu;
 
     if (channel == 0) {
@@ -67,6 +69,7 @@ uint8_t timer8_read(const timer8_t *t, int reg) {
 }
 
 void timer8_write(timer8_t *t, int reg, uint8_t value) {
+    bool invalidate = true;
     switch (reg) {
     case 0:
         t->tcr = value;
@@ -87,11 +90,14 @@ void timer8_write(timer8_t *t, int reg, uint8_t value) {
         t->tcnt = value;
         break;
     default:
+        invalidate = false;
         break;
     }
+    if (invalidate) timer8_invalidate_cpu_event_cache(t);
 }
 
 void timer8_counter_tick(timer8_t *t) {
+    timer8_invalidate_cpu_event_cache(t);
     /* Increment counter */
     uint8_t previous_count = t->tcnt;
     t->tcnt = (t->tcnt + 1) & 0xFF;
@@ -166,7 +172,8 @@ int timer8_cycles_until_event(const timer8_t *t) {
     return first_tick + (ticks - 1) * t->cached_divisor;
 }
 
-int timer8_cycles_until_cpu_event(const timer8_t *t) {
+int timer8_cycles_until_cpu_event(timer8_t *t) {
+    if (t->cached_cpu_event_valid) return t->cached_cpu_event_cycles;
     int first_tick = timer8_cycles_until_counter_tick_inline(t);
     if (first_tick <= 0) return 0;
 
@@ -186,7 +193,12 @@ int timer8_cycles_until_cpu_event(const timer8_t *t) {
     if (clear_mode == 1 && !obs_a && dist_a <= best) return 0;
     if (clear_mode == 2 && !obs_b && dist_b <= best) return 0;
     if (best == 0x101) return 0;
-    return first_tick + (best - 1) * t->cached_divisor;
+    int cycles = first_tick + (best - 1) * t->cached_divisor;
+    if (cycles > 0) {
+        t->cached_cpu_event_cycles = cycles;
+        t->cached_cpu_event_valid = true;
+    }
+    return cycles;
 }
 
 TIMER8_INLINE void timer8_advance_no_event(timer8_t *t, int cycles) {
@@ -194,6 +206,7 @@ TIMER8_INLINE void timer8_advance_no_event(timer8_t *t, int cycles) {
     int ticks = total / t->cached_divisor;
     t->prescale_counter = total % t->cached_divisor;
     t->tcnt = (uint8_t)(t->tcnt + ticks);
+    timer8_decrement_cpu_event_cache(t, cycles);
 }
 
 void timer8_advance(timer8_t *t, int cycles) {
@@ -202,6 +215,7 @@ void timer8_advance(timer8_t *t, int cycles) {
     if (cycles > 0 && t->cached_divisor != 0 &&
         cycles < t->cached_divisor - t->prescale_counter) {
         t->prescale_counter += cycles;
+        timer8_decrement_cpu_event_cache(t, cycles);
         return;
     }
     while (cycles > 0 && t->cached_divisor != 0) {
