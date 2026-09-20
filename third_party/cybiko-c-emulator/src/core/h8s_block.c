@@ -974,10 +974,10 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
                 }
                 case 0x70: {
                     unsigned rd = lo & 0x7;
-                    int32_t val = (int32_t)state->er[rd];
-                    state->er[rd] = (uint32_t)(val - 1);
+                    uint32_t val = state->er[rd];
+                    state->er[rd] = val - 1u;
                     block_set_nz_l(state, state->er[rd]);
-                    block_set_flag(state, BLOCK_CCR_V, (uint32_t)val == 0x80000000u);
+                    block_set_flag(state, BLOCK_CCR_V, val == 0x80000000u);
                     break;
                 }
                 default:

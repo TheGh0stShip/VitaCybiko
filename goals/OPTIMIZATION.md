@@ -131,12 +131,12 @@ locally available Classic V2 candidate blobs:
 
 Next semantic-executor targets, in order:
 
-1. Prototype a runtime semantic-block call at safe immutable-ROM/event-deadline
-   boundaries behind a compile-time/diagnostic gate, then benchmark against the
-   current interpreter. Remove it if it repeats prior slowdown behavior.
-2. If runtime semantic blocks still fail to beat the interpreter, use the same
-   equivalence harness to guide a larger branch-aware cached-block or ARMv7
-   translation tier rather than adding more one-opcode hot-path probes.
+1. Use the expanded equivalence harness to guide a larger branch-aware cached
+   block or ARMv7 translation tier rather than adding more one-opcode hot-path
+   probes or reintroducing the rejected semantic-runtime hook.
+2. If a future runtime block tier is attempted, it must include the branch/hot
+   prefix groups that dominate the executed opcode profile; straight-line
+   semantic-only immutable blocks are too narrow to repay their lookup cost.
 
 Do not make semantic block execution the default Vita runtime path until the
 guarded runtime experiment proves an actual speedup without breaking
@@ -226,6 +226,9 @@ Initial interpreter-equivalence gate:
 - Focused `h8s_block` test passes with this matrix. This is now enough to
   justify a guarded runtime semantic-block experiment, but not enough to claim
   a Vita performance win until measured against the interpreter.
+- Release-mode host testing exposed a signed-overflow bug in the isolated
+  semantic `DEC.L` path. The path now uses unsigned arithmetic and preserves
+  the H8S overflow flag condition for `0x80000000 -> 0x7fffffff`.
 
 Executed opcode profile gate:
 
@@ -269,6 +272,13 @@ Rejected runtime experiment on 2026-09-20:
   runtime wiring was removed for now. Keep decoded block data structures out of
   the hot CPU state until the executor can actually use them to offset the
   footprint/invalidation cost.
+- A compile-time guarded immutable-ROM semantic block runtime hook passed the
+  opt-in Release host suite but did not improve the locally available Classic
+  V2 600-frame smoke. Baseline Release measured about 0.309 CPU seconds; the
+  semantic hook measured about 0.330 CPU seconds on the same workload. The hook
+  was removed. Do not retry this exact straight-line semantic-only runtime
+  probe; the next tier needs branch-aware cached blocks or native ARMv7
+  translation with materially larger hot-opcode coverage.
 
 ## Goal C — ARMv7 translation backend
 
