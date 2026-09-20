@@ -2316,6 +2316,8 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
     }
     if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_BSR8 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_BSR16 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JSR_ABS24 &&
         !(block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
