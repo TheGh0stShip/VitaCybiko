@@ -1514,6 +1514,27 @@ Validation:
   3.24M two-byte hot-path instructions and 852k four-byte hot-path
   instructions.
 
+Accepted prefix-`0100` long-memory fast path: Xtreme profiling after the
+plain-memory interpreter hooks showed the hottest remaining exact opcode was
+`0x0100`, with prefix forms `0x6f75`, `0x6ff5`, `0x6b00`, `0x6f42`,
+`0x6f73`, and `0x6ff3` dominating. The CPU now handles the safe plain-memory
+`MOV.L` forms from `decode0100` transactionally before the full decoder:
+register indirect, auto increment/decrement, absolute 16/24-bit, and
+16-bit displacement. It restores fetch state and falls back for non-plain
+memory so MMIO/LCD/timer behavior remains on the original path.
+
+Validation:
+
+- focused H8S CPU suite passed with a new `0x0100 0x6f10` displacement-load
+  test;
+- release host suite passed 17/17;
+- local ASan/UBSan/leak core suite passed 17/17 with leak detection enabled;
+- Python tests passed 11/11;
+- Vita package build passed;
+- Xtreme direct 600-frame repeats passed at 1.186/1.201/1.151 s, with about
+  3.24M two-byte hot-path instructions, 852k four-byte hot-path instructions,
+  and 3.56M prefix-`0100` hot-path instructions.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

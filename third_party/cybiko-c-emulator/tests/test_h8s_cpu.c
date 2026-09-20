@@ -569,6 +569,32 @@ static void test_hot_plain_memory_4b_step_fast_path(void) {
     teardown();
 }
 
+static void test_hot_prefix0100_plain_memory_step_fast_path(void) {
+    setup();
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    uint32_t base = bus.machine->ram_base + 0x340;
+    uint32_t address = base + 8;
+    bus_write32(&bus, address, 0x89abcdefu);
+    write_code16(0, 0x0100);
+    write_code16(2, 0x6F10); /* MOV.L @(d:16,ER1),ER0 */
+    write_code16(4, 0x0008);
+    cpu.pc = CODE_BASE;
+    cpu.ccr = CCR_I;
+    cpu.er[1] = base;
+
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.pc == CODE_BASE + 6);
+    TEST_CHECK(cpu.er[0] == 0x89abcdefu);
+    TEST_CHECK(cpu.hot_prefix0100_plain_memory_instructions == 1);
+    TEST_CHECK(cpu.cycle_count == 1);
+    TEST_CHECK(cpu.ccr & CCR_N);
+
+    memory_free(&bus.external_ram);
+    teardown();
+}
+
 static void test_semantic_mutable_reject_cache_invalidates_on_code_write(void) {
     setup();
     memory_init(&bus.external_ram, bus.machine->ram_size, true);
@@ -1084,6 +1110,7 @@ TEST_LIST = {
     {"semantic_mutable_block_fast_path_matches_steps", test_semantic_mutable_block_fast_path_matches_steps},
     {"hot_plain_memory_2b_step_fast_path", test_hot_plain_memory_2b_step_fast_path},
     {"hot_plain_memory_4b_step_fast_path", test_hot_plain_memory_4b_step_fast_path},
+    {"hot_prefix0100_plain_memory_step_fast_path", test_hot_prefix0100_plain_memory_step_fast_path},
     {"semantic_mutable_reject_cache_invalidates_on_code_write", test_semantic_mutable_reject_cache_invalidates_on_code_write},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},
