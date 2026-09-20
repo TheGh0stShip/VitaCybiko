@@ -52,9 +52,12 @@ Current block-discovery gate:
   consume cache entries without repeating length decode;
 - block-cache invalidation now uses an epoch/generation instead of clearing all
   decoded entries, so future runtime integration can invalidate cheaply;
+- decoded block entries now retain immediate operands for 4/6-byte ROM
+  instructions;
 - an isolated semantic block executor now handles non-memory register/immediate
-  forms (`ADDS`/`SUBS` ER forms, `MOV.L` register, and byte immediate
-  ADD/ADDX/CMP/SUBX/OR/XOR/AND/MOV) against a small standalone CPU state. It is
+  forms (`ADDS`/`SUBS` ER forms, `MOV.L` register, byte immediate
+  ADD/ADDX/CMP/SUBX/OR/XOR/AND/MOV, and word/long immediate
+  MOV/ADD/CMP/SUB/OR/XOR/AND) against a small standalone CPU state. It is
   deliberately not wired into `h8s_cpu_run` yet; tests prove the semantics
   before runtime integration.
 

@@ -21,6 +21,20 @@ static void block_set_reg_b(h8s_block_cpu_state_t *state, unsigned n, uint8_t va
         state->er[n - 8] = (state->er[n - 8] & 0xffffff00u) | value;
 }
 
+static uint16_t block_get_r(const h8s_block_cpu_state_t *state, unsigned n)
+{
+    if (n < 8) return (uint16_t)(state->er[n] & 0xffff);
+    return (uint16_t)((state->er[n - 8] >> 16) & 0xffff);
+}
+
+static void block_set_r(h8s_block_cpu_state_t *state, unsigned n, uint16_t value)
+{
+    if (n < 8)
+        state->er[n] = (state->er[n] & 0xffff0000u) | value;
+    else
+        state->er[n - 8] = (state->er[n - 8] & 0x0000ffffu) | ((uint32_t)value << 16);
+}
+
 static void block_set_flag(h8s_block_cpu_state_t *state, uint8_t mask, bool value)
 {
     if (value) state->ccr |= mask;
@@ -260,6 +274,13 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
         pc += bytes;
         block.bytes += bytes;
         block.decoded[block.instructions].op = op;
+        if (bytes == 4) {
+            block.decoded[block.instructions].imm = read_be16(rom + block.stop_pc + 2);
+        } else if (bytes >= 6) {
+            block.decoded[block.instructions].imm =
+                ((uint32_t)read_be16(rom + block.stop_pc + 2) << 16) |
+                read_be16(rom + block.stop_pc + 4);
+        }
         block.decoded[block.instructions].bytes = (uint8_t)bytes;
         block.instructions++;
         if (block.executable) block.executable_prefix_instructions++;
@@ -342,6 +363,27 @@ static void block_set_nz_b(h8s_block_cpu_state_t *state, int result)
     state->ccr = (uint8_t)((state->ccr & (uint8_t)~(BLOCK_CCR_N | BLOCK_CCR_Z)) |
                            ((value >> 4) & BLOCK_CCR_N) |
                            (value == 0 ? BLOCK_CCR_Z : 0));
+}
+
+static void block_set_nz_w(h8s_block_cpu_state_t *state, int result)
+{
+    uint16_t value = (uint16_t)result;
+    state->ccr = (uint8_t)((state->ccr & (uint8_t)~(BLOCK_CCR_N | BLOCK_CCR_Z)) |
+                           ((value >> 12) & BLOCK_CCR_N) |
+                           (value == 0 ? BLOCK_CCR_Z : 0));
+}
+
+static void block_set_arithmetic_l(h8s_block_cpu_state_t *state, uint32_t d,
+                                   uint32_t s, uint32_t result, bool subtract)
+{
+    uint32_t overflow = subtract ? ((d ^ s) & (d ^ result))
+                                 : ((d ^ result) & (s ^ result));
+    state->ccr = (uint8_t)((state->ccr & 0xd0) |
+        ((result >> 28) & BLOCK_CCR_N) |
+        (result == 0 ? BLOCK_CCR_Z : 0) |
+        ((overflow >> 30) & BLOCK_CCR_V) |
+        (((d ^ s ^ result) >> 23) & BLOCK_CCR_H) |
+        (subtract ? d < s : result < d));
 }
 
 bool h8s_execute_semantic_block(const h8s_block_t *block,
@@ -460,6 +502,120 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
             block_set_reg_b(state, rd, lo);
             block_set_nz_b(state, lo);
             block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0x79: {
+            unsigned subop = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            int imm = (int)(uint16_t)block->decoded[i].imm;
+            switch (subop) {
+            case 0x0:
+                block_set_r(state, rd, (uint16_t)imm);
+                block_set_nz_w(state, imm);
+                block_set_flag(state, BLOCK_CCR_V, false);
+                break;
+            case 0x1: {
+                int d = block_get_r(state, rd);
+                int result = d + imm;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_C, result > 0xffff);
+                block_set_flag(state, BLOCK_CCR_V, ((d ^ result) & (imm ^ result) & 0x8000) != 0);
+                block_set_flag(state, BLOCK_CCR_H, ((d ^ imm ^ result) & 0x1000) != 0);
+                break;
+            }
+            case 0x2: {
+                int d = block_get_r(state, rd);
+                int result = d - imm;
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_C, (result & 0x10000) != 0);
+                block_set_flag(state, BLOCK_CCR_V, ((d ^ imm) & (d ^ result) & 0x8000) != 0);
+                block_set_flag(state, BLOCK_CCR_H, ((d ^ imm ^ result) & 0x1000) != 0);
+                break;
+            }
+            case 0x3: {
+                int d = block_get_r(state, rd);
+                int result = d - imm;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_C, (result & 0x10000) != 0);
+                block_set_flag(state, BLOCK_CCR_V, ((d ^ imm) & (d ^ result) & 0x8000) != 0);
+                block_set_flag(state, BLOCK_CCR_H, ((d ^ imm ^ result) & 0x1000) != 0);
+                break;
+            }
+            case 0x4: {
+                int result = block_get_r(state, rd) | imm;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_V, false);
+                break;
+            }
+            case 0x5: {
+                int result = block_get_r(state, rd) ^ imm;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_V, false);
+                break;
+            }
+            case 0x6: {
+                int result = block_get_r(state, rd) & imm;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_V, false);
+                break;
+            }
+            default:
+                return false;
+            }
+            break;
+        }
+        case 0x7a: {
+            unsigned subop = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0x7;
+            uint32_t imm = block->decoded[i].imm;
+            switch (subop) {
+            case 0x0:
+                state->er[rd] = imm;
+                block_set_nz_l(state, imm);
+                block_set_flag(state, BLOCK_CCR_V, false);
+                break;
+            case 0x1: {
+                uint32_t d = state->er[rd];
+                uint32_t result = d + imm;
+                state->er[rd] = result;
+                block_set_arithmetic_l(state, d, imm, result, false);
+                break;
+            }
+            case 0x2: {
+                uint32_t d = state->er[rd];
+                block_set_arithmetic_l(state, d, imm, d - imm, true);
+                break;
+            }
+            case 0x3: {
+                uint32_t d = state->er[rd];
+                uint32_t result = d - imm;
+                state->er[rd] = result;
+                block_set_arithmetic_l(state, d, imm, result, true);
+                break;
+            }
+            case 0x4:
+                state->er[rd] |= imm;
+                block_set_nz_l(state, state->er[rd]);
+                block_set_flag(state, BLOCK_CCR_V, false);
+                break;
+            case 0x5:
+                state->er[rd] ^= imm;
+                block_set_nz_l(state, state->er[rd]);
+                block_set_flag(state, BLOCK_CCR_V, false);
+                break;
+            case 0x6:
+                state->er[rd] &= imm;
+                block_set_nz_l(state, state->er[rd]);
+                block_set_flag(state, BLOCK_CCR_V, false);
+                break;
+            default:
+                return false;
+            }
             break;
         }
         case 0x0b:

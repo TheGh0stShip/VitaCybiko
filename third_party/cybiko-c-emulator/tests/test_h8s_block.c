@@ -39,8 +39,10 @@ static void test_counts_variable_immediates(void)
     TEST_CHECK(block.executable);
     TEST_CHECK(block.executable_prefix_instructions == 2);
     TEST_CHECK(block.decoded[0].op == 0x7900);
+    TEST_CHECK(block.decoded[0].imm == 0x1234);
     TEST_CHECK(block.decoded[0].bytes == 4);
     TEST_CHECK(block.decoded[1].op == 0x7a00);
+    TEST_CHECK(block.decoded[1].imm == 0x12345678);
     TEST_CHECK(block.decoded[1].bytes == 6);
 }
 
@@ -305,6 +307,41 @@ static void test_semantic_block_addx_subx_sticky_zero(void)
     TEST_CHECK(!(state.ccr & 0x04));
 }
 
+static void test_semantic_block_executes_word_long_immediates(void)
+{
+    const uint8_t rom[] = {
+        0x79, 0x00, 0x12, 0x34,             /* MOV.W #0x1234,R0 */
+        0x79, 0x10, 0x00, 0x02,             /* ADD.W #2,R0 */
+        0x79, 0x20, 0x12, 0x36,             /* CMP.W #0x1236,R0; no write */
+        0x7a, 0x01, 0x80, 0x00, 0x00, 0x00, /* MOV.L #0x80000000,ER1 */
+        0x7a, 0x31, 0x00, 0x00, 0x00, 0x01, /* SUB.L #1,ER1 */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_block_cpu_state_t state = {.ccr = 0xff};
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK((state.er[0] & 0xffff) == 0x1236);
+    TEST_CHECK(state.er[1] == 0x7fffffff);
+    TEST_CHECK(state.pc == 24);
+    TEST_CHECK(!(state.ccr & 0x04));
+}
+
+static void test_semantic_block_long_compare_no_write(void)
+{
+    const uint8_t rom[] = {
+        0x7a, 0x20, 0x12, 0x34, 0x56, 0x78, /* CMP.L #0x12345678,ER0 */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_block_cpu_state_t state = {.er = {0x12345678}, .ccr = 0};
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK(state.er[0] == 0x12345678);
+    TEST_CHECK(state.ccr & 0x04);
+    TEST_CHECK(state.pc == 6);
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -323,5 +360,7 @@ TEST_LIST = {
     { "semantic_block_rejects_unsupported_tier1", test_semantic_block_rejects_unsupported_tier1 },
     { "semantic_block_executes_byte_immediates", test_semantic_block_executes_byte_immediates },
     { "semantic_block_addx_subx_sticky_zero", test_semantic_block_addx_subx_sticky_zero },
+    { "semantic_block_executes_word_long_immediates", test_semantic_block_executes_word_long_immediates },
+    { "semantic_block_long_compare_no_write", test_semantic_block_long_compare_no_write },
     { NULL, NULL }
 };
