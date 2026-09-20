@@ -826,6 +826,29 @@ focused `h8s_block` passed, full host suite 17/17 passed, and three-model smoke
 passed with Classic V1 1.25 s, Classic V2 0.81 s, Xtreme 5.84 s. Result:
 accepted as a correctness primitive only; not a runtime performance win yet.
 
+Rejected follow-up experiment: runtime-wiring the plain-memory helper as a
+prefix path before `JSR_ABS24` was tested in two forms: first for a single
+`MOV.L` instruction, then for the inspected `0x004a50` shape
+(`MOV.L` plus semantic register/immediate instructions before `JSR`). Focused
+CPU equivalence passed after constructing one-instruction semantic temporaries,
+but the Xtreme 600-frame counters did not change
+(`semantic_fast_blocks=71141`, `semantic_fast_cycles=172273`), while wrapper
+smoke showed noisy/worse timings up to 6.37 s. The runtime wiring was removed.
+The evidence says the current 600-frame Xtreme path is dominated by cached
+reject/backoff behavior and return/call boundaries, not by this isolated
+prefix. Do not reintroduce this prefix path unless profiling proves the target
+PC is reached in the measured window and accepted-block counters increase.
+
+Rejected follow-up experiment: folding the hot `MOV.L` flag update
+(`set_nz_l` plus clear-V) into a single helper was tested because the opcode
+profile shows millions of `0x0100` long-move forms and most addresses are
+ordinary RAM/on-chip RAM fast pages. CPU CCR tests and the full host suite
+passed, but three-model smoke worsened/noised to Classic V1 1.67 s, Classic V2
+0.66 s, Xtreme 7.61 s, and direct Xtreme was 6.545663 s with unchanged semantic
+counters. The patch was removed. Treat broad MOV.L micro-cleanups as
+insufficient until a profiler shows instruction helper overhead, not
+reject/backoff/call-return structure, is the limiting cost.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
