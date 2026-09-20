@@ -84,6 +84,17 @@ Python tests and the Vita package build when VitaSDK/build-vita is available.
 After pushing, the corresponding GitHub Actions run must complete successfully
 before a VPK is treated as distributable.
 
+The preferred maintainer path is the push-and-watch wrapper, which runs the
+local gate, pushes the current commit, then waits for the exact GitHub Actions
+run for that commit to finish successfully:
+
+```sh
+scripts/push_and_verify.sh
+```
+
+If this wrapper exits non-zero, the commit is not considered published for
+release purposes, even if `git push` itself completed.
+
 No firmware is needed for these tests. The host `cybiko-smoke` runner can also run legally supplied firmware; LCD activity alone is not evidence of a successful desktop boot.
 
 ## Known boundaries
