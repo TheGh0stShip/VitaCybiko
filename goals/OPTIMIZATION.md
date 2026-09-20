@@ -64,6 +64,10 @@ Current block-discovery gate:
   tests prove the semantics before runtime integration.
 - `cybiko-block-scan` now reports blocks fully supported by the semantic
   executor, separately from broader tier-one classification.
+- `cybiko-block-scan` now also reports ranked opcode high-byte families that
+  make a tier-one block miss semantic-executor coverage. This turns the next
+  executor expansion into a measured backlog rather than another broad
+  interpreter tweak.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -82,6 +86,30 @@ executing cache entries that contain only the classified straight-line forms.
 This is deliberately tracked as an optimization goal, not as a runtime speed
 claim: the Vita frontend still runs the interpreter until the semantic
 execution tier is wired into `h8s_cpu_run`.
+
+Semantic executor gap scan, max 32 instructions per candidate start, using the
+locally available Classic V2 candidate blobs:
+
+| Image | Semantic gap blocks | Unsupported insns in tier-one blocks | Top gap families |
+| --- | ---: | ---: | --- |
+| Classic V2 boot (`emu_rom.bin`) | 560 | 896 | `0x11` 21.54%, `0x10` 16.18%, `0x12` 13.50%, `0x1a` 9.93%, `0x64` 9.93% |
+| Classic V2 flash (`emu_flash.bin`) | 15,418 | 19,525 | `0x0b` 7.73%, `0x13` 6.20%, `0x10` 5.47%, `0x11` 5.45%, `0x60` 5.19% |
+| Classic V2 flash 512K (`emu_flash_512k.bin`) | 14,980 | 18,772 | `0x0b` 6.02%, `0x10` 5.69%, `0x11` 5.67%, `0x13` 5.44%, `0x60` 5.40% |
+| Classic V2 CyOS (`emu_cyos.bin`) | 1,889 | 2,362 | `0x73` 19.81%, `0x10` 19.22%, `0x11` 13.63%, `0x64` 9.48%, `0x72` 7.62% |
+
+Next semantic-executor targets, in order:
+
+1. Complete non-memory shift/rotate coverage for `0x10`-`0x13`; this is the
+   largest boot-ROM gap and appears in every local image.
+2. Complete remaining `ADDS`/`SUBS` register/immediate subforms in `0x0b` and
+   `0x1b`; these are especially visible in flash scans.
+3. Split `0x60`-`0x65` and `0x72`-`0x74` by exact addressing mode before adding
+   semantics. Only pure register or immutable-ROM-immediate forms belong in the
+   first executor tier; RAM/I/O forms must remain interpreter exits.
+
+Do not wire semantic block execution into the Vita runtime until these expanded
+families pass standalone CPU-state tests and the scanner shows materially higher
+cross-firmware coverage.
 
 Executed opcode profile gate:
 
@@ -179,6 +207,8 @@ starvation with frame dropping.
 
 - [MAME CPU core concepts](https://wiki.mamedev.org/index.php/Core_Concepts)
 - [MAME H8 core](https://github.com/mamedev/mame/blob/master/src/devices/cpu/h8/h8.h)
+- [MAME H8 execution core](https://github.com/mamedev/mame/blob/master/src/devices/cpu/h8/h8.cpp)
+- [MAME H8S/2000 device wrapper](https://github.com/mamedev/mame/blob/master/src/devices/cpu/h8/h8s2000.cpp)
 - [QEMU TCG translation blocks](https://www.qemu.org/docs/master/devel/tcg.html)
 - [Cached interpreter overview](https://emudev.org/2021/01/31/cached-interpreter.html)
 - [melonDS JIT/cached-interpreter notes](https://melonds.kuribo64.net/comments.php?id=138)

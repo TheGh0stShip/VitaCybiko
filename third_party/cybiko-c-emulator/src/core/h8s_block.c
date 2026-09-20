@@ -388,7 +388,7 @@ static void block_set_arithmetic_l(h8s_block_cpu_state_t *state, uint32_t d,
         (subtract ? d < s : result < d));
 }
 
-static bool semantic_instruction_supported(uint16_t op)
+bool h8s_semantic_instruction_supported(uint16_t op)
 {
     uint8_t hi = (uint8_t)(op >> 8);
     uint8_t lo = (uint8_t)op;
@@ -428,7 +428,7 @@ bool h8s_semantic_block_supported(const h8s_block_t *block)
 {
     if (!block || !block->executable || block->instructions == 0) return false;
     for (unsigned i = 0; i < block->instructions; ++i) {
-        if (!semantic_instruction_supported(block->decoded[i].op))
+        if (!h8s_semantic_instruction_supported(block->decoded[i].op))
             return false;
     }
     return true;

@@ -16,6 +16,28 @@ static const char *stop_name(h8s_block_stop_t stop)
     return "unknown";
 }
 
+static void print_top_semantic_gaps(const unsigned long long counts[256],
+                                    unsigned long long total)
+{
+    bool printed[256] = {0};
+    printf("semantic_gap_unsupported_instructions=%llu\n", total);
+    for (unsigned rank = 0; rank < 12; ++rank) {
+        unsigned best = 0;
+        unsigned long long best_count = 0;
+        for (unsigned hi = 0; hi < 256; ++hi) {
+            if (!printed[hi] && counts[hi] > best_count) {
+                best_count = counts[hi];
+                best = hi;
+            }
+        }
+        if (!best_count) break;
+        printed[best] = true;
+        printf("semantic_gap_top%02u_hi=0x%02x count=%llu share=%.2f%%\n",
+               rank + 1, best, best_count,
+               total ? 100.0 * (double)best_count / (double)total : 0.0);
+    }
+}
+
 static unsigned parse_uint(const char *text, unsigned fallback)
 {
     if (!text) return fallback;
@@ -67,6 +89,9 @@ int main(int argc, char **argv)
     unsigned long long executable_prefix_instructions = 0;
     unsigned long long semantic_blocks = 0;
     unsigned long long semantic_instructions = 0;
+    unsigned long long semantic_gap_blocks = 0;
+    unsigned long long semantic_gap_instructions = 0;
+    unsigned long long semantic_gap_hi[256] = {0};
     unsigned long long bytes = 0;
     unsigned long long stops[H8S_BLOCK_STOP_UNSUPPORTED + 1] = {0};
     unsigned longest = 0;
@@ -83,6 +108,19 @@ int main(int argc, char **argv)
         if (h8s_semantic_block_supported(&block)) {
             semantic_blocks++;
             semantic_instructions += block.instructions;
+        } else if (block.executable && block.instructions > 0) {
+            bool counted_block = false;
+            for (unsigned i = 0; i < block.instructions; ++i) {
+                uint16_t op = block.decoded[i].op;
+                if (!h8s_semantic_instruction_supported(op)) {
+                    semantic_gap_hi[(uint8_t)(op >> 8)]++;
+                    semantic_gap_instructions++;
+                    if (!counted_block) {
+                        semantic_gap_blocks++;
+                        counted_block = true;
+                    }
+                }
+            }
         }
         bytes += block.bytes;
         if (block.stop <= H8S_BLOCK_STOP_UNSUPPORTED) stops[block.stop]++;
@@ -103,6 +141,8 @@ int main(int argc, char **argv)
            executable_blocks, executable_prefix_instructions);
     printf("semantic_supported_blocks=%llu semantic_supported_instructions=%llu\n",
            semantic_blocks, semantic_instructions);
+    printf("semantic_gap_blocks=%llu\n", semantic_gap_blocks);
+    print_top_semantic_gaps(semantic_gap_hi, semantic_gap_instructions);
     printf("longest_block_pc=0x%06x longest_instructions=%u\n", longest_pc, longest);
     for (unsigned i = 0; i <= H8S_BLOCK_STOP_UNSUPPORTED; ++i)
         printf("stop_%s=%llu\n", stop_name((h8s_block_stop_t)i), stops[i]);
