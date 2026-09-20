@@ -130,6 +130,11 @@ Current block-discovery gate:
   flash. Future runtime block-cache integration can ask the CPU for a
   const-backed ROM window instead of duplicating machine-specific address
   mapping, and RAM/I/O PCs are rejected before any decoded-block lookup.
+- A guarded CPU-level semantic ROM block helper now executes a narrow Bcc-only
+  cached block from immutable boot/flash when there is enough cycle budget and
+  no pending unmasked interrupt. It updates registers, CCR, PC, and cycle count
+  as one bounded operation, but remains isolated from `h8s_cpu_run` until the
+  frame-loop equivalence gate is added.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -220,6 +225,10 @@ Branch edge-cache gate:
 - `h8s_cpu_get_immutable_fetch_window` is the runtime mapping gate. Unit tests
   cover mirrored boot ROM, model-profile flash, and rejection of mutable
   on-chip RAM plus I/O space.
+- `h8s_cpu_try_execute_semantic_rom_block` is the first CPU-facing runtime
+  experiment for the decoded block tier. Unit tests cover successful Bcc
+  execution from boot ROM plus rejection of mutable RAM, insufficient cycle
+  budget, and pending unmasked IRQs.
 
 Current Classic V2 static chain-edge scan:
 

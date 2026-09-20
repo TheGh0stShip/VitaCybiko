@@ -2,6 +2,7 @@
 #define CYBIKO_H8S_CPU_H
 
 #include "types.h"
+#include "h8s_block.h"
 
 typedef struct address_bus address_bus_t;
 
@@ -45,6 +46,8 @@ typedef struct h8s_cpu {
     uint16_t rom_block_words[H8S_ROM_FETCH_BLOCK_WORDS];
     uint8_t rom_block_count;
     bool rom_block_valid;
+    h8s_block_cache_t semantic_block_cache;
+    h8s_branch_edge_cache_t semantic_edge_cache;
 } h8s_cpu_t;
 
 void     h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus);
@@ -52,6 +55,8 @@ void     h8s_cpu_reset(h8s_cpu_t *cpu);
 void     h8s_cpu_step(h8s_cpu_t *cpu);
 bool     h8s_cpu_get_immutable_fetch_window(h8s_cpu_t *cpu, const uint8_t **data,
                                             uint32_t *base, uint32_t *size);
+bool     h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
+                                                int *cycles);
 /* Execute an event-bounded Classic batch without a host call per guest
  * instruction. Debts and I/O exits preserve the single-step ordering. */
 int      h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,

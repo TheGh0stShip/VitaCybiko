@@ -1846,6 +1846,8 @@ void h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus) {
     memset(cpu, 0, sizeof(*cpu));
     cpu->bus = bus;
     cpu->ccr = 0x80;
+    h8s_block_cache_init(&cpu->semantic_block_cache, H8S_BLOCK_MAX_INSTRUCTIONS);
+    h8s_branch_edge_cache_init(&cpu->semantic_edge_cache);
 }
 
 void h8s_cpu_reset(h8s_cpu_t *cpu) {
@@ -1865,6 +1867,8 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->rom_block_base = 0;
     cpu->rom_block_count = 0;
     cpu->rom_block_valid = false;
+    h8s_block_cache_clear(&cpu->semantic_block_cache);
+    h8s_branch_edge_cache_clear(&cpu->semantic_edge_cache);
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
@@ -1912,6 +1916,56 @@ bool h8s_cpu_get_immutable_fetch_window(h8s_cpu_t *cpu, const uint8_t **data,
     *data = cpu->fetch_data;
     *base = cpu->fetch_base;
     *size = cpu->fetch_end - cpu->fetch_base;
+    return true;
+}
+
+bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
+                                            int *cycles)
+{
+    if (!cpu || !cycles || limit <= 1 || cpu->halted || cpu->irq_deferred)
+        return false;
+    if (cpu->pending_irq_count && !(cpu->ccr & CCR_I))
+        return false;
+
+    const uint8_t *data = NULL;
+    uint32_t base = 0, size = 0;
+    uint32_t start_pc = cpu->pc & 0xffffff;
+    if (!h8s_cpu_get_immutable_fetch_window(cpu, &data, &base, &size))
+        return false;
+    if (start_pc < base || start_pc >= base + size)
+        return false;
+
+    uint32_t offset = start_pc - base;
+    const h8s_block_t *block =
+        h8s_block_cache_get(&cpu->semantic_block_cache, data, size, offset);
+    if (!block || !h8s_semantic_block_supported(block))
+        return false;
+    if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_BCC16)
+        return false;
+
+    int block_cycles = (int)block->instructions + 1; /* Include branch exit. */
+    if (block_cycles <= 1 || block_cycles > limit)
+        return false;
+
+    h8s_block_cpu_state_t state = {.ccr = cpu->ccr, .pc = offset};
+    for (unsigned i = 0; i < 8; ++i)
+        state.er[i] = cpu->er[i];
+
+    uint32_t next_offset = 0;
+    if (!h8s_execute_semantic_block_exit(block, &cpu->semantic_edge_cache,
+                                         &state, &next_offset))
+        return false;
+    if (next_offset >= size)
+        return false;
+
+    cpu->last_start_pc = start_pc;
+    for (unsigned i = 0; i < 8; ++i)
+        cpu->er[i] = state.er[i];
+    cpu->ccr = state.ccr;
+    cpu->pc = (base + next_offset) & 0xffffff;
+    cpu->cycle_count += (uint64_t)block_cycles;
+    *cycles = block_cycles;
     return true;
 }
 

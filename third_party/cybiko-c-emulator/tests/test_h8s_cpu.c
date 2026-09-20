@@ -383,6 +383,55 @@ static void test_immutable_fetch_window_rejects_ram_and_io(void) {
     teardown();
 }
 
+static void test_semantic_rom_block_fast_path_executes_bcc(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0xF800); /* MOV.B #0,R0L -> Z */
+    memory_write16(&bus.boot_rom, 0x102, 0x4604); /* BNE 0x108; should fall through. */
+    memory_write16(&bus.boot_rom, 0x104, 0x0B01); /* Fall-through target. */
+    memory_write16(&bus.boot_rom, 0x106, 0x5470);
+    memory_write16(&bus.boot_rom, 0x108, 0x0B02);
+    bus_build_memory_map(&bus);
+
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+    cpu.er[0] = 0xffffffffu;
+    int cycles = 0;
+    TEST_CHECK(h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cycles == 2);
+    TEST_CHECK(cpu.pc == 0x8104);
+    TEST_CHECK((cpu.er[0] & 0xff) == 0);
+    TEST_CHECK(cpu.ccr & CCR_Z);
+    TEST_CHECK(cpu.cycle_count == 2);
+    teardown();
+}
+
+static void test_semantic_rom_block_fast_path_rejects_guards(void) {
+    setup();
+    write_code16(0, 0xF800);
+    write_code16(2, 0x4602);
+    int cycles = 0x1234;
+    TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cycles == 0x1234);
+    TEST_CHECK(cpu.pc == CODE_BASE);
+    TEST_CHECK(cpu.cycle_count == 0);
+
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0xF800);
+    memory_write16(&bus.boot_rom, 0x102, 0x4602);
+    bus_build_memory_map(&bus);
+    cpu.pc = 0x8100;
+    TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 1, &cycles));
+    TEST_CHECK(cpu.pc == 0x8100);
+
+    cpu.pending_irqs[0] = 12;
+    cpu.pending_irq_count = 1;
+    cpu.ccr = 0;
+    TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cpu.pc == 0x8100);
+    teardown();
+}
+
 static void test_long_displacement_store(void) {
     setup();
     cpu.er[1] = CODE_BASE + 0x100;
@@ -629,6 +678,8 @@ TEST_LIST = {
     {"instruction_mapping_cache", test_instruction_mapping_cache},
     {"immutable_fetch_window_accepts_boot_and_flash", test_immutable_fetch_window_accepts_boot_and_flash},
     {"immutable_fetch_window_rejects_ram_and_io", test_immutable_fetch_window_rejects_ram_and_io},
+    {"semantic_rom_block_fast_path_executes_bcc", test_semantic_rom_block_fast_path_executes_bcc},
+    {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"long_displacement_store", test_long_displacement_store},
     {"interrupt_frame", test_interrupt_frame},
     {"trap_and_task_frame", test_trap_and_task_frame},
