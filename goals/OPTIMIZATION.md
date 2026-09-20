@@ -1749,6 +1749,22 @@ Validation:
 - same-command 120-frame Xtreme callgrind dropped from about 6.731B to 6.634B
   total guest-emulator instructions after the narrow branch specialization.
 
+Accepted measured branch-specialization extension: after the first branch
+specialization proved beneficial, the same Xtreme branch profile still showed
+material BHI/BLS and signed-compare branch traffic. Extending only the measured
+hot cases (`BHI`, `BLS`, `BGE`, `BLT`, and `BLE`) passed focused CPU tests and
+three-model smoke while preserving the existing generic evaluator for the
+remaining rare branch conditions.
+
+Validation:
+
+- focused H8S CPU tests passed;
+- three-model 600-frame smoke passed with Classic V1 1.029s, Classic V2
+  0.412s, and Xtreme 2.029s in one direct run; host seconds are noisy but the
+  boot/menu workloads remained green;
+- same-command 120-frame Xtreme callgrind dropped again from about 6.634B to
+  6.609B total guest-emulator instructions.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

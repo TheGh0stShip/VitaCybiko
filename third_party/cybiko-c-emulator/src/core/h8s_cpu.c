@@ -804,11 +804,27 @@ CPU_INLINE bool execute_hot_branch8(h8s_cpu_t *cpu, uint16_t op)
     case 0x0:
         taken = true;
         break;
+    case 0x2:
+        taken = (cpu->ccr & (CCR_C | CCR_Z)) == 0;
+        break;
+    case 0x3:
+        taken = (cpu->ccr & (CCR_C | CCR_Z)) != 0;
+        break;
     case 0x6:
         taken = (cpu->ccr & CCR_Z) == 0;
         break;
     case 0x7:
         taken = (cpu->ccr & CCR_Z) != 0;
+        break;
+    case 0xc:
+        taken = (((cpu->ccr >> BIT_N) ^ (cpu->ccr >> BIT_V)) & 1u) == 0;
+        break;
+    case 0xd:
+        taken = (((cpu->ccr >> BIT_N) ^ (cpu->ccr >> BIT_V)) & 1u) != 0;
+        break;
+    case 0xf:
+        taken = (cpu->ccr & CCR_Z) != 0 ||
+                (((cpu->ccr >> BIT_N) ^ (cpu->ccr >> BIT_V)) & 1u) != 0;
         break;
     default:
         taken = evaluate_condition(cpu, cond);
