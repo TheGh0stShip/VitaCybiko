@@ -431,10 +431,11 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     setup();
     write_code16(0, 0xF800);
     write_code16(2, 0x4602);
+    cpu.pc = 0xffff80; /* I/O space cannot provide a fetch window. */
     int cycles = 0x1234;
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
     TEST_CHECK(cycles == 0x1234);
-    TEST_CHECK(cpu.pc == CODE_BASE);
+    TEST_CHECK(cpu.pc == 0xffff80);
     TEST_CHECK(cpu.cycle_count == 0);
     TEST_CHECK(cpu.semantic_fast_rejects == 1);
     TEST_CHECK(cpu.semantic_fast_reject_window == 1);

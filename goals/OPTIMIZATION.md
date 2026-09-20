@@ -964,6 +964,30 @@ work should build on this larger event window: re-profile hot semantic reject
 PCs after the timer fix, then revisit trace/call/MOV.L coverage under the new
 scheduler shape rather than relying on pre-fix reject data.
 
+Post-Timer16 re-profile: after the scheduler fix, Xtreme's old tiny-deadline
+problem is gone and the next semantic-fast bottleneck shifted to mutable
+external-RAM code windows. Host-only profiling now reports top
+`window_reject` PCs with the first two opcode words. Current 600-frame Xtreme
+profile highlights:
+
+- `0x49b92a`: `0x735a 0x47fa` around 4.6k rejects;
+- `0x488806`: `0x6c4a 0xf200` around 31k rejects after attempting mutable
+  semantic execution;
+- `0x49b928`: `0x2ab3 0x735a`;
+- `0x4adf4e`: `0x6b02 0xfea6`;
+- several `0x4883xx` / `0x4888xx` sites that include `0x0100` MOV.L forms.
+
+Rejected follow-up experiment: decoding and executing semantic blocks directly
+from mutable RAM without caching was tested to avoid stale self-modifying-code
+risk. A focused equivalence test passed and accepted semantic fast blocks rose
+from about 88k to about 209k, but direct Xtreme timing regressed/noised
+(`1.31` s release, `1.62` s profile), and `window` rejects remained high
+because unsupported RAM memory forms became the dominant sites. The runtime path
+was removed. The evidence says the next RAM-code tier must not re-decode live
+RAM blocks every probe; it needs either safe invalidation/generation tracking
+for RAM block caching or targeted memory-form support for the observed RAM
+loops.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

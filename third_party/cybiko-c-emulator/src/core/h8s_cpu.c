@@ -33,6 +33,7 @@ typedef enum {
 #ifdef CYBIKO_OPCODE_PROFILE
 #define BRANCH_PROFILE_TARGET_SLOTS 4096
 #define SEMANTIC_REJECT_PROFILE_SLOTS 4096
+#define WINDOW_PROFILE_SLOTS 4096
 static uint64_t opcode_profile_hi[256];
 static uint64_t opcode_profile_exact[65536];
 static uint64_t prefix0100_profile_op2[65536];
@@ -46,6 +47,10 @@ static uint64_t branch_profile_target_count[BRANCH_PROFILE_TARGET_SLOTS];
 static uint32_t semantic_reject_profile_tag[SEMANTIC_REJECT_PROFILE_SLOTS];
 static uint8_t semantic_reject_profile_reason[SEMANTIC_REJECT_PROFILE_SLOTS];
 static uint64_t semantic_reject_profile_count[SEMANTIC_REJECT_PROFILE_SLOTS];
+static uint32_t window_profile_tag[WINDOW_PROFILE_SLOTS];
+static uint16_t window_profile_op0[WINDOW_PROFILE_SLOTS];
+static uint16_t window_profile_op1[WINDOW_PROFILE_SLOTS];
+static uint64_t window_profile_count[WINDOW_PROFILE_SLOTS];
 static bool opcode_profile_registered;
 
 static void opcode_profile_dump(void) {
@@ -165,6 +170,23 @@ static void opcode_profile_dump(void) {
                 rank + 1, semantic_reject_profile_tag[best], name,
                 (unsigned long long)best_count);
     }
+    bool window_printed[WINDOW_PROFILE_SLOTS] = {0};
+    for (unsigned rank = 0; rank < 16; ++rank) {
+        unsigned best = 0;
+        uint64_t best_count = 0;
+        for (unsigned i = 0; i < WINDOW_PROFILE_SLOTS; ++i) {
+            if (!window_printed[i] && window_profile_count[i] > best_count) {
+                best_count = window_profile_count[i];
+                best = i;
+            }
+        }
+        if (!best_count) break;
+        window_printed[best] = true;
+        fprintf(stderr, "window_reject_top%02u_pc=0x%06x op0=0x%04x op1=0x%04x count=%llu\n",
+                rank + 1, window_profile_tag[best],
+                window_profile_op0[best], window_profile_op1[best],
+                (unsigned long long)best_count);
+    }
 }
 
 CPU_INLINE void opcode_profile_record(uint16_t op) {
@@ -259,6 +281,29 @@ CPU_INLINE void semantic_reject_profile_record(uint32_t pc, unsigned reason) {
         semantic_reject_profile_count[index]++;
     }
 }
+
+CPU_INLINE void semantic_window_profile_record(h8s_cpu_t *cpu, uint32_t pc) {
+    if (!opcode_profile_registered) {
+        atexit(opcode_profile_dump);
+        opcode_profile_registered = true;
+    }
+    if (!cpu || !cpu->fetch_data || pc < cpu->fetch_base || pc + 3 >= cpu->fetch_end)
+        return;
+    const uint8_t *p = cpu->fetch_data + (pc - cpu->fetch_base);
+    uint16_t op0 = (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
+    uint16_t op1 = (uint16_t)(((uint16_t)p[2] << 8) | p[3]);
+    unsigned index = ((pc >> 1) ^ (pc >> 12) ^ op0 ^ (op1 << 1)) &
+                     (WINDOW_PROFILE_SLOTS - 1);
+    if (window_profile_count[index] == 0 ||
+        (window_profile_tag[index] == (pc & 0xffffff) &&
+         window_profile_op0[index] == op0 &&
+         window_profile_op1[index] == op1)) {
+        window_profile_tag[index] = pc & 0xffffff;
+        window_profile_op0[index] = op0;
+        window_profile_op1[index] = op1;
+        window_profile_count[index]++;
+    }
+}
 #else
 CPU_INLINE void opcode_profile_record(uint16_t op) {
     (void)op;
@@ -275,6 +320,9 @@ CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target
 }
 CPU_INLINE void semantic_reject_profile_record(uint32_t pc, unsigned reason) {
     (void)pc; (void)reason;
+}
+CPU_INLINE void semantic_window_profile_record(h8s_cpu_t *cpu, uint32_t pc) {
+    (void)cpu; (void)pc;
 }
 #endif
 
@@ -2192,6 +2240,7 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     const uint8_t *data = NULL;
     uint32_t base = 0, size = 0;
     if (!h8s_cpu_get_immutable_fetch_window(cpu, &data, &base, &size)) {
+        semantic_window_profile_record(cpu, start_pc);
         return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_window,
                                                  SEM_REJECT_WINDOW, start_pc);
     }
