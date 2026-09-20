@@ -1495,6 +1495,25 @@ This is accepted as a targeted cheap interpreter fast path. It does not solve
 the remaining Xtreme gap by itself, but it proves the profitable direction:
 specialize hot opcodes cheaply before escalating to an ARMv7 translation tier.
 
+Accepted follow-up targeted displacement-memory fast path and CI leak fix: the
+same cheap interpreter hook now also covers `MOV.B/W @(d:16,ERn)` forms when
+the computed data address is plain memory. The helper fetches the displacement
+transactionally and restores the fetch state if it must fall back to the full
+decoder. A focused test covers the 4-byte path. While validating this, GitHub
+Actions exposed that `test_semantic_fast_reject_reason_counters` leaked a
+temporary boot ROM allocation under LeakSanitizer; the test now frees the first
+boot ROM before reinitializing it.
+
+Validation:
+
+- local ASan/UBSan/leak build passed all 17 core host tests with
+  `ASAN_OPTIONS=detect_leaks=1`;
+- release host suite passed 17/17 and Python tests passed 11/11;
+- Vita package build passed;
+- Xtreme direct 600-frame smoke passed at `cpu_seconds=1.196039`, with about
+  3.24M two-byte hot-path instructions and 852k four-byte hot-path
+  instructions.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

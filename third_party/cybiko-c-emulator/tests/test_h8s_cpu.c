@@ -544,6 +544,31 @@ static void test_hot_plain_memory_2b_step_fast_path(void) {
     teardown();
 }
 
+static void test_hot_plain_memory_4b_step_fast_path(void) {
+    setup();
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    uint32_t base = bus.machine->ram_base + 0x300;
+    uint32_t address = base + 6;
+    bus_write8(&bus, address, 0x7f);
+    write_code16(0, 0x6E10); /* MOV.B @(d:16,ER1),R0H */
+    write_code16(2, 0x0006);
+    cpu.pc = CODE_BASE;
+    cpu.ccr = CCR_I;
+    cpu.er[1] = base;
+
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.pc == CODE_BASE + 4);
+    TEST_CHECK(((cpu.er[0] >> 8) & 0xff) == 0x7f);
+    TEST_CHECK(cpu.hot_plain_memory_4b_instructions == 1);
+    TEST_CHECK(cpu.cycle_count == 1);
+    TEST_CHECK(!(cpu.ccr & CCR_Z));
+
+    memory_free(&bus.external_ram);
+    teardown();
+}
+
 static void test_semantic_mutable_reject_cache_invalidates_on_code_write(void) {
     setup();
     memory_init(&bus.external_ram, bus.machine->ram_size, true);
@@ -756,6 +781,7 @@ static void test_semantic_fast_reject_reason_counters(void) {
     TEST_CHECK(cpu.semantic_reject_backoff == H8S_SEMANTIC_REJECT_BACKOFF);
 
     h8s_cpu_reset(&cpu);
+    memory_free(&bus.boot_rom);
     memory_init(&bus.boot_rom, 32768, true);
     memory_write16(&bus.boot_rom, 0x100, 0xF800); /* MOV.B #0,R0L -> Z */
     memory_write16(&bus.boot_rom, 0x102, 0x0B01); /* ADDS #2,ER1 */
@@ -1057,6 +1083,7 @@ TEST_LIST = {
     {"semantic_rom_block_fast_path_executes_branch_only_rts", test_semantic_rom_block_fast_path_executes_branch_only_rts},
     {"semantic_mutable_block_fast_path_matches_steps", test_semantic_mutable_block_fast_path_matches_steps},
     {"hot_plain_memory_2b_step_fast_path", test_hot_plain_memory_2b_step_fast_path},
+    {"hot_plain_memory_4b_step_fast_path", test_hot_plain_memory_4b_step_fast_path},
     {"semantic_mutable_reject_cache_invalidates_on_code_write", test_semantic_mutable_reject_cache_invalidates_on_code_write},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},

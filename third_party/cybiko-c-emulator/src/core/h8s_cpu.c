@@ -622,6 +622,64 @@ CPU_INLINE bool execute_hot_plain_memory_2b(h8s_cpu_t *cpu, uint16_t op)
     return true;
 }
 
+CPU_INLINE bool execute_hot_plain_memory_4b(h8s_cpu_t *cpu, uint16_t op)
+{
+    uint8_t hi = (uint8_t)(op >> 8);
+    if (hi != 0x6e && hi != 0x6f)
+        return false;
+
+    uint32_t saved_pc = cpu->pc;
+    uint32_t saved_prefetch_pc = cpu->prefetch_pc;
+    uint16_t saved_prefetch_word = cpu->prefetch_word;
+    bool saved_prefetch_valid = cpu->prefetch_valid;
+
+    uint8_t lo = (uint8_t)op;
+    uint16_t disp = fetch16(cpu);
+    bool write = (lo & 0x80u) != 0;
+    unsigned reg = lo & 0xfu;
+    unsigned address_reg = (lo >> 4) & 0x7u;
+    unsigned bytes = hi == 0x6e ? 1u : 2u;
+    uint32_t address =
+        (cpu->er[address_reg] + (uint32_t)(int32_t)(int16_t)disp) & 0xffffffu;
+
+    if (write) {
+        if (!bus_is_plain_write_range(cpu->bus, address, bytes))
+            goto restore_and_fallback;
+        uint32_t value = bytes == 1 ? get_reg_b(cpu, (int)reg) :
+                                      get_r(cpu, (int)reg);
+        if (bytes == 1) {
+            bus_write8(cpu->bus, address, (uint8_t)value);
+            set_nz_b(cpu, (int)value);
+        } else {
+            bus_write16(cpu->bus, address, (uint16_t)value);
+            set_nz_w(cpu, (int)value);
+        }
+    } else {
+        const uint8_t *ptr = bus_plain_read_ptr(cpu->bus, address, bytes);
+        if (!ptr)
+            goto restore_and_fallback;
+        if (bytes == 1) {
+            uint8_t value = ptr[0];
+            set_reg_b(cpu, (int)reg, value);
+            set_nz_b(cpu, value);
+        } else {
+            uint16_t value = (uint16_t)((ptr[0] << 8) | ptr[1]);
+            set_r(cpu, (int)reg, value);
+            set_nz_w(cpu, value);
+        }
+    }
+    set_flag(cpu, BIT_V, false);
+    cpu->hot_plain_memory_4b_instructions++;
+    return true;
+
+restore_and_fallback:
+    cpu->pc = saved_pc;
+    cpu->prefetch_pc = saved_prefetch_pc;
+    cpu->prefetch_word = saved_prefetch_word;
+    cpu->prefetch_valid = saved_prefetch_valid;
+    return false;
+}
+
 /* ---- Branch condition evaluator ---- */
 static bool evaluate_condition(const h8s_cpu_t *cpu, int cond) {
     bool c = get_flag(cpu, BIT_C);
@@ -2263,6 +2321,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->semantic_mutable_prefix_blocks = 0;
     cpu->semantic_mutable_prefix_cycles = 0;
     cpu->hot_plain_memory_2b_instructions = 0;
+    cpu->hot_plain_memory_4b_instructions = 0;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
@@ -2392,6 +2451,10 @@ CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
     uint16_t op = fetch16(cpu);
     opcode_profile_record(op);
     if (execute_hot_plain_memory_2b(cpu, op)) {
+        cpu->cycle_count++;
+        return;
+    }
+    if (execute_hot_plain_memory_4b(cpu, op)) {
         cpu->cycle_count++;
         return;
     }
