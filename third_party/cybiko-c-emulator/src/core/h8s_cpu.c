@@ -453,13 +453,27 @@ static inline void set_nz_b(h8s_cpu_t *cpu, int result) {
     cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z)) |
                         ((value >> 4) & CCR_N) | ((value == 0) << BIT_Z));
 }
+static inline void set_nz_b_clear_v(h8s_cpu_t *cpu, int result) {
+    uint32_t value = (uint8_t)result;
+    cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z | CCR_V)) |
+                        ((value >> 4) & CCR_N) | ((value == 0) << BIT_Z));
+}
 static inline void set_nz_w(h8s_cpu_t *cpu, int result) {
     uint32_t value = (uint16_t)result;
     cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z)) |
                         ((value >> 12) & CCR_N) | ((value == 0) << BIT_Z));
 }
+static inline void set_nz_w_clear_v(h8s_cpu_t *cpu, int result) {
+    uint32_t value = (uint16_t)result;
+    cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z | CCR_V)) |
+                        ((value >> 12) & CCR_N) | ((value == 0) << BIT_Z));
+}
 static inline void set_nz_l(h8s_cpu_t *cpu, int32_t result) {
     cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z)) |
+                        (((uint32_t)result >> 28) & CCR_N) | ((result == 0) << BIT_Z));
+}
+static inline void set_nz_l_clear_v(h8s_cpu_t *cpu, int32_t result) {
+    cpu->ccr = (uint8_t)((cpu->ccr & ~(CCR_N | CCR_Z | CCR_V)) |
                         (((uint32_t)result >> 28) & CCR_N) | ((result == 0) << BIT_Z));
 }
 
@@ -603,10 +617,10 @@ CPU_INLINE bool execute_hot_plain_memory_2b(h8s_cpu_t *cpu, uint16_t op)
             cpu->er[address_reg] = (cpu->er[address_reg] - bytes) & 0xffffffffu;
         if (bytes == 1) {
             bus_write8(cpu->bus, address, (uint8_t)value);
-            set_nz_b(cpu, (int)value);
+            set_nz_b_clear_v(cpu, (int)value);
         } else {
             bus_write16(cpu->bus, address, (uint16_t)value);
-            set_nz_w(cpu, (int)value);
+            set_nz_w_clear_v(cpu, (int)value);
         }
     } else {
         const uint8_t *ptr = bus_plain_read_ptr(cpu->bus, address, bytes);
@@ -617,14 +631,13 @@ CPU_INLINE bool execute_hot_plain_memory_2b(h8s_cpu_t *cpu, uint16_t op)
         if (bytes == 1) {
             uint8_t value = ptr[0];
             set_reg_b(cpu, (int)reg, value);
-            set_nz_b(cpu, value);
+            set_nz_b_clear_v(cpu, value);
         } else {
             uint16_t value = (uint16_t)((ptr[0] << 8) | ptr[1]);
             set_r(cpu, (int)reg, value);
-            set_nz_w(cpu, value);
+            set_nz_w_clear_v(cpu, value);
         }
     }
-    set_flag(cpu, BIT_V, false);
     cpu->hot_plain_memory_2b_instructions++;
     return true;
 }
@@ -653,10 +666,10 @@ CPU_INLINE bool execute_hot_plain_memory_4b(h8s_cpu_t *cpu, uint16_t op)
                                       get_r(cpu, (int)reg);
         if (bytes == 1) {
             bus_write8(cpu->bus, address, (uint8_t)value);
-            set_nz_b(cpu, (int)value);
+            set_nz_b_clear_v(cpu, (int)value);
         } else {
             bus_write16(cpu->bus, address, (uint16_t)value);
-            set_nz_w(cpu, (int)value);
+            set_nz_w_clear_v(cpu, (int)value);
         }
     } else {
         const uint8_t *ptr = bus_plain_read_ptr(cpu->bus, address, bytes);
@@ -665,14 +678,13 @@ CPU_INLINE bool execute_hot_plain_memory_4b(h8s_cpu_t *cpu, uint16_t op)
         if (bytes == 1) {
             uint8_t value = ptr[0];
             set_reg_b(cpu, (int)reg, value);
-            set_nz_b(cpu, value);
+            set_nz_b_clear_v(cpu, value);
         } else {
             uint16_t value = (uint16_t)((ptr[0] << 8) | ptr[1]);
             set_r(cpu, (int)reg, value);
-            set_nz_w(cpu, value);
+            set_nz_w_clear_v(cpu, value);
         }
     }
-    set_flag(cpu, BIT_V, false);
     cpu->hot_plain_memory_4b_instructions++;
     return true;
 
@@ -730,7 +742,7 @@ CPU_INLINE bool execute_hot_prefix0100_plain_memory(h8s_cpu_t *cpu, uint16_t op)
             cpu->er[source_reg] = (cpu->er[source_reg] - 4u) & 0xffffffffu;
         uint32_t value = cpu->er[reg];
         bus_write32(cpu->bus, address, value);
-        set_nz_l(cpu, (int32_t)value);
+        set_nz_l_clear_v(cpu, (int32_t)value);
     } else {
         const uint8_t *ptr = bus_plain_read_ptr(cpu->bus, address, 4);
         if (!ptr)
@@ -742,9 +754,8 @@ CPU_INLINE bool execute_hot_prefix0100_plain_memory(h8s_cpu_t *cpu, uint16_t op)
                          ((uint32_t)ptr[2] << 8) |
                          ptr[3];
         cpu->er[reg] = value;
-        set_nz_l(cpu, (int32_t)value);
+        set_nz_l_clear_v(cpu, (int32_t)value);
     }
-    set_flag(cpu, BIT_V, false);
     cpu->hot_prefix0100_plain_memory_instructions++;
     return true;
 

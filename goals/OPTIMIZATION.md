@@ -1703,6 +1703,26 @@ Validation:
 - same-command 120-frame Xtreme callgrind dropped from about 7.858B to 7.277B
   total guest-emulator instructions after the unrolled refill.
 
+Accepted hot memory CCR combine: the hot plain-memory helpers were doing the
+right H8S work in two separate CCR writes (`set_nz_*` followed by clear-V).
+For the Xtreme menu/startup path those helpers fire millions of times per
+short smoke run, so the NZ update and V clear are now fused into
+`set_nz_*_clear_v` helpers used only by the hot memory fast paths. This keeps
+the generic interpreter behavior unchanged while trimming repeated flag-helper
+traffic from the measured hot path.
+
+Validation:
+
+- focused H8S CPU tests passed;
+- direct three-model 600-frame smoke passed with Classic V1 1.473s, Classic V2
+  0.691s, and Xtreme 1.591s in one run; the absolute host timings are noisy,
+  but the same functionality remained green;
+- same-command 120-frame Xtreme callgrind dropped from about 7.277B to 6.731B
+  total guest-emulator instructions, with identical fast-path work counters
+  (`semantic_fast_blocks=449071`, `semantic_mutable_fast_blocks=356240`,
+  `hot_prefix0100_plain_memory_instructions=1679846`, and
+  `hot_branch8_instructions=7328813`).
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
