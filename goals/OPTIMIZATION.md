@@ -1555,6 +1555,35 @@ Validation:
   12.7M-13.4M hot branch instructions and 2.9M-3.5M hot register-bit
   instructions per run.
 
+Rejected post-branch micro-optimizations from the 2026-09-20 profiling pass:
+the next obvious exact-opcode cluster was register-only ALU/data movement
+(`0x0f80`, `0x0fa2`, `0x0fa5`, `0x0c66`, `0x0b03`, `0x0a92`, `0x0a95`,
+`0x1b02`) plus the hot Bcc condition evaluator and immutable-ROM fetch cache.
+Three candidate patches were built, unit-tested and smoke-timed, then rejected:
+
+- a broad register-only ALU fast-path helper executed about 17.1M Xtreme
+  instructions per 600-frame smoke, but raised Xtreme from the prior reference
+  around 1.22s to 1.26s; frequency-first helper ordering and opcode-class
+  dispatch were worse, reaching about 1.72s and 1.50s respectively in the same
+  direct smoke style;
+- replacing `evaluate_condition` with direct CCR bit tests passed CPU tests but
+  measured slower against an isolated `a7d5dfe` baseline worktree
+  (baseline Xtreme 1.574s, patched Xtreme 1.626s);
+- changing the immutable ROM fetch block from 16 to 64 or 32 words, disabling
+  it globally, or disabling it only for Classic did not produce a reliable
+  three-model win. Callgrind showed `fetch16`/ROM-block refill is expensive,
+  but the existing tiny cache remains net safer for Xtreme.
+
+The useful evidence from this pass is that Xtreme still performs about 1.5M
+`h8s_cpu_run` calls per 600 frames and almost every call exits on I/O. A
+60-frame RelWithDebInfo callgrind sample attributed about 97.7% of sampled
+instructions to `h8s_cpu_run`, with `fetch16` the largest single line-level
+cost and ROM-block refill itself visible. Do not reattempt isolated
+register-ALU helpers or simple branch-condition rewrites without a stronger
+benchmark design; the next serious target should reduce the I/O-broken runner
+churn or move to a fused cached-interpreter/translation block that can absorb
+register ops, fetch, and branch exits together.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
