@@ -43,6 +43,17 @@ typedef struct {
     uint32_t pc;
 } h8s_block_cpu_state_t;
 
+typedef enum {
+    H8S_MIXED_FAILURE_NONE,
+    H8S_MIXED_FAILURE_UNSUPPORTED,
+    H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_READ,
+    H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_WRITE,
+    H8S_MIXED_FAILURE_SEMANTIC_RUN,
+    H8S_MIXED_FAILURE_BRANCH_RESOLVE,
+    H8S_MIXED_FAILURE_RETURN_READ,
+    H8S_MIXED_FAILURE_CALL_WRITE
+} h8s_mixed_failure_t;
+
 typedef struct {
     uint32_t start;
     uint32_t bytes;
@@ -154,6 +165,16 @@ bool h8s_execute_mixed_plain_block_exit(const h8s_block_t *block,
                                         uint32_t pc_base,
                                         h8s_block_cpu_state_t *state,
                                         uint32_t *next_pc);
+h8s_mixed_failure_t h8s_classify_mixed_plain_block_failure(
+                                        const h8s_block_t *block,
+                                        h8s_branch_edge_cache_t *edge_cache,
+                                        address_bus_t *bus,
+                                        uint32_t pc_base,
+                                        const h8s_block_cpu_state_t *state);
+bool h8s_execute_mixed_plain_block_prefix(const h8s_block_t *block,
+                                          address_bus_t *bus,
+                                          h8s_block_cpu_state_t *state,
+                                          int *cycles);
 bool h8s_execute_semantic_block_exit(const h8s_block_t *block,
                                      h8s_branch_edge_cache_t *edge_cache,
                                      h8s_block_cpu_state_t *state,

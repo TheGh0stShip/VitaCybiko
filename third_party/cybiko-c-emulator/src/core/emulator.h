@@ -31,6 +31,15 @@ typedef struct {
     uint64_t semantic_mutable_reject_cycle_budget;
     uint64_t semantic_mutable_reject_execute;
     uint64_t semantic_mutable_reject_target;
+    uint64_t semantic_mutable_execute_nonplain_read;
+    uint64_t semantic_mutable_execute_nonplain_write;
+    uint64_t semantic_mutable_execute_semantic_run;
+    uint64_t semantic_mutable_execute_branch_resolve;
+    uint64_t semantic_mutable_execute_return_read;
+    uint64_t semantic_mutable_execute_call_write;
+    uint64_t semantic_mutable_execute_other;
+    uint64_t semantic_mutable_prefix_blocks;
+    uint64_t semantic_mutable_prefix_cycles;
 } cybiko_cpu_stats_t;
 
 cybiko_emu_t *cybiko_create(const cybiko_hal_t *hal);

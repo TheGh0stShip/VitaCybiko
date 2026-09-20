@@ -2103,6 +2103,119 @@ static bool plain_memory_instruction_supported(const h8s_block_instruction_t *in
            (hi == 0x6e || hi == 0x6f) ? insn->bytes == 4 : false;
 }
 
+static bool dynamic_plain_memory_operand(const h8s_block_instruction_t *insn,
+                                         const h8s_block_cpu_state_t *state,
+                                         uint32_t *address,
+                                         unsigned *bytes,
+                                         bool *write)
+{
+    if (!plain_memory_instruction_supported(insn) || !state ||
+        !address || !bytes || !write)
+        return false;
+
+    uint16_t op = insn->op;
+    uint8_t hi = (uint8_t)(op >> 8);
+    uint8_t lo = (uint8_t)op;
+    uint32_t absolute32 = ((insn->imm & 0xffffu) << 16) | insn->ext;
+    unsigned address_reg = 0;
+    bool pre_decrement = false;
+
+    if (op == 0x0110 || op == 0x0120 || op == 0x0130) {
+        uint16_t op2 = (uint16_t)insn->imm;
+        if ((op2 & 0xfff8u) == 0x6d70u) {
+            *write = false;
+            *bytes = 4;
+            *address = state->er[7] & 0xffffffu;
+            return true;
+        }
+        if ((op2 & 0xfff8u) == 0x6df0u) {
+            *write = true;
+            *bytes = 4;
+            *address = (state->er[7] - 4u) & 0xffffffu;
+            return true;
+        }
+        return false;
+    }
+
+    if (op == 0x0100) {
+        uint16_t op2 = insn->bytes == 4 ? (uint16_t)insn->imm :
+                       (uint16_t)(insn->imm >> 16);
+        uint8_t hi2 = (uint8_t)(op2 >> 8);
+        uint8_t lo2 = (uint8_t)op2;
+        *write = (lo2 & 0x80) != 0;
+        *bytes = 4;
+        switch (hi2) {
+        case 0x69:
+            address_reg = (lo2 >> 4) & 0x7;
+            *address = state->er[address_reg];
+            break;
+        case 0x6d:
+            address_reg = (lo2 >> 4) & 0x7;
+            pre_decrement = *write;
+            *address = state->er[address_reg];
+            break;
+        case 0x6b:
+            *address = (lo2 & 0x20) ? absolute32 :
+                (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+            break;
+        case 0x6f:
+            address_reg = (lo2 >> 4) & 0x7;
+            *address = state->er[address_reg] +
+                (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+            break;
+        case 0x78: {
+            uint16_t op3 = (uint16_t)insn->imm;
+            *write = (op3 & 0x80) != 0;
+            address_reg = (lo2 >> 4) & 0x7;
+            uint32_t disp = ((uint32_t)insn->ext << 16) | insn->ext2;
+            *address = state->er[address_reg] + disp;
+            break;
+        }
+        default:
+            return false;
+        }
+    } else {
+        *write = (lo & 0x80) != 0;
+        switch (hi) {
+        case 0x6a:
+            *bytes = 1;
+            if ((lo >> 4) == 1 || (lo >> 4) == 3)
+                *address = absolute32;
+            else if (lo & 0x20)
+                *address = insn->imm & 0xffffffu;
+            else
+                *address = (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+            break;
+        case 0x6b:
+            *bytes = 2;
+            *address = (lo & 0x20) ? (insn->imm & 0xffffffu) :
+                (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+            break;
+        case 0x68: case 0x69:
+        case 0x6c: case 0x6d:
+            *bytes = (hi == 0x68 || hi == 0x6c) ? 1u : 2u;
+            address_reg = (lo >> 4) & 0x7;
+            pre_decrement = *write && (hi == 0x6c || hi == 0x6d);
+            *address = state->er[address_reg];
+            break;
+        case 0x6e: case 0x6f:
+            *bytes = hi == 0x6e ? 1u : 2u;
+            address_reg = (lo >> 4) & 0x7;
+            *address = state->er[address_reg] +
+                (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+            break;
+        default:
+            return false;
+        }
+    }
+
+    if (pre_decrement)
+        *address = (*address - *bytes) & 0xffffffu;
+    else
+        *address &= 0xffffffu;
+    return true;
+}
+
 static bool static_plain_memory_operand(const h8s_block_instruction_t *insn,
                                         uint32_t *address,
                                         unsigned *bytes,
@@ -2302,6 +2415,157 @@ bool h8s_execute_mixed_plain_block_exit(const h8s_block_t *block,
     }
     *state = updated;
     *next_pc = resolved;
+    return true;
+}
+
+h8s_mixed_failure_t h8s_classify_mixed_plain_block_failure(
+                                        const h8s_block_t *block,
+                                        h8s_branch_edge_cache_t *edge_cache,
+                                        address_bus_t *bus,
+                                        uint32_t pc_base,
+                                        const h8s_block_cpu_state_t *state)
+{
+    if (!block || !bus || !state || !h8s_mixed_plain_block_supported(block))
+        return H8S_MIXED_FAILURE_UNSUPPORTED;
+
+    h8s_block_cpu_state_t updated = *state;
+    unsigned i = 0;
+    while (i < block->instructions) {
+        if (plain_memory_instruction_supported(&block->decoded[i])) {
+            uint32_t address = 0;
+            unsigned bytes = 0;
+            bool write = false;
+            if (!dynamic_plain_memory_operand(&block->decoded[i], &updated,
+                                              &address, &bytes, &write))
+                return H8S_MIXED_FAILURE_UNSUPPORTED;
+            if (write) {
+                if (!bus_is_plain_write_range(bus, address, bytes))
+                    return H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_WRITE;
+            } else if (!bus_is_plain_read_range(bus, address, bytes)) {
+                return H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_READ;
+            }
+            if (!h8s_execute_plain_memory_instruction(&block->decoded[i], bus, &updated))
+                return H8S_MIXED_FAILURE_UNSUPPORTED;
+            ++i;
+            continue;
+        }
+
+        h8s_block_t run = {
+            .start = updated.pc,
+            .bytes = 0,
+            .instructions = 0,
+            .stop = H8S_BLOCK_STOP_LIMIT,
+            .stop_pc = updated.pc,
+            .executable_prefix_instructions = 0,
+            .executable = true
+        };
+        while (i < block->instructions &&
+               !plain_memory_instruction_supported(&block->decoded[i]) &&
+               run.instructions < H8S_BLOCK_MAX_INSTRUCTIONS) {
+            run.decoded[run.instructions] = block->decoded[i];
+            run.bytes += block->decoded[i].bytes;
+            run.instructions++;
+            run.executable_prefix_instructions++;
+            ++i;
+        }
+        run.stop_pc = run.start + run.bytes;
+        if (!h8s_semantic_block_supported(&run) ||
+            !h8s_execute_semantic_block(&run, &updated))
+            return H8S_MIXED_FAILURE_SEMANTIC_RUN;
+    }
+
+    uint32_t resolved = 0;
+    if (block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
+        block->branch_op == 0x5470) {
+        uint32_t addr = updated.er[7] & 0xffffffu;
+        if (!bus_is_plain_read_range(bus, addr, 4))
+            return H8S_MIXED_FAILURE_RETURN_READ;
+    } else if (block->branch_kind == H8S_BLOCK_BRANCH_INDIRECT &&
+               (((uint8_t)(block->branch_op >> 8)) == 0x59 ||
+                ((uint8_t)(block->branch_op >> 8)) == 0x5d)) {
+        unsigned rn = ((uint8_t)block->branch_op >> 4) & 0x7;
+        resolved = updated.er[rn] & 0xffffffu;
+    } else {
+        bool ok = edge_cache ?
+            h8s_branch_edge_cache_get(edge_cache, block, updated.ccr, &resolved) :
+            h8s_block_resolve_static_branch(block, updated.ccr, &resolved);
+        if (!ok) return H8S_MIXED_FAILURE_BRANCH_RESOLVE;
+    }
+    if (block->branch_kind == H8S_BLOCK_BRANCH_BSR8 ||
+        block->branch_kind == H8S_BLOCK_BRANCH_BSR16 ||
+        block->branch_kind == H8S_BLOCK_BRANCH_JSR_ABS24 ||
+        (block->branch_kind == H8S_BLOCK_BRANCH_INDIRECT &&
+         ((uint8_t)(block->branch_op >> 8)) == 0x5d)) {
+        uint32_t addr = (updated.er[7] - 4u) & 0xffffffu;
+        (void)pc_base;
+        if (!bus_is_plain_write_range(bus, addr, 4))
+            return H8S_MIXED_FAILURE_CALL_WRITE;
+    }
+    return H8S_MIXED_FAILURE_NONE;
+}
+
+bool h8s_execute_mixed_plain_block_prefix(const h8s_block_t *block,
+                                          address_bus_t *bus,
+                                          h8s_block_cpu_state_t *state,
+                                          int *cycles)
+{
+    if (!block || !bus || !state || !cycles ||
+        !h8s_mixed_plain_block_supported(block))
+        return false;
+
+    h8s_block_cpu_state_t updated = *state;
+    int done = 0;
+    unsigned i = 0;
+    while (i < block->instructions) {
+        if (plain_memory_instruction_supported(&block->decoded[i])) {
+            uint32_t address = 0;
+            unsigned bytes = 0;
+            bool write = false;
+            if (!dynamic_plain_memory_operand(&block->decoded[i], &updated,
+                                              &address, &bytes, &write))
+                break;
+            if (write) {
+                if (!bus_is_plain_write_range(bus, address, bytes))
+                    break;
+            } else if (!bus_is_plain_read_range(bus, address, bytes)) {
+                break;
+            }
+            if (!h8s_execute_plain_memory_instruction(&block->decoded[i], bus, &updated))
+                break;
+            ++done;
+            ++i;
+            continue;
+        }
+
+        h8s_block_t run = {
+            .start = updated.pc,
+            .bytes = 0,
+            .instructions = 0,
+            .stop = H8S_BLOCK_STOP_LIMIT,
+            .stop_pc = updated.pc,
+            .executable_prefix_instructions = 0,
+            .executable = true
+        };
+        while (i < block->instructions &&
+               !plain_memory_instruction_supported(&block->decoded[i]) &&
+               run.instructions < H8S_BLOCK_MAX_INSTRUCTIONS) {
+            run.decoded[run.instructions] = block->decoded[i];
+            run.bytes += block->decoded[i].bytes;
+            run.instructions++;
+            run.executable_prefix_instructions++;
+            ++i;
+        }
+        run.stop_pc = run.start + run.bytes;
+        if (!h8s_semantic_block_supported(&run) ||
+            !h8s_execute_semantic_block(&run, &updated))
+            break;
+        done += (int)run.instructions;
+    }
+
+    if (done <= 0)
+        return false;
+    *state = updated;
+    *cycles = done;
     return true;
 }
 

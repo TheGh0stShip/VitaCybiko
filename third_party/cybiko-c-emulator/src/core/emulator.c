@@ -561,6 +561,15 @@ bool cybiko_get_cpu_stats(const cybiko_emu_t *emu, cybiko_cpu_stats_t *stats) {
     stats->semantic_mutable_reject_cycle_budget = emu->cpu.semantic_mutable_reject_cycle_budget;
     stats->semantic_mutable_reject_execute = emu->cpu.semantic_mutable_reject_execute;
     stats->semantic_mutable_reject_target = emu->cpu.semantic_mutable_reject_target;
+    stats->semantic_mutable_execute_nonplain_read = emu->cpu.semantic_mutable_execute_nonplain_read;
+    stats->semantic_mutable_execute_nonplain_write = emu->cpu.semantic_mutable_execute_nonplain_write;
+    stats->semantic_mutable_execute_semantic_run = emu->cpu.semantic_mutable_execute_semantic_run;
+    stats->semantic_mutable_execute_branch_resolve = emu->cpu.semantic_mutable_execute_branch_resolve;
+    stats->semantic_mutable_execute_return_read = emu->cpu.semantic_mutable_execute_return_read;
+    stats->semantic_mutable_execute_call_write = emu->cpu.semantic_mutable_execute_call_write;
+    stats->semantic_mutable_execute_other = emu->cpu.semantic_mutable_execute_other;
+    stats->semantic_mutable_prefix_blocks = emu->cpu.semantic_mutable_prefix_blocks;
+    stats->semantic_mutable_prefix_cycles = emu->cpu.semantic_mutable_prefix_cycles;
     return true;
 }
 bool cybiko_load_dataflash(cybiko_emu_t *emu, const uint8_t *data, size_t len) {

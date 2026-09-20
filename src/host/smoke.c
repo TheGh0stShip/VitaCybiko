@@ -262,6 +262,17 @@ int main(int argc, char **argv)
                (unsigned long long)stats.semantic_mutable_reject_cycle_budget,
                (unsigned long long)stats.semantic_mutable_reject_execute,
                (unsigned long long)stats.semantic_mutable_reject_target);
+        printf("semantic_mutable_execute_nonplain_read=%llu semantic_mutable_execute_nonplain_write=%llu semantic_mutable_execute_semantic_run=%llu semantic_mutable_execute_branch_resolve=%llu semantic_mutable_execute_return_read=%llu semantic_mutable_execute_call_write=%llu semantic_mutable_execute_other=%llu\n",
+               (unsigned long long)stats.semantic_mutable_execute_nonplain_read,
+               (unsigned long long)stats.semantic_mutable_execute_nonplain_write,
+               (unsigned long long)stats.semantic_mutable_execute_semantic_run,
+               (unsigned long long)stats.semantic_mutable_execute_branch_resolve,
+               (unsigned long long)stats.semantic_mutable_execute_return_read,
+               (unsigned long long)stats.semantic_mutable_execute_call_write,
+               (unsigned long long)stats.semantic_mutable_execute_other);
+        printf("semantic_mutable_prefix_blocks=%llu semantic_mutable_prefix_cycles=%llu\n",
+               (unsigned long long)stats.semantic_mutable_prefix_blocks,
+               (unsigned long long)stats.semantic_mutable_prefix_cycles);
     }
 
     bool screenshot_ok = argc <= frames_arg + 1 || write_screenshot(argv[frames_arg + 1], &ctx);

@@ -2150,6 +2150,15 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->semantic_mutable_reject_cycle_budget = 0;
     cpu->semantic_mutable_reject_execute = 0;
     cpu->semantic_mutable_reject_target = 0;
+    cpu->semantic_mutable_execute_nonplain_read = 0;
+    cpu->semantic_mutable_execute_nonplain_write = 0;
+    cpu->semantic_mutable_execute_semantic_run = 0;
+    cpu->semantic_mutable_execute_branch_resolve = 0;
+    cpu->semantic_mutable_execute_return_read = 0;
+    cpu->semantic_mutable_execute_call_write = 0;
+    cpu->semantic_mutable_execute_other = 0;
+    cpu->semantic_mutable_prefix_blocks = 0;
+    cpu->semantic_mutable_prefix_cycles = 0;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
@@ -2226,6 +2235,34 @@ CPU_INLINE bool semantic_fast_reject_with_backoff(h8s_cpu_t *cpu,
 {
     cpu->semantic_reject_backoff = H8S_SEMANTIC_REJECT_BACKOFF;
     return semantic_fast_reject(cpu, counter, profile_reason, pc);
+}
+
+static void record_mutable_execute_failure(h8s_cpu_t *cpu,
+                                           h8s_mixed_failure_t failure)
+{
+    switch (failure) {
+    case H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_READ:
+        cpu->semantic_mutable_execute_nonplain_read++;
+        break;
+    case H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_WRITE:
+        cpu->semantic_mutable_execute_nonplain_write++;
+        break;
+    case H8S_MIXED_FAILURE_SEMANTIC_RUN:
+        cpu->semantic_mutable_execute_semantic_run++;
+        break;
+    case H8S_MIXED_FAILURE_BRANCH_RESOLVE:
+        cpu->semantic_mutable_execute_branch_resolve++;
+        break;
+    case H8S_MIXED_FAILURE_RETURN_READ:
+        cpu->semantic_mutable_execute_return_read++;
+        break;
+    case H8S_MIXED_FAILURE_CALL_WRITE:
+        cpu->semantic_mutable_execute_call_write++;
+        break;
+    default:
+        cpu->semantic_mutable_execute_other++;
+        break;
+    }
 }
 
 CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
@@ -2358,6 +2395,36 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
     uint32_t next_offset = 0;
     if (!h8s_execute_mixed_plain_block_exit(block, &cpu->semantic_edge_cache,
                                             cpu->bus, base, &state, &next_offset)) {
+        h8s_mixed_failure_t failure =
+            h8s_classify_mixed_plain_block_failure(block,
+                                                   &cpu->semantic_edge_cache,
+                                                   cpu->bus, base, &state);
+        record_mutable_execute_failure(cpu, failure);
+        if (failure == H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_READ ||
+            failure == H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_WRITE) {
+            int prefix_cycles = 0;
+            h8s_block_cpu_state_t prefix_state = state;
+            if (h8s_execute_mixed_plain_block_prefix(block, cpu->bus,
+                                                     &prefix_state,
+                                                     &prefix_cycles) &&
+                prefix_cycles > 0 && prefix_cycles <= limit) {
+                cpu->last_start_pc = start_pc;
+                for (unsigned i = 0; i < 8; ++i)
+                    cpu->er[i] = prefix_state.er[i];
+                cpu->ccr = prefix_state.ccr;
+                cpu->pc = (base + prefix_state.pc) & 0xffffffu;
+                cpu->cycle_count += (uint64_t)prefix_cycles;
+                cpu->semantic_reject_backoff = 0;
+                cpu->semantic_fast_blocks++;
+                cpu->semantic_fast_cycles += (uint64_t)prefix_cycles;
+                cpu->semantic_mutable_fast_blocks++;
+                cpu->semantic_mutable_fast_cycles += (uint64_t)prefix_cycles;
+                cpu->semantic_mutable_prefix_blocks++;
+                cpu->semantic_mutable_prefix_cycles += (uint64_t)prefix_cycles;
+                *cycles = prefix_cycles;
+                return true;
+            }
+        }
         cpu->semantic_mutable_reject_execute++;
         return false;
     }

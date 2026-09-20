@@ -1307,6 +1307,29 @@ step is to profile those execute failures by effective address/opcode and then
 split safe prefixes before dynamic MMIO/nonplain accesses, rather than trying to
 force every mutable window through a block that may hide hardware side effects.
 
+Accepted dynamic-nonplain split and prefix execution: execute failures are now
+classified by runtime cause. The first Xtreme measurement showed that nearly
+all execute failures were dynamic nonplain memory, overwhelmingly writes
+(`nonplain_write` around 1,471 of 1,483 execute rejects). The mutable fast path
+now executes any safe semantic/plain-memory prefix before the first dynamic
+nonplain access, commits that state, advances the PC to the hardware access,
+and lets the interpreter handle the actual MMIO/nonplain operation. This keeps
+timer/LCD/serial/keyboard side effects observable while avoiding interpreter
+dispatch for safe lead-in instructions.
+
+Validation:
+
+- focused H8S block, H8S CPU, emulator and scheduler suites passed;
+- Xtreme 600-frame smoke still passed;
+- the prefix path executed 1,457 prefix blocks / 1,516 prefix cycles in the
+  Xtreme smoke.
+
+This is a correctness-preserving but small win. The prefix cycles show that the
+approach works, but many of the hot dynamic-nonplain blocks reach the hardware
+access almost immediately. The next larger optimization needs address/opcode
+histograms for those dynamic nonplain writes so repeated safe MMIO-adjacent
+patterns can get hand-specialized without hiding the device access itself.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
