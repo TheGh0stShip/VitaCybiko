@@ -96,6 +96,10 @@ Current block-discovery gate:
   sweeps for `0x79`/`0x7a` word/long MOV/ADD/CMP/SUB/OR/XOR/AND forms,
   covering all destination registers and edge immediate values across multiple
   register/CCR states.
+- The equivalence harness now includes mixed multi-instruction block checks
+  that compare semantic block execution with repeated `h8s_cpu_step` execution
+  across flag dependency, register dependency, logic/shift/bit, and immediate
+  logic chains.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -127,17 +131,16 @@ locally available Classic V2 candidate blobs:
 
 Next semantic-executor targets, in order:
 
-1. Add multi-instruction semantic-block equivalence tests that execute mixed
-   tier-one blocks, not just one-instruction blocks, so runtime integration has
-   evidence for PC advancement, flag carry-over, and register dependencies
-   across decoded cache entries.
-2. Only after broad equivalence is proven, prototype a runtime semantic-block call
-   at safe immutable-ROM/event-deadline boundaries and benchmark against the
+1. Prototype a runtime semantic-block call at safe immutable-ROM/event-deadline
+   boundaries behind a compile-time/diagnostic gate, then benchmark against the
    current interpreter. Remove it if it repeats prior slowdown behavior.
+2. If runtime semantic blocks still fail to beat the interpreter, use the same
+   equivalence harness to guide a larger branch-aware cached-block or ARMv7
+   translation tier rather than adding more one-opcode hot-path probes.
 
-Do not wire semantic block execution into the Vita runtime until these expanded
-families pass standalone CPU-state tests and the scanner shows materially higher
-cross-firmware coverage.
+Do not make semantic block execution the default Vita runtime path until the
+guarded runtime experiment proves an actual speedup without breaking
+cross-firmware smoke/equivalence gates.
 
 After adding shift/rotate semantics, local Classic V2 coverage moved to:
 
@@ -216,8 +219,13 @@ Initial interpreter-equivalence gate:
   destination registers, and zero/one/sign-boundary/all-ones immediates across
   twelve register/CCR state combinations (6,720 additional
   interpreter-vs-semantic comparisons).
-- Focused `h8s_block` test passes with this matrix. This is a start, not yet
-  enough to justify runtime wiring.
+- Added mixed multi-instruction semantic block equivalence tests over four
+  straight-line dependency chains, each run across three register banks and
+  four CCR states. These now exercise PC advancement, CCR carry-over, and
+  inter-instruction register dependencies at the decoded-block level.
+- Focused `h8s_block` test passes with this matrix. This is now enough to
+  justify a guarded runtime semantic-block experiment, but not enough to claim
+  a Vita performance win until measured against the interpreter.
 
 Executed opcode profile gate:
 
