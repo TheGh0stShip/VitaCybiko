@@ -2067,7 +2067,9 @@ bool h8s_mixed_plain_block_supported(const h8s_block_t *block)
     if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24 &&
-        block->branch_kind != H8S_BLOCK_BRANCH_JSR_ABS24)
+        block->branch_kind != H8S_BLOCK_BRANCH_JSR_ABS24 &&
+        !(block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
+          block->branch_op == 0x5470))
         return false;
     for (unsigned i = 0; i < block->instructions; ++i) {
         h8s_block_t single = {
@@ -2132,10 +2134,22 @@ bool h8s_execute_mixed_plain_block_exit(const h8s_block_t *block,
     }
 
     uint32_t resolved = 0;
-    bool ok = edge_cache ?
-        h8s_branch_edge_cache_get(edge_cache, block, updated.ccr, &resolved) :
-        h8s_block_resolve_static_branch(block, updated.ccr, &resolved);
-    if (!ok) return false;
+    if (block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
+        block->branch_op == 0x5470) {
+        uint32_t addr = updated.er[7] & 0xffffffu;
+        const uint8_t *ptr = bus_plain_read_ptr(bus, addr, 4);
+        if (!ptr) return false;
+        resolved = (((uint32_t)ptr[0] << 24) |
+                    ((uint32_t)ptr[1] << 16) |
+                    ((uint32_t)ptr[2] << 8) |
+                    ptr[3]) & 0xffffffu;
+        updated.er[7] += 4;
+    } else {
+        bool ok = edge_cache ?
+            h8s_branch_edge_cache_get(edge_cache, block, updated.ccr, &resolved) :
+            h8s_block_resolve_static_branch(block, updated.ccr, &resolved);
+        if (!ok) return false;
+    }
     if (block->branch_kind == H8S_BLOCK_BRANCH_JSR_ABS24) {
         uint32_t return_pc = (pc_base + block->branch_fallthrough) & 0xffffffu;
         uint32_t sp = (updated.er[7] - 4u) & 0xffffffffu;
