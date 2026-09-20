@@ -32,6 +32,7 @@ typedef enum {
 typedef struct {
     uint16_t op;
     uint32_t imm;
+    uint16_t ext;
     uint8_t bytes;
 } h8s_block_instruction_t;
 
