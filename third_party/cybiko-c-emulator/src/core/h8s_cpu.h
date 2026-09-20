@@ -63,11 +63,14 @@ typedef struct h8s_cpu {
     uint8_t rom_block_count;
     bool rom_block_valid;
     h8s_block_cache_t semantic_block_cache;
+    h8s_mutable_block_cache_t mutable_block_cache;
     h8s_branch_edge_cache_t semantic_edge_cache;
     h8s_semantic_reject_entry_t semantic_reject_cache[H8S_SEMANTIC_REJECT_CACHE_ENTRIES];
     uint16_t semantic_reject_backoff;
     uint64_t semantic_fast_blocks;
     uint64_t semantic_fast_cycles;
+    uint64_t semantic_mutable_fast_blocks;
+    uint64_t semantic_mutable_fast_cycles;
     uint64_t semantic_fast_rejects;
     uint64_t semantic_fast_cached_rejects;
     uint64_t semantic_fast_backoff_skips;

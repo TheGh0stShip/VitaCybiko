@@ -217,6 +217,9 @@ int main(int argc, char **argv)
                (unsigned long long)stats.semantic_fast_rejects,
                (unsigned long long)stats.semantic_fast_cached_rejects,
                (unsigned long long)stats.semantic_fast_backoff_skips);
+        printf("semantic_mutable_fast_blocks=%llu semantic_mutable_fast_cycles=%llu\n",
+               (unsigned long long)stats.semantic_mutable_fast_blocks,
+               (unsigned long long)stats.semantic_mutable_fast_cycles);
         printf("semantic_fast_reject_guard=%llu semantic_fast_reject_irq=%llu semantic_fast_reject_window=%llu semantic_fast_reject_cached=%llu semantic_fast_reject_unsupported_block=%llu semantic_fast_reject_unsupported_exit=%llu semantic_fast_reject_cycle_budget=%llu semantic_fast_reject_branch_resolve=%llu semantic_fast_reject_target=%llu\n",
                (unsigned long long)stats.semantic_fast_reject_guard,
                (unsigned long long)stats.semantic_fast_reject_irq,

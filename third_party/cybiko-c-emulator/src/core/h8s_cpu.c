@@ -2099,6 +2099,7 @@ void h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus) {
     cpu->bus = bus;
     cpu->ccr = 0x80;
     h8s_block_cache_init(&cpu->semantic_block_cache, H8S_BLOCK_MAX_INSTRUCTIONS);
+    h8s_mutable_block_cache_init(&cpu->mutable_block_cache, H8S_BLOCK_MAX_INSTRUCTIONS);
     h8s_branch_edge_cache_init(&cpu->semantic_edge_cache);
 }
 
@@ -2120,11 +2121,15 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->rom_block_count = 0;
     cpu->rom_block_valid = false;
     h8s_block_cache_clear(&cpu->semantic_block_cache);
+    h8s_mutable_block_cache_clear(&cpu->mutable_block_cache);
+    if (cpu->bus) bus_clear_code_watches(cpu->bus);
     h8s_branch_edge_cache_clear(&cpu->semantic_edge_cache);
     memset(cpu->semantic_reject_cache, 0, sizeof(cpu->semantic_reject_cache));
     cpu->semantic_reject_backoff = 0;
     cpu->semantic_fast_blocks = 0;
     cpu->semantic_fast_cycles = 0;
+    cpu->semantic_mutable_fast_blocks = 0;
+    cpu->semantic_mutable_fast_cycles = 0;
     cpu->semantic_fast_rejects = 0;
     cpu->semantic_fast_cached_rejects = 0;
     cpu->semantic_fast_backoff_skips = 0;
@@ -2223,6 +2228,87 @@ bool h8s_cpu_get_immutable_fetch_window(h8s_cpu_t *cpu, const uint8_t **data,
     return true;
 }
 
+static bool h8s_cpu_get_mutable_fetch_window(h8s_cpu_t *cpu, const uint8_t **data,
+                                             uint32_t *base, uint32_t *size)
+{
+    if (!cpu || !data || !base || !size) return false;
+    uint32_t pc = cpu->pc & 0xffffff;
+    if (!cpu->fetch_data || pc < cpu->fetch_base || pc >= cpu->fetch_end)
+        cache_instruction_memory(cpu, pc);
+    if (cpu->fetch_immutable || !cpu->fetch_data ||
+        pc < cpu->fetch_base || pc >= cpu->fetch_end)
+        return false;
+    if (!bus_is_plain_read_range(cpu->bus, pc, 2))
+        return false;
+
+    *data = cpu->fetch_data;
+    *base = cpu->fetch_base;
+    *size = cpu->fetch_end - cpu->fetch_base;
+    return true;
+}
+
+static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit,
+                                                       int *cycles,
+                                                       uint32_t start_pc)
+{
+    if (!cpu->bus || !cpu->bus->machine ||
+        cpu->bus->machine->model != CYBIKO_XTREME)
+        return false;
+    const uint8_t *data = NULL;
+    uint32_t base = 0, size = 0;
+    if (!h8s_cpu_get_mutable_fetch_window(cpu, &data, &base, &size))
+        return false;
+    if (start_pc < base || start_pc >= base + size)
+        return false;
+
+    const h8s_block_t *block =
+        h8s_mutable_block_cache_get(&cpu->mutable_block_cache, cpu->bus,
+                                    data, size, base, start_pc);
+    if (!block || !h8s_semantic_block_supported(block))
+        return false;
+    if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24)
+        return false;
+
+    int block_cycles = (int)block->instructions + 1;
+    if (block_cycles < 1 || block_cycles > limit)
+        return false;
+
+    uint32_t offset = start_pc - base;
+    h8s_block_cpu_state_t state = {.ccr = cpu->ccr, .pc = offset};
+    for (unsigned i = 0; i < 8; ++i)
+        state.er[i] = cpu->er[i];
+
+    uint32_t next_offset = 0;
+    if (!h8s_execute_semantic_block_exit(block, &cpu->semantic_edge_cache,
+                                         &state, &next_offset))
+        return false;
+
+    uint32_t next_pc = next_offset;
+    if (block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24) {
+        if (next_offset >= size)
+            return false;
+        next_pc = (base + next_offset) & 0xffffff;
+    }
+    if (!bus_is_plain_read_range(cpu->bus, next_pc, 2))
+        return false;
+
+    cpu->last_start_pc = start_pc;
+    for (unsigned i = 0; i < 8; ++i)
+        cpu->er[i] = state.er[i];
+    cpu->ccr = state.ccr;
+    cpu->pc = next_pc & 0xffffff;
+    cpu->cycle_count += (uint64_t)block_cycles;
+    cpu->semantic_reject_backoff = 0;
+    cpu->semantic_fast_blocks++;
+    cpu->semantic_fast_cycles += (uint64_t)block_cycles;
+    cpu->semantic_mutable_fast_blocks++;
+    cpu->semantic_mutable_fast_cycles += (uint64_t)block_cycles;
+    *cycles = block_cycles;
+    return true;
+}
+
 bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
                                             int *cycles)
 {
@@ -2240,6 +2326,8 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     const uint8_t *data = NULL;
     uint32_t base = 0, size = 0;
     if (!h8s_cpu_get_immutable_fetch_window(cpu, &data, &base, &size)) {
+        if (h8s_cpu_try_execute_semantic_mutable_block(cpu, limit, cycles, start_pc))
+            return true;
         semantic_window_profile_record(cpu, start_pc);
         return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_window,
                                                  SEM_REJECT_WINDOW, start_pc);

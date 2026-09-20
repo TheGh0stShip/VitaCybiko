@@ -1029,6 +1029,35 @@ decoded source range stays in plain memory. It must preserve the existing
 immutable ROM path, reject MMIO/memory-form hazards, and report accepted
 mutable blocks separately from immutable semantic fast blocks.
 
+Accepted Xtreme-only runtime hook: the semantic fast-path probe now falls back
+to the mutable block cache only on Cybiko Xtreme, only after the immutable
+fetch-window check fails, and only for semantic-supported blocks with static
+Bcc/JMP exits whose next PC remains ordinary readable memory. It updates
+separate `semantic_mutable_fast_blocks` / `semantic_mutable_fast_cycles`
+counters exposed through host smoke and Vita `performance.csv`.
+
+A broad all-model mutable runtime hook was tested first and rejected as the
+default because Classic V1/V2 paid extra probe overhead. The kept path is
+model-specific: Classic stays on the proven immutable ROM/flash fast path,
+while Xtreme gets the RAM-code tier that matches its measured bottleneck.
+
+Validation for the accepted Xtreme-only hook:
+
+- focused mutable CPU equivalence test passed;
+- focused `test_h8s_cpu` and `test_emulator` passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed after constraining the hook to Xtreme: Classic V1
+  1.52 s, Classic V2 0.48 s, Xtreme wrapper 0.20 s for 600 frames;
+- direct Xtreme repeats were stable at 1.508/1.464/1.473 s and reported about
+  120.8k-121.0k mutable fast blocks and about 662k mutable fast cycles.
+
+The direct Xtreme timings are the trustworthy comparison; the single 0.20 s
+wrapper value is recorded as a pass signal but treated as a timing artifact.
+This is a real Xtreme RAM-code coverage increase, not yet the end of the
+performance work. Remaining window rejects are still high (~93k over 600
+frames), so the next tier should target the unsupported RAM memory forms now
+visible after mutable semantic blocks are accepted.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

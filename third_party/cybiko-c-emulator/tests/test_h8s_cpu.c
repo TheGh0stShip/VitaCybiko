@@ -427,6 +427,43 @@ static void test_semantic_rom_block_fast_path_executes_branch_only_bcc(void) {
     teardown();
 }
 
+static void test_semantic_mutable_block_fast_path_matches_steps(void) {
+    setup();
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+    uint32_t pc = bus.machine->ram_base + 0x200;
+    bus_write16(&bus, pc, 0xF800);     /* MOV.B #0,R0L -> Z */
+    bus_write16(&bus, pc + 2, 0x4604); /* BNE target; should fall through. */
+    bus_write16(&bus, pc + 4, 0x0B01);
+    bus_write16(&bus, pc + 6, 0x5470);
+    bus_write16(&bus, pc + 8, 0x0B02);
+
+    h8s_cpu_t stepped;
+    h8s_cpu_init(&stepped, &bus);
+    stepped.pc = pc;
+    stepped.ccr = CCR_I;
+    stepped.er[0] = 0xffffffffu;
+    h8s_cpu_step(&stepped);
+    h8s_cpu_step(&stepped);
+
+    cpu.pc = pc;
+    cpu.ccr = CCR_I;
+    cpu.er[0] = 0xffffffffu;
+    int cycles = 0;
+    TEST_CHECK(h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cycles == 2);
+    TEST_CHECK(cpu.pc == stepped.pc);
+    TEST_CHECK(cpu.ccr == stepped.ccr);
+    TEST_CHECK(cpu.cycle_count == stepped.cycle_count);
+    TEST_CHECK(cpu.er[0] == stepped.er[0]);
+    TEST_CHECK(cpu.semantic_fast_blocks == 1);
+    TEST_CHECK(cpu.semantic_fast_cycles == 2);
+    TEST_CHECK(cpu.semantic_mutable_fast_blocks == 1);
+    TEST_CHECK(cpu.semantic_mutable_fast_cycles == 2);
+    TEST_CHECK(cpu.semantic_fast_rejects == 0);
+    teardown();
+}
+
 static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     setup();
     write_code16(0, 0xF800);
@@ -900,6 +937,7 @@ TEST_LIST = {
     {"immutable_fetch_window_rejects_ram_and_io", test_immutable_fetch_window_rejects_ram_and_io},
     {"semantic_rom_block_fast_path_executes_bcc", test_semantic_rom_block_fast_path_executes_bcc},
     {"semantic_rom_block_fast_path_executes_branch_only_bcc", test_semantic_rom_block_fast_path_executes_branch_only_bcc},
+    {"semantic_mutable_block_fast_path_matches_steps", test_semantic_mutable_block_fast_path_matches_steps},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},
     {"cpu_run_fast_path_preserves_sync_boundary", test_cpu_run_fast_path_preserves_sync_boundary},

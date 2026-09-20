@@ -540,6 +540,8 @@ bool cybiko_get_cpu_stats(const cybiko_emu_t *emu, cybiko_cpu_stats_t *stats) {
     if (!emu || !stats) return false;
     stats->semantic_fast_blocks = emu->cpu.semantic_fast_blocks;
     stats->semantic_fast_cycles = emu->cpu.semantic_fast_cycles;
+    stats->semantic_mutable_fast_blocks = emu->cpu.semantic_mutable_fast_blocks;
+    stats->semantic_mutable_fast_cycles = emu->cpu.semantic_mutable_fast_cycles;
     stats->semantic_fast_rejects = emu->cpu.semantic_fast_rejects;
     stats->semantic_fast_cached_rejects = emu->cpu.semantic_fast_cached_rejects;
     stats->semantic_fast_backoff_skips = emu->cpu.semantic_fast_backoff_skips;

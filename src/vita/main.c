@@ -2633,7 +2633,7 @@ select_model:
     snprintf(perf_path, sizeof(perf_path), "%s/performance.csv", runtime_root);
     frame_log_t *perf_log = create_frame_log(perf_path);
     if (perf_log) {
-        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents,source_lcd_updates,generated_lcd_frames,motion_estimate_ms,interpolation_delay_ms,semantic_fast_blocks,semantic_fast_cycles,semantic_fast_rejects,semantic_fast_cached_rejects,semantic_fast_backoff_skips,semantic_fast_reject_guard,semantic_fast_reject_irq,semantic_fast_reject_window,semantic_fast_reject_cached,semantic_fast_reject_unsupported_block,semantic_fast_reject_unsupported_exit,semantic_fast_reject_cycle_budget,semantic_fast_reject_branch_resolve,semantic_fast_reject_target\n");
+        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents,source_lcd_updates,generated_lcd_frames,motion_estimate_ms,interpolation_delay_ms,semantic_fast_blocks,semantic_fast_cycles,semantic_mutable_fast_blocks,semantic_mutable_fast_cycles,semantic_fast_rejects,semantic_fast_cached_rejects,semantic_fast_backoff_skips,semantic_fast_reject_guard,semantic_fast_reject_irq,semantic_fast_reject_window,semantic_fast_reject_cached,semantic_fast_reject_unsupported_block,semantic_fast_reject_unsupported_exit,semantic_fast_reject_cycle_budget,semantic_fast_reject_branch_resolve,semantic_fast_reject_target\n");
     }
     cybiko_cpu_stats_t perf_cpu_start = {0};
     cybiko_get_cpu_stats(emu, &perf_cpu_start);
@@ -2747,7 +2747,7 @@ select_model:
                 double ms = 1000.0 / (double)perf_frequency;
                 cybiko_cpu_stats_t perf_cpu_now = {0};
                 cybiko_get_cpu_stats(emu, &perf_cpu_now);
-                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u,%u,%u,%.3f,%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
+                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u,%u,%u,%.3f,%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
                         VITACYBIKO_VERSION, ctx->model, perf_presents, perf_guest,
                         ctx->lcd_updates - perf_lcd_start,
                         (stamp - perf_start) * ms, perf_core * ms,
@@ -2763,6 +2763,8 @@ select_model:
                         perf_motion * ms, MOTION_DELAY_US / 1000,
                         (unsigned long long)(perf_cpu_now.semantic_fast_blocks - perf_cpu_start.semantic_fast_blocks),
                         (unsigned long long)(perf_cpu_now.semantic_fast_cycles - perf_cpu_start.semantic_fast_cycles),
+                        (unsigned long long)(perf_cpu_now.semantic_mutable_fast_blocks - perf_cpu_start.semantic_mutable_fast_blocks),
+                        (unsigned long long)(perf_cpu_now.semantic_mutable_fast_cycles - perf_cpu_start.semantic_mutable_fast_cycles),
                         (unsigned long long)(perf_cpu_now.semantic_fast_rejects - perf_cpu_start.semantic_fast_rejects),
                         (unsigned long long)(perf_cpu_now.semantic_fast_cached_rejects - perf_cpu_start.semantic_fast_cached_rejects),
                         (unsigned long long)(perf_cpu_now.semantic_fast_backoff_skips - perf_cpu_start.semantic_fast_backoff_skips),

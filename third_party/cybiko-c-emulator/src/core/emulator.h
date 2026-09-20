@@ -10,6 +10,8 @@ typedef struct cybiko_emu cybiko_emu_t;
 typedef struct {
     uint64_t semantic_fast_blocks;
     uint64_t semantic_fast_cycles;
+    uint64_t semantic_mutable_fast_blocks;
+    uint64_t semantic_mutable_fast_cycles;
     uint64_t semantic_fast_rejects;
     uint64_t semantic_fast_cached_rejects;
     uint64_t semantic_fast_backoff_skips;
