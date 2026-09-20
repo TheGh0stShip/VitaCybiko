@@ -1765,6 +1765,40 @@ Validation:
 - same-command 120-frame Xtreme callgrind dropped again from about 6.634B to
   6.609B total guest-emulator instructions.
 
+Rejected correctly implemented 32-word immutable fetch block: an earlier
+32-word trial was invalid because the advertised count was larger than the
+filled word array. A corrected trial enlarged `H8S_ROM_FETCH_BLOCK_WORDS` to 32
+and unrolled all 32 word stores. Focused CPU tests and three-model smoke passed,
+but same-command 120-frame Xtreme callgrind regressed hard to about 7.034B
+guest-emulator instructions versus the current 6.609B baseline. The larger
+refill body outweighs the miss-rate reduction for the VitaCybiko workload, so
+the 16-word immutable fetch block remains the accepted size.
+
+Rejected all-condition hot-branch switch: after the measured branch
+specialization wins, a full direct switch for every H8S condition was tested to
+avoid the generic evaluator entirely. Focused CPU tests and three-model smoke
+passed, but same-command 120-frame Xtreme callgrind regressed to about 6.837B
+guest-emulator instructions. The added switch/code-shape cost outweighs the
+rare-condition savings, so only the measured hot branch cases remain
+specialized.
+
+Rejected code-watch early return in `bus_note_code_write`: ordinary writes most
+often hit unwatched code pages, so an early return before last-page calculation
+looked attractive and passed focused CPU/block tests plus three-model smoke.
+Same-command 120-frame Xtreme callgrind regressed slightly to about 6.612B
+versus the current 6.609B baseline, likely from extra branch/code-shape cost in
+already hot bus-write helpers. The existing compact invalidation helper remains
+preferred.
+
+Accepted signed-branch expression cleanup: the accepted branch-specialization
+extension used two shifts to compute `N xor V` for signed compare branches.
+Rewriting those cases to test `((CCR ^ (CCR >> 2)) & CCR_V)` preserves the H8S
+condition semantics and trims a small amount of hot branch work. Focused CPU
+tests and three-model smoke passed, and same-command 120-frame Xtreme
+callgrind moved from about 6.6086B to 6.6076B total guest-emulator
+instructions with the same workload counters. This is a small but measurable
+cleanup inside an already accepted hot path.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
