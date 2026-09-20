@@ -1687,3 +1687,32 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
     state->pc = pc;
     return true;
 }
+
+bool h8s_execute_semantic_block_exit(const h8s_block_t *block,
+                                     h8s_branch_edge_cache_t *edge_cache,
+                                     h8s_block_cpu_state_t *state,
+                                     uint32_t *next_pc)
+{
+    if (!block || !state || !next_pc || !h8s_semantic_block_supported(block))
+        return false;
+    if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
+        block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24)
+        return false;
+
+    h8s_block_cpu_state_t updated = *state;
+    if (!h8s_execute_semantic_block(block, &updated))
+        return false;
+
+    uint32_t resolved = 0;
+    bool ok = edge_cache ?
+        h8s_branch_edge_cache_get(edge_cache, block, updated.ccr, &resolved) :
+        h8s_block_resolve_static_branch(block, updated.ccr, &resolved);
+    if (!ok)
+        return false;
+
+    updated.pc = resolved;
+    *state = updated;
+    *next_pc = resolved;
+    return true;
+}

@@ -122,6 +122,10 @@ Current block-discovery gate:
   analyzable, cached, and semantic-supported; calls, returns, traps, sleeps,
   indirect exits, and unsupported targets fall back to the safe interpreter
   path.
+- A transactional semantic execute-and-exit helper now executes a supported
+  straight-line block first, then resolves Bcc/JMP exits using the post-block
+  CCR. This prevents the future runtime tier from resolving conditional
+  branches with stale flags. Rejected exits leave the caller's state unchanged.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -205,6 +209,10 @@ Branch edge-cache gate:
   targets without executing them. Static BSR/JSR call targets are deliberately
   rejected until the runtime block tier models call-side effects and stack/link
   ordering.
+- `h8s_execute_semantic_block_exit` is the first execute+exit primitive for the
+  branch-aware tier. Unit tests prove that conditional exits use CCR after
+  semantic block execution, not stale entry flags, and that rejected static
+  calls do not partially mutate the supplied state.
 
 Current Classic V2 static chain-edge scan:
 

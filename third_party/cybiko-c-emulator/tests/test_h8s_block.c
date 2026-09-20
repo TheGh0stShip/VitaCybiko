@@ -546,6 +546,57 @@ static void test_chain_target_rejects_static_calls(void)
     TEST_CHECK(edge_cache.misses == 0);
 }
 
+static void test_semantic_block_exit_uses_updated_ccr(void)
+{
+    const uint8_t rom[] = {
+        0xf8, 0x00,       /* 0: MOV.B #0,R0L -> sets Z */
+        0x46, 0x04,       /* 2: BNE 8; must fall through after updated Z */
+        0x0b, 0x01,       /* 4: fall-through target */
+        0x54, 0x70,       /* 6: RTS */
+        0x0b, 0x02,       /* 8: stale-CCR target */
+        0x54, 0x70        /* 10: RTS */
+    };
+    h8s_block_t block;
+    h8s_branch_edge_cache_t edge_cache;
+    h8s_block_cpu_state_t state = {.er = {0xffffffffu}, .ccr = 0, .pc = 0};
+    uint32_t next = 0;
+
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.stop_pc == 2);
+    h8s_branch_edge_cache_init(&edge_cache);
+    TEST_CHECK(h8s_execute_semantic_block_exit(&block, &edge_cache, &state, &next));
+    TEST_CHECK(next == 4);
+    TEST_CHECK(state.pc == 4);
+    TEST_CHECK((state.ccr & 0x04) != 0);
+    TEST_CHECK((state.er[0] & 0xff) == 0);
+    TEST_CHECK(edge_cache.misses == 1);
+}
+
+static void test_semantic_block_exit_rejects_calls_without_mutation(void)
+{
+    const uint8_t rom[] = {
+        0xf8, 0x00,       /* 0: MOV.B #0,R0L */
+        0x55, 0x04,       /* 2: BSR 8 */
+        0x54, 0x70,       /* 4: RTS */
+        0x0b, 0x01,       /* 6: ADDS #2, ER1 */
+        0x0b, 0x02,       /* 8: ADDS #4, ER2 */
+        0x54, 0x70        /* 10: RTS */
+    };
+    h8s_block_t block;
+    h8s_branch_edge_cache_t edge_cache;
+    h8s_block_cpu_state_t state = {.er = {0xffffffffu}, .ccr = 0, .pc = 0};
+    uint32_t next = 0x123456;
+
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_branch_edge_cache_init(&edge_cache);
+    TEST_CHECK(!h8s_execute_semantic_block_exit(&block, &edge_cache, &state, &next));
+    TEST_CHECK(next == 0x123456);
+    TEST_CHECK(state.pc == 0);
+    TEST_CHECK(state.er[0] == 0xffffffffu);
+    TEST_CHECK(state.ccr == 0);
+    TEST_CHECK(edge_cache.misses == 0);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1362,6 +1413,8 @@ TEST_LIST = {
     { "chain_target_returns_semantic_cached_block", test_chain_target_returns_semantic_cached_block },
     { "chain_target_rejects_fallbacks", test_chain_target_rejects_fallbacks },
     { "chain_target_rejects_static_calls", test_chain_target_rejects_static_calls },
+    { "semantic_block_exit_uses_updated_ccr", test_semantic_block_exit_uses_updated_ccr },
+    { "semantic_block_exit_rejects_calls_without_mutation", test_semantic_block_exit_rejects_calls_without_mutation },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },

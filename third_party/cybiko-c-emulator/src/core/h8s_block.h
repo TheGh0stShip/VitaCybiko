@@ -106,6 +106,10 @@ bool h8s_semantic_instruction_supported(uint16_t op);
 bool h8s_semantic_block_supported(const h8s_block_t *block);
 bool h8s_execute_semantic_block(const h8s_block_t *block,
                                 h8s_block_cpu_state_t *state);
+bool h8s_execute_semantic_block_exit(const h8s_block_t *block,
+                                     h8s_branch_edge_cache_t *edge_cache,
+                                     h8s_block_cpu_state_t *state,
+                                     uint32_t *next_pc);
 bool h8s_block_resolve_static_branch(const h8s_block_t *block,
                                      uint8_t ccr, uint32_t *next_pc);
 void h8s_branch_edge_cache_init(h8s_branch_edge_cache_t *cache);
