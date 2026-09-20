@@ -71,11 +71,21 @@ typedef struct address_bus {
      * Entries alias live backing storage, not a copy of guest bytes. */
     const uint8_t *read_pages[4096];
     uint8_t *write_pages[4096];
+    /* Mutable code-page watch state for future RAM/on-chip block caching.
+     * Pages are cold by default, so ordinary data writes pay one predictable
+     * zero-byte test. A cached RAM-code block marks its source pages watched;
+     * any write through the bus then bumps that page generation, including DMA
+     * transfers because DMA uses the normal bus_write helpers. */
+    uint32_t code_page_generation[4096];
+    uint8_t code_page_watched[4096];
 } address_bus_t;
 
 void     bus_init(address_bus_t *bus);
 void     bus_free(address_bus_t *bus);
 void     bus_build_memory_map(address_bus_t *bus);
+void     bus_watch_code_range(address_bus_t *bus, uint32_t address, unsigned bytes);
+uint32_t bus_code_page_generation(const address_bus_t *bus, uint32_t address);
+void     bus_clear_code_watches(address_bus_t *bus);
 
 uint8_t  bus_read8_slow(address_bus_t *bus, uint32_t address);
 uint16_t bus_read16_slow(address_bus_t *bus, uint32_t address);
@@ -126,6 +136,19 @@ static inline uint8_t *bus_plain_write_ptr(address_bus_t *bus,
     return bus->on_chip_ram.data + (address - m->on_chip_base);
 }
 
+static inline void bus_note_code_write(address_bus_t *bus,
+                                       uint32_t address,
+                                       unsigned bytes) {
+    if (!bus || bytes == 0) return;
+    address &= 0xffffff;
+    uint32_t first = address >> 12;
+    uint32_t last = ((address + bytes - 1) & 0xffffff) >> 12;
+    if (last < first) last = 4095u;
+    if (bus->code_page_watched[first]) bus->code_page_generation[first]++;
+    if (last != first && bus->code_page_watched[last])
+        bus->code_page_generation[last]++;
+}
+
 static inline uint8_t bus_read8(address_bus_t *bus, uint32_t address) {
     address &= 0xffffff;
     const uint8_t *page = bus->read_pages[address >> 12];
@@ -163,11 +186,13 @@ static inline void bus_write8(address_bus_t *bus, uint32_t address, uint8_t valu
     uint8_t *page = bus->write_pages[address >> 12];
     if (page) {
         page[address & 4095] = value;
+        bus_note_code_write(bus, address, 1);
         return;
     }
     const cybiko_machine_t *m = bus->machine;
     if (m && address >= m->on_chip_base && address < 0xfffc00) {
         memory_write8(&bus->on_chip_ram, address - m->on_chip_base, value);
+        bus_note_code_write(bus, address, 1);
         return;
     }
     bus_write8_slow(bus, address, value);
@@ -178,11 +203,13 @@ static inline void bus_write16(address_bus_t *bus, uint32_t address, uint16_t va
     unsigned offset = address & 4095;
     if (page && offset <= 4094) {
         page[offset] = (uint8_t)(value >> 8); page[offset + 1] = (uint8_t)value;
+        bus_note_code_write(bus, address, 2);
         return;
     }
     const cybiko_machine_t *m = bus->machine;
     if (m && address >= m->on_chip_base && address + 1 < 0xfffc00) {
         memory_write16(&bus->on_chip_ram, address - m->on_chip_base, value);
+        bus_note_code_write(bus, address, 2);
         return;
     }
     bus_write16_slow(bus, address, value);
@@ -194,11 +221,13 @@ static inline void bus_write32(address_bus_t *bus, uint32_t address, uint32_t va
     if (page && offset <= 4092) {
         page[offset] = (uint8_t)(value >> 24); page[offset + 1] = (uint8_t)(value >> 16);
         page[offset + 2] = (uint8_t)(value >> 8); page[offset + 3] = (uint8_t)value;
+        bus_note_code_write(bus, address, 4);
         return;
     }
     const cybiko_machine_t *m = bus->machine;
     if (m && address >= m->on_chip_base && address + 3 < 0xfffc00) {
         memory_write32(&bus->on_chip_ram, address - m->on_chip_base, value);
+        bus_note_code_write(bus, address, 4);
         return;
     }
     bus_write32_slow(bus, address, value);

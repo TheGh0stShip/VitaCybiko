@@ -988,6 +988,25 @@ RAM blocks every probe; it needs either safe invalidation/generation tracking
 for RAM block caching or targeted memory-form support for the observed RAM
 loops.
 
+Accepted foundation for an Xtreme mutable-code tier: the bus now exposes
+watched code pages with per-page generations. Pages are unwatched by default,
+so normal data writes only pay a cold zero-byte check. A future RAM/on-chip
+block cache can mark the source page range watched, store the corresponding
+generation values with the decoded block, and reject stale entries when CyOS,
+applications, DMA, or the CPU writes over that code. The tracking is in the
+normal `bus_write8/16/32` paths, so DMA writes are covered because the Xtreme
+DMA engine already transfers through the bus helpers. Focused `address_bus`
+tests cover unwatched writes staying generation-neutral, watched external-RAM
+writes, cross-page writes, plain on-chip RAM writes below I/O space, and
+clearing watches. Full host `ctest` remains 17/17.
+
+This makes a bespoke Xtreme execution tier concrete without forking the
+emulator: the next implementation should add a separate mutable-RAM block cache
+keyed by PC plus source-page generations. Do not reuse the immutable ROM cache
+blindly for this; Xtreme's RAM-resident CyOS/app code needs invalidation and
+memory-form guards, while Classic still benefits from the existing immutable
+ROM/flash paths.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

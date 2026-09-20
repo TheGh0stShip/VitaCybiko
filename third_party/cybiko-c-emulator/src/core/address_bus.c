@@ -282,6 +282,29 @@ void bus_free(address_bus_t *bus)
     memory_free(&bus->on_chip_ram);
 }
 
+void bus_clear_code_watches(address_bus_t *bus)
+{
+    memset(bus->code_page_watched, 0, sizeof(bus->code_page_watched));
+    memset(bus->code_page_generation, 0, sizeof(bus->code_page_generation));
+}
+
+void bus_watch_code_range(address_bus_t *bus, uint32_t address, unsigned bytes)
+{
+    if (!bus || bytes == 0) return;
+    address &= 0xffffff;
+    uint32_t first = address >> 12;
+    uint32_t last = ((address + bytes - 1) & 0xffffff) >> 12;
+    if (last < first) last = 4095u;
+    for (uint32_t page = first; page <= last; ++page)
+        bus->code_page_watched[page] = 1;
+}
+
+uint32_t bus_code_page_generation(const address_bus_t *bus, uint32_t address)
+{
+    if (!bus) return 0;
+    return bus->code_page_generation[(address & 0xffffff) >> 12];
+}
+
 /* --- Read operations --- */
 
 static uint16_t read_keyboard(address_bus_t *bus, uint32_t address)
@@ -409,9 +432,11 @@ void bus_write8_slow(address_bus_t *bus, uint32_t address, uint8_t value)
         break;
     case REGION_EXT_RAM:
         memory_write8(&bus->external_ram, ext_ram_offset(bus, address), value);
+        bus_note_code_write(bus, address, 1);
         break;
     case REGION_FLASH:
         memory_write8(&bus->flash_rom, flash_offset(bus, address), value);
+        bus_note_code_write(bus, address, 1);
         break;
     case REGION_KEYBOARD:
         /* Read-only, ignore */
@@ -441,9 +466,11 @@ void bus_write16_slow(address_bus_t *bus, uint32_t address, uint16_t value)
         break;
     case REGION_EXT_RAM:
         memory_write16(&bus->external_ram, ext_ram_offset(bus, address), value);
+        bus_note_code_write(bus, address, 2);
         break;
     case REGION_FLASH:
         memory_write16(&bus->flash_rom, flash_offset(bus, address), value);
+        bus_note_code_write(bus, address, 2);
         break;
     case REGION_KEYBOARD:
         break;
@@ -464,11 +491,13 @@ void bus_write32_slow(address_bus_t *bus, uint32_t address, uint32_t value)
         uint32_t offset = ext_ram_offset(bus, address);
         if (offset + 3 < bus->external_ram.size) {
             memory_write32(&bus->external_ram, offset, value);
+            bus_note_code_write(bus, address, 4);
             return;
         }
     }
     if (address >= m->on_chip_base && address + 3 < 0xFFFC00) {
         memory_write32(&bus->on_chip_ram, on_chip_offset(bus, address), value);
+        bus_note_code_write(bus, address, 4);
         return;
     }
     bus_write16(bus, address, (uint16_t)(value >> 16));
@@ -631,6 +660,7 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
 {
     if (address < 0xFFFC00) {
         memory_write8(&bus->on_chip_ram, on_chip_offset(bus, address), value);
+        bus_note_code_write(bus, address, 1);
         return;
     }
     if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
@@ -818,6 +848,7 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
 
     /* Default: write to on-chip RAM */
     memory_write8(&bus->on_chip_ram, on_chip_offset(bus, address), value);
+    bus_note_code_write(bus, address, 1);
 }
 
 /* --- On-chip 16-bit write --- */
@@ -826,6 +857,7 @@ static void write_on_chip16(address_bus_t *bus, uint32_t address, uint16_t value
 {
     if (address < 0xFFFC00) {
         memory_write16(&bus->on_chip_ram, on_chip_offset(bus, address), value);
+        bus_note_code_write(bus, address, 2);
         return;
     }
     if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
@@ -841,6 +873,7 @@ static void write_on_chip16(address_bus_t *bus, uint32_t address, uint16_t value
 
     /* Below 0xFFFE00: direct on-chip RAM write */
     memory_write16(&bus->on_chip_ram, on_chip_offset(bus, address), value);
+    bus_note_code_write(bus, address, 2);
 }
 
 /* --- DMA transfer (XT) --- */

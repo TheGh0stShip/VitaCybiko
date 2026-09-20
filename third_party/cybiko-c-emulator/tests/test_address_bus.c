@@ -156,6 +156,78 @@ static void test_plain_pointer_helpers_reject_slow_paths(void)
     teardown_bus(&bus);
 }
 
+static void test_code_page_generation_tracks_only_watched_writes(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    uint32_t ram = bus.machine->ram_base + 0x120;
+    bus_write8(&bus, ram, 0x12);
+    TEST_CHECK(bus_code_page_generation(&bus, ram) == 0);
+
+    bus_watch_code_range(&bus, ram, 2);
+    TEST_CHECK(bus_code_page_generation(&bus, ram) == 0);
+    bus_write8(&bus, ram, 0x34);
+    TEST_CHECK(bus_code_page_generation(&bus, ram) == 1);
+    bus_write16(&bus, ram, 0x5678);
+    TEST_CHECK(bus_code_page_generation(&bus, ram) == 2);
+
+    teardown_bus(&bus);
+}
+
+static void test_code_page_generation_tracks_cross_page_writes(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    uint32_t edge = bus.machine->ram_base + 0x0fff;
+    bus_watch_code_range(&bus, edge, 2);
+    bus_write16(&bus, edge, 0xabcd);
+
+    TEST_CHECK(bus_code_page_generation(&bus, edge) == 1);
+    TEST_CHECK(bus_code_page_generation(&bus, edge + 1) == 1);
+
+    teardown_bus(&bus);
+}
+
+static void test_code_page_generation_tracks_on_chip_ram_writes(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+
+    uint32_t ram = 0xfffbfc;
+    bus_watch_code_range(&bus, ram, 4);
+    bus_write32(&bus, ram, 0x12345678);
+
+    TEST_CHECK(bus_code_page_generation(&bus, ram) == 1);
+    TEST_CHECK(sync_count == 0);
+
+    teardown_bus(&bus);
+}
+
+static void test_code_page_watches_can_be_cleared(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    uint32_t ram = bus.machine->ram_base + 0x220;
+    bus_watch_code_range(&bus, ram, 1);
+    bus_write8(&bus, ram, 0xaa);
+    TEST_CHECK(bus_code_page_generation(&bus, ram) == 1);
+
+    bus_clear_code_watches(&bus);
+    bus_write8(&bus, ram, 0xbb);
+    TEST_CHECK(bus_code_page_generation(&bus, ram) == 0);
+
+    teardown_bus(&bus);
+}
+
 TEST_LIST = {
     {"plain_on_chip_ram_fast_path_stays_below_io_boundary", test_plain_on_chip_ram_fast_path_stays_below_io_boundary},
     {"on_chip_access_reaching_io_boundary_uses_slow_router", test_on_chip_access_reaching_io_boundary_uses_slow_router},
@@ -164,5 +236,9 @@ TEST_LIST = {
     {"plain_range_classifier_rejects_mmio_and_page_crossing", test_plain_range_classifier_rejects_mmio_and_page_crossing},
     {"plain_pointer_helpers_return_live_backing_storage", test_plain_pointer_helpers_return_live_backing_storage},
     {"plain_pointer_helpers_reject_slow_paths", test_plain_pointer_helpers_reject_slow_paths},
+    {"code_page_generation_tracks_only_watched_writes", test_code_page_generation_tracks_only_watched_writes},
+    {"code_page_generation_tracks_cross_page_writes", test_code_page_generation_tracks_cross_page_writes},
+    {"code_page_generation_tracks_on_chip_ram_writes", test_code_page_generation_tracks_on_chip_ram_writes},
+    {"code_page_watches_can_be_cleared", test_code_page_watches_can_be_cleared},
     {NULL, NULL}
 };
