@@ -120,6 +120,34 @@ static void test_sleep_does_not_stop_emulation(void)
     cybiko_destroy(emu);
 }
 
+static void test_cpu_stats_expose_fast_path_counters(void)
+{
+    cybiko_hal_t hal = {0};
+    cybiko_emu_t *emu = cybiko_create_model(&hal, CYBIKO_XTREME);
+    TEST_ASSERT(emu != NULL);
+    uint8_t *boot = calloc(CYBIKO_BOOT_ROM_SIZE, 1);
+    TEST_ASSERT(boot != NULL);
+    boot[2] = 1; /* Reset to 0x100. */
+    boot[0x100] = 0xf8; boot[0x101] = 0x00; /* MOV.B #0,R0L -> Z */
+    boot[0x102] = 0x46; boot[0x103] = 0x04; /* BNE fall-through */
+    boot[0x104] = 0x01; boot[0x105] = 0x80; /* SLEEP */
+    TEST_ASSERT(cybiko_load_boot_rom(emu, boot, CYBIKO_BOOT_ROM_SIZE));
+    cybiko_reset(emu);
+
+    cybiko_cpu_stats_t stats = {0};
+    TEST_CHECK(cybiko_get_cpu_stats(emu, &stats));
+    TEST_CHECK(stats.semantic_fast_blocks == 0);
+    cybiko_run_frame(emu);
+    TEST_CHECK(cybiko_get_cpu_stats(emu, &stats));
+    TEST_CHECK(stats.semantic_fast_blocks > 0);
+    TEST_CHECK(stats.semantic_fast_cycles >= stats.semantic_fast_blocks * 2);
+    TEST_CHECK(!cybiko_get_cpu_stats(NULL, &stats));
+    TEST_CHECK(!cybiko_get_cpu_stats(emu, NULL));
+
+    free(boot);
+    cybiko_destroy(emu);
+}
+
 /* Firmware can start a timer anywhere in a frame. The first ticks must not
  * wait until the next 60 Hz frame boundary. No proprietary ROM is needed. */
 static void test_timer_starts_during_frame(void)
@@ -169,6 +197,7 @@ static void test_timer_starts_during_frame(void)
 TEST_LIST = {
     { "crc32_matches_bitwise", test_crc32_matches_bitwise },
     { "timer_starts_during_frame", test_timer_starts_during_frame },
+    { "cpu_stats_expose_fast_path_counters", test_cpu_stats_expose_fast_path_counters },
     { "sleep_keeps_emulation_running", test_sleep_does_not_stop_emulation },
     { "rom_sizes_are_validated", test_rom_sizes_are_validated },
     { "nvram_size_is_bounded",   test_nvram_size_is_bounded },

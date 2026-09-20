@@ -146,6 +146,9 @@ Current block-discovery gate:
 - The CPU now records semantic fast-path accepted blocks, accepted cycles, and
   guarded rejects. These counters make future Vita/host smoke runs measurable
   instead of guessing whether decoded-block execution is being used.
+- The emulator API and `cybiko-smoke` now expose those counters, so firmware
+  smoke/performance runs print semantic fast-path block, cycle, and reject
+  counts alongside CPU time and frame activity.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -252,6 +255,8 @@ Branch edge-cache gate:
 - Runtime fast-path counter tests cover accepted block/cycle accounting and
   rejection accounting for mutable RAM, insufficient cycle budget, and pending
   unmasked IRQ guards.
+- Emulator-level tests cover public fast-path stats retrieval, and the host
+  smoke binary builds with fast-path counter reporting enabled.
 
 Current Classic V2 static chain-edge scan:
 

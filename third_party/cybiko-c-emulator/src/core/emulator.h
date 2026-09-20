@@ -7,6 +7,12 @@
 
 typedef struct cybiko_emu cybiko_emu_t;
 
+typedef struct {
+    uint64_t semantic_fast_blocks;
+    uint64_t semantic_fast_cycles;
+    uint64_t semantic_fast_rejects;
+} cybiko_cpu_stats_t;
+
 cybiko_emu_t *cybiko_create(const cybiko_hal_t *hal);
 cybiko_emu_t *cybiko_create_model(const cybiko_hal_t *hal, cybiko_model_t model);
 cybiko_model_t cybiko_get_model(const cybiko_emu_t *emu);
@@ -16,6 +22,7 @@ const uint8_t *cybiko_get_dataflash(const cybiko_emu_t *emu, size_t *len);
 void cybiko_get_clock(cybiko_emu_t *emu, uint8_t registers[16]);
 bool cybiko_load_clock(cybiko_emu_t *emu, const uint8_t *registers, size_t len,
                        uint64_t elapsed_seconds);
+bool cybiko_get_cpu_stats(const cybiko_emu_t *emu, cybiko_cpu_stats_t *stats);
 bool cybiko_check_firmware(cybiko_model_t model, const uint8_t *boot, size_t boot_len,
                           const uint8_t *flash, size_t flash_len);
 void          cybiko_destroy(cybiko_emu_t *emu);
