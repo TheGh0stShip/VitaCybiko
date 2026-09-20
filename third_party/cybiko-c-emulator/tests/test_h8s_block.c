@@ -877,6 +877,41 @@ static void test_plain_memory_instruction_matches_multi_push(void)
     teardown_memory_equiv_cpu(&bus);
 }
 
+static void test_mixed_plain_block_exit_executes_jsr_abs24(void)
+{
+    const uint8_t code[] = {
+        0x0b, 0x00,             /* ADDS #1,ER0 */
+        0x5e, 0x41, 0x23, 0x45  /* JSR @0x412345 */
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(code, sizeof(code), 0, 8, &block));
+    TEST_ASSERT(block.instructions == 1);
+    TEST_CHECK(block.branch_kind == H8S_BLOCK_BRANCH_JSR_ABS24);
+    TEST_CHECK(h8s_mixed_plain_block_supported(&block));
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+
+    h8s_branch_edge_cache_t edge_cache;
+    h8s_branch_edge_cache_init(&edge_cache);
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    state.er[7] = bus.machine->ram_base + 0x100;
+    uint32_t next = 0;
+
+    TEST_CHECK(h8s_execute_mixed_plain_block_exit(&block, &edge_cache, &bus,
+                                                  bus.machine->ram_base,
+                                                  &state, &next));
+    TEST_CHECK(state.er[0] == 1);
+    TEST_CHECK(state.er[7] == bus.machine->ram_base + 0x0fc);
+    TEST_CHECK(bus_read32(&bus, state.er[7]) ==
+               ((bus.machine->ram_base + 6u) & 0xffffffu));
+    TEST_CHECK(next == 0x412345);
+    TEST_CHECK(edge_cache.misses == 1);
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1819,6 +1854,7 @@ TEST_LIST = {
     { "plain_memory_instruction_matches_absolute_word_read", test_plain_memory_instruction_matches_absolute_word_read },
     { "plain_memory_instruction_matches_multi_pop", test_plain_memory_instruction_matches_multi_pop },
     { "plain_memory_instruction_matches_multi_push", test_plain_memory_instruction_matches_multi_push },
+    { "mixed_plain_block_exit_executes_jsr_abs24", test_mixed_plain_block_exit_executes_jsr_abs24 },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },
