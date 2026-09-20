@@ -40,6 +40,12 @@ mean audio is perceptually correct: repeated last-frame audio is a bounded
 gap-avoidance measure while the guest falls behind. The Xtreme CPU path remains
 the highest-priority performance backlog item.
 
+The same current capture contains 122 Classic V1 rows and 201 Classic V2 rows.
+Their aggregate guest rates are 40.78 and 40.73 frames/sec, respectively,
+versus 9.86 for Xtreme. This confirms the severe slowdown is model-specific
+rather than a universal audio-device failure; all three logs report zero
+producer-observed audio underruns after the continuity work.
+
 `tools/extract_cd_pack.py` recovers a user-supplied original CD CAP pack without
 running its Windows installer. The inspected pack contains 13 applications and
 two libraries (1,606 of 2,000 CFS blocks). They are **Xtreme CD software**, not a
