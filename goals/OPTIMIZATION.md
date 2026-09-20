@@ -59,8 +59,9 @@ Current block-discovery gate:
   ADD/ADDX/CMP/SUBX/OR/XOR/AND/MOV, and word/long immediate
   MOV/ADD/CMP/SUB/OR/XOR/AND, byte/word register
   ADD/MOV/ADDX/SUB/CMP/SUBX, long register ADD/SUB/CMP, and byte register
-  OR/XOR/AND) against a small standalone CPU state. It is deliberately not wired
-  into `h8s_cpu_run` yet; tests prove the semantics before runtime integration.
+  OR/XOR/AND, plus unary NOT/EXTU/EXTS/NEG register forms) against a small
+  standalone CPU state. It is deliberately not wired into `h8s_cpu_run` yet;
+  tests prove the semantics before runtime integration.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
