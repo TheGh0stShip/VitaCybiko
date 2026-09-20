@@ -13,6 +13,15 @@ typedef struct {
     uint64_t semantic_fast_rejects;
     uint64_t semantic_fast_cached_rejects;
     uint64_t semantic_fast_backoff_skips;
+    uint64_t semantic_fast_reject_guard;
+    uint64_t semantic_fast_reject_irq;
+    uint64_t semantic_fast_reject_window;
+    uint64_t semantic_fast_reject_cached;
+    uint64_t semantic_fast_reject_unsupported_block;
+    uint64_t semantic_fast_reject_unsupported_exit;
+    uint64_t semantic_fast_reject_cycle_budget;
+    uint64_t semantic_fast_reject_branch_resolve;
+    uint64_t semantic_fast_reject_target;
 } cybiko_cpu_stats_t;
 
 cybiko_emu_t *cybiko_create(const cybiko_hal_t *hal);

@@ -419,6 +419,7 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     TEST_CHECK(cpu.pc == CODE_BASE);
     TEST_CHECK(cpu.cycle_count == 0);
     TEST_CHECK(cpu.semantic_fast_rejects == 1);
+    TEST_CHECK(cpu.semantic_fast_reject_window == 1);
 
     memory_init(&bus.boot_rom, 32768, true);
     memory_write16(&bus.boot_rom, 0x100, 0xF800);
@@ -428,6 +429,7 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 1, &cycles));
     TEST_CHECK(cpu.pc == 0x8100);
     TEST_CHECK(cpu.semantic_fast_rejects == 2);
+    TEST_CHECK(cpu.semantic_fast_reject_guard == 1);
 
     cpu.pending_irqs[0] = 12;
     cpu.pending_irq_count = 1;
@@ -435,6 +437,7 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
     TEST_CHECK(cpu.pc == 0x8100);
     TEST_CHECK(cpu.semantic_fast_rejects == 3);
+    TEST_CHECK(cpu.semantic_fast_reject_irq == 1);
     teardown();
 }
 
@@ -526,6 +529,7 @@ static void test_semantic_reject_cache_does_not_cache_conditional_target_state(v
     TEST_CHECK(cpu.pc == 0xFFFA);
     TEST_CHECK(cpu.semantic_fast_rejects == 1);
     TEST_CHECK(cpu.semantic_fast_cached_rejects == 0);
+    TEST_CHECK(cpu.semantic_fast_reject_target == 1);
 
     cpu.pc = 0xFFFA;
     cpu.ccr = CCR_I | CCR_Z; /* Z set: BNE falls through inside the window. */
@@ -539,7 +543,8 @@ static void test_semantic_reject_cache_does_not_cache_conditional_target_state(v
 static void test_semantic_reject_cache_counts_state_independent_hits(void) {
     setup();
     memory_init(&bus.boot_rom, 32768, true);
-    memory_write16(&bus.boot_rom, 0x100, 0x5470); /* RTS: unsupported fast exit. */
+    memory_write16(&bus.boot_rom, 0x100, 0xF800); /* Semantic-covered prefix. */
+    memory_write16(&bus.boot_rom, 0x102, 0x5500); /* BSR8: unsupported fast exit. */
     bus_build_memory_map(&bus);
 
     int cycles = 0;
@@ -548,10 +553,41 @@ static void test_semantic_reject_cache_counts_state_independent_hits(void) {
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
     TEST_CHECK(cpu.semantic_fast_rejects == 1);
     TEST_CHECK(cpu.semantic_fast_cached_rejects == 0);
+    TEST_CHECK(cpu.semantic_fast_reject_unsupported_exit == 1);
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
     TEST_CHECK(cpu.semantic_fast_rejects == 2);
     TEST_CHECK(cpu.semantic_fast_cached_rejects == 1);
+    TEST_CHECK(cpu.semantic_fast_reject_cached == 1);
     TEST_CHECK(cpu.semantic_reject_backoff == H8S_SEMANTIC_REJECT_BACKOFF);
+    teardown();
+}
+
+static void test_semantic_fast_reject_reason_counters(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0x0100); /* Unsupported memory-form prefix for current tier. */
+    memory_write16(&bus.boot_rom, 0x102, 0x6F75);
+    memory_write16(&bus.boot_rom, 0x104, 0x0000);
+    bus_build_memory_map(&bus);
+
+    int cycles = 0;
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+    TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cpu.semantic_fast_rejects == 1);
+    TEST_CHECK(cpu.semantic_fast_reject_unsupported_block == 1);
+
+    h8s_cpu_reset(&cpu);
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0xF800); /* MOV.B #0,R0L -> Z */
+    memory_write16(&bus.boot_rom, 0x102, 0x0B01); /* ADDS #2,ER1 */
+    memory_write16(&bus.boot_rom, 0x104, 0x4602); /* BNE fall-through */
+    bus_build_memory_map(&bus);
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+    TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 2, &cycles));
+    TEST_CHECK(cpu.semantic_fast_rejects == 1);
+    TEST_CHECK(cpu.semantic_fast_reject_cycle_budget == 1);
     teardown();
 }
 
@@ -843,6 +879,7 @@ TEST_LIST = {
     {"cpu_run_fast_path_preserves_sync_boundary", test_cpu_run_fast_path_preserves_sync_boundary},
     {"semantic_reject_cache_does_not_cache_conditional_target_state", test_semantic_reject_cache_does_not_cache_conditional_target_state},
     {"semantic_reject_cache_counts_state_independent_hits", test_semantic_reject_cache_counts_state_independent_hits},
+    {"semantic_fast_reject_reason_counters", test_semantic_fast_reject_reason_counters},
     {"cpu_run_semantic_fast_path_matches_jmp_steps", test_cpu_run_semantic_fast_path_matches_jmp_steps},
     {"long_displacement_store", test_long_displacement_store},
     {"interrupt_frame", test_interrupt_frame},

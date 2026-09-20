@@ -635,6 +635,28 @@ Rejected follow-up experiments on 2026-09-20:
 Do not retry these as-is; the next performance step needs semantic decoded
 blocks or an ARMv7 translation tier rather than more scalar hot-path nibbling.
 
+Semantic fast-path reject telemetry was added after the timer-helper rejection
+so future work can stop guessing from the aggregate reject counter. The host
+smoke binary and Vita `performance.csv` now report rejects split by guard, IRQ,
+immutable-window miss, cached static reject, unsupported block, unsupported
+exit, cycle budget, branch resolution, and target-window failures. The focused
+CPU tests cover these counters.
+
+First 600-frame direct host smoke after adding reason counters:
+
+| Model | CPU seconds | Blocks | Cycles | Rejects | Cached | Backoff skips | Dominant reasons |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Classic V2 | 0.436124 | 141,315 | 371,070 | 322,589 | 100,648 | 25,765,783 | window 107,933; cached 100,648; unsupported block 97,699; unsupported exit 15,222 |
+| Xtreme | 4.964638 | 489,324 | 1,243,043 | 121,315 | 87,832 | 22,484,992 | cached 87,832; window 32,149; unsupported block 798; unsupported exit 122 |
+
+Implication: Xtreme should not receive another broad isolated semantic-opcode
+expansion first; unsupported semantic coverage is now a tiny fraction of its
+fast-path rejects. Xtreme needs a structurally different dispatcher/translation
+path that avoids repeated cached-reject probes and/or makes immutable-window
+transitions cheaper. Classic V2 still shows enough unsupported block/exit
+rejects that a branch-aware, memory-aware cached-interpreter tier can pay off
+there, but it must be measured separately from the Xtreme path.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
