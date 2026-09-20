@@ -9,8 +9,12 @@
 
 #if defined(__GNUC__) || defined(__clang__)
 #define CPU_INLINE static inline __attribute__((always_inline))
+#define CPU_LIKELY(x)   __builtin_expect(!!(x), 1)
+#define CPU_UNLIKELY(x) __builtin_expect(!!(x), 0)
 #else
 #define CPU_INLINE static inline
+#define CPU_LIKELY(x)   (x)
+#define CPU_UNLIKELY(x) (x)
 #endif
 
 /* ---- CCR bit positions (for Java-style getFlag/setFlag using bit index) ---- */
@@ -1763,7 +1767,7 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
         execute_step(cpu);
         ++*completion_debt;
         ++done;
-        if (*io_access || cpu->halted) break;
+        if (CPU_UNLIKELY(*io_access || cpu->halted)) break;
     }
     return done;
 }
