@@ -17,6 +17,34 @@ static bool is_control_transfer(uint16_t op)
     return false;
 }
 
+static bool is_tier1_executable(uint16_t op)
+{
+    uint8_t hi = (uint8_t)(op >> 8);
+    uint8_t lo = (uint8_t)op;
+
+    if ((hi >> 4) >= 0x8) return true; /* immediate byte ALU/MOV */
+
+    switch (hi) {
+    case 0x0a: case 0x0b: case 0x0f:
+    case 0x1a: case 0x1b: case 0x1f:
+        return true;
+    case 0x14: case 0x15: case 0x16: case 0x17:
+    case 0x64: case 0x65: case 0x66:
+        return true;
+    case 0x70: case 0x71: case 0x72: case 0x73:
+    case 0x74: case 0x75: case 0x76: case 0x77:
+        return true;
+    default:
+        break;
+    }
+
+    if (hi >= 0x10 && hi <= 0x13) return true; /* shifts/rotates */
+    if (hi == 0x60 || hi == 0x61 || hi == 0x62 || hi == 0x63) return true;
+    if (hi == 0x79 && ((lo >> 4) & 0xf) <= 6) return true;
+    if (hi == 0x7a && ((lo >> 4) & 0xf) <= 6) return true;
+    return false;
+}
+
 static bool prefixed_01_length(const uint8_t *rom, size_t rom_size,
                                uint32_t pc, uint16_t op, unsigned *bytes,
                                bool *control_stop)
@@ -162,7 +190,9 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
         .bytes = 0,
         .instructions = 0,
         .stop = H8S_BLOCK_STOP_LIMIT,
-        .stop_pc = start
+        .stop_pc = start,
+        .executable_prefix_instructions = 0,
+        .executable = true
     };
 
     uint32_t pc = start;
@@ -170,6 +200,7 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
         if ((size_t)pc + 1 >= rom_size) {
             block.stop = H8S_BLOCK_STOP_TRUNCATED;
             block.stop_pc = pc;
+            block.executable = false;
             break;
         }
 
@@ -179,6 +210,7 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
             block.stop_pc = pc;
             break;
         }
+        if (!is_tier1_executable(op)) block.executable = false;
 
         unsigned bytes = 0;
         bool prefix_stop = false;
@@ -187,17 +219,20 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
             block.stop = control_stop ? H8S_BLOCK_STOP_BRANCH :
                          prefix_stop ? H8S_BLOCK_STOP_PREFIX : H8S_BLOCK_STOP_UNSUPPORTED;
             block.stop_pc = pc;
+            if (!control_stop) block.executable = false;
             break;
         }
         if ((size_t)pc + bytes > rom_size) {
             block.stop = H8S_BLOCK_STOP_TRUNCATED;
             block.stop_pc = pc;
+            block.executable = false;
             break;
         }
 
         pc += bytes;
         block.bytes += bytes;
         block.instructions++;
+        if (block.executable) block.executable_prefix_instructions++;
         block.stop_pc = pc;
     }
 

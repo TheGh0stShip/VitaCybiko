@@ -63,6 +63,8 @@ int main(int argc, char **argv)
     unsigned max_instructions = parse_uint(argc == 3 ? argv[2] : NULL, 32);
     unsigned long long blocks = 0;
     unsigned long long instructions = 0;
+    unsigned long long executable_blocks = 0;
+    unsigned long long executable_prefix_instructions = 0;
     unsigned long long bytes = 0;
     unsigned long long stops[H8S_BLOCK_STOP_UNSUPPORTED + 1] = {0};
     unsigned longest = 0;
@@ -74,6 +76,8 @@ int main(int argc, char **argv)
             continue;
         blocks++;
         instructions += block.instructions;
+        executable_prefix_instructions += block.executable_prefix_instructions;
+        if (block.executable && block.instructions > 0) executable_blocks++;
         bytes += block.bytes;
         if (block.stop <= H8S_BLOCK_STOP_UNSUPPORTED) stops[block.stop]++;
         if (block.instructions > longest) {
@@ -89,6 +93,8 @@ int main(int argc, char **argv)
            instructions, bytes,
            blocks ? (double)instructions / (double)blocks : 0.0,
            blocks ? (double)bytes / (double)blocks : 0.0);
+    printf("tier1_executable_blocks=%llu tier1_executable_prefix_instructions=%llu\n",
+           executable_blocks, executable_prefix_instructions);
     printf("longest_block_pc=0x%06x longest_instructions=%u\n", longest_pc, longest);
     for (unsigned i = 0; i <= H8S_BLOCK_STOP_UNSUPPORTED; ++i)
         printf("stop_%s=%llu\n", stop_name((h8s_block_stop_t)i), stops[i]);

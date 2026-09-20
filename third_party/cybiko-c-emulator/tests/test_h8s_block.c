@@ -15,6 +15,8 @@ static void test_stops_before_branch(void)
     TEST_CHECK(block.bytes == 4);
     TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
     TEST_CHECK(block.stop_pc == 4);
+    TEST_CHECK(block.executable);
+    TEST_CHECK(block.executable_prefix_instructions == 2);
 }
 
 static void test_counts_variable_immediates(void)
@@ -30,6 +32,8 @@ static void test_counts_variable_immediates(void)
     TEST_CHECK(block.bytes == 10);
     TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
     TEST_CHECK(block.stop_pc == 10);
+    TEST_CHECK(block.executable);
+    TEST_CHECK(block.executable_prefix_instructions == 2);
 }
 
 static void test_counts_absolute_and_compound_bit_lengths(void)
@@ -47,6 +51,8 @@ static void test_counts_absolute_and_compound_bit_lengths(void)
     TEST_CHECK(block.bytes == 24);
     TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
     TEST_CHECK(block.stop_pc == 24);
+    TEST_CHECK(!block.executable);
+    TEST_CHECK(block.executable_prefix_instructions == 0);
 }
 
 static void test_counts_prefix_lengths(void)
@@ -65,6 +71,7 @@ static void test_counts_prefix_lengths(void)
     TEST_CHECK(block.bytes == 26);
     TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
     TEST_CHECK(block.stop_pc == 26);
+    TEST_CHECK(!block.executable);
 }
 
 static void test_sleep_is_control_boundary(void)
@@ -80,6 +87,8 @@ static void test_sleep_is_control_boundary(void)
     TEST_CHECK(block.bytes == 2);
     TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
     TEST_CHECK(block.stop_pc == 2);
+    TEST_CHECK(block.executable);
+    TEST_CHECK(block.executable_prefix_instructions == 1);
 }
 
 static void test_truncated_instruction(void)
@@ -93,6 +102,39 @@ static void test_truncated_instruction(void)
     TEST_CHECK(block.bytes == 0);
     TEST_CHECK(block.stop == H8S_BLOCK_STOP_TRUNCATED);
     TEST_CHECK(block.stop_pc == 0);
+    TEST_CHECK(!block.executable);
+    TEST_CHECK(block.executable_prefix_instructions == 0);
+}
+
+static void test_executable_prefix_immediate_block(void)
+{
+    const uint8_t rom[] = {
+        0x79, 0x00, 0x12, 0x34,
+        0x7a, 0x40, 0x00, 0x00, 0xff, 0xff,
+        0x8a, 0x7f,
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.instructions == 3);
+    TEST_CHECK(block.bytes == 12);
+    TEST_CHECK(block.executable);
+    TEST_CHECK(block.executable_prefix_instructions == 3);
+}
+
+static void test_memory_instruction_makes_block_non_executable(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x00,
+        0x68, 0x00,
+        0x0b, 0x01,
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.instructions == 3);
+    TEST_CHECK(!block.executable);
+    TEST_CHECK(block.executable_prefix_instructions == 1);
 }
 
 static void test_cache_hit_and_miss_accounting(void)
@@ -168,6 +210,8 @@ TEST_LIST = {
     { "counts_prefix_lengths", test_counts_prefix_lengths },
     { "sleep_is_control_boundary", test_sleep_is_control_boundary },
     { "truncated_instruction", test_truncated_instruction },
+    { "executable_prefix_immediate_block", test_executable_prefix_immediate_block },
+    { "memory_instruction_makes_block_non_executable", test_memory_instruction_makes_block_non_executable },
     { "cache_hit_and_miss_accounting", test_cache_hit_and_miss_accounting },
     { "cache_collision_evicts", test_cache_collision_evicts },
     { "cache_clear_preserves_limit", test_cache_clear_preserves_limit },

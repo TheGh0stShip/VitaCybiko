@@ -17,6 +17,10 @@ typedef struct {
     unsigned instructions;
     h8s_block_stop_t stop;
     uint32_t stop_pc;
+    /* Number of leading instructions covered by the initial semantic tier. */
+    unsigned executable_prefix_instructions;
+    /* True only when every instruction in this block is covered by that tier. */
+    bool executable;
 } h8s_block_t;
 
 #define H8S_BLOCK_CACHE_ENTRIES 256

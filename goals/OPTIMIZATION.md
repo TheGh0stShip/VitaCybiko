@@ -15,9 +15,9 @@ per 600 frames.
 ## Goal B — Immutable-ROM decoded blocks
 
 Status: partial — raw immutable-ROM fetch blocks landed in `495aa2a`; a
-conservative straight-line ROM block analyzer, block scanner, and bounded
-PC-keyed block cache have landed; semantic decoded block execution remains
-open.
+conservative straight-line ROM block analyzer, block scanner, bounded PC-keyed
+block cache, and tier-one semantic eligibility classifier have landed; semantic
+decoded block execution remains open.
 
 Build a bounded cache keyed by ROM PC. A block ends before branches, interrupts,
 I/O, event deadlines, or any instruction whose operands leave immutable ROM.
@@ -43,22 +43,28 @@ Current block-discovery gate:
   proprietary bytes in the repository;
 - `h8s_block_cache_t` now provides a 256-entry direct-mapped cache keyed by ROM
   PC, with tests for hit/miss accounting, collision eviction, clearing, and
-  invalid starts.
+  invalid starts;
+- tier-one executable-block classification now identifies straight-line blocks
+  containing only register/immediate/non-memory instructions, while recording
+  the executable prefix before memory/I/O/control-sensitive forms.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
-| Image | Avg insns | Stop branch | Stop prefix | Stop unsupported |
-| --- | ---: | ---: | ---: | ---: |
-| Classic V1 boot | 13.19 | 11,634 | 0 | 0 |
-| Classic V1 flash | 9.29 | 250,552 | 0 | 0 |
-| Classic V2 boot | 11.91 | 12,384 | 0 | 0 |
-| Classic V2 flash | 5.65 | 123,488 | 0 | 0 |
-| Xtreme boot | 8.11 | 14,591 | 0 | 0 |
-| Xtreme flash | 8.68 | 246,250 | 0 | 0 |
+| Image | Avg insns | Tier1 blocks | Tier1 prefix insns | Stop branch | Stop prefix | Stop unsupported |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Classic V1 boot | 13.19 | 4,881 | 125,482 | 11,634 | 0 | 0 |
+| Classic V1 flash | 9.29 | 38,325 | 412,395 | 250,552 | 0 | 0 |
+| Classic V2 boot | 11.91 | 4,119 | 96,277 | 12,384 | 0 | 0 |
+| Classic V2 flash | 5.65 | 16,584 | 59,818 | 123,488 | 0 | 0 |
+| Xtreme boot | 8.11 | 2,643 | 36,270 | 14,591 | 0 | 0 |
+| Xtreme flash | 8.68 | 46,533 | 556,157 | 246,250 | 0 | 0 |
 
 The scan shows branch boundaries now dominate; unsupported and prefix length
 decoding are no longer the blocker. The next decoded-block step should begin
 executing cache entries that contain only the classified straight-line forms.
+This is deliberately tracked as an optimization goal, not as a runtime speed
+claim: the Vita frontend still runs the interpreter until the semantic
+execution tier is wired into `h8s_cpu_run`.
 
 ## Goal C — ARMv7 translation backend
 
