@@ -18,7 +18,7 @@ static void setup_equiv_cpu(address_bus_t *bus, h8s_cpu_t *cpu,
                             const uint32_t er[8], uint8_t ccr)
 {
     bus_init(bus);
-    memory_init(&bus->on_chip_ram, 0x2400, true);
+    memory_init(&bus->on_chip_ram, 0x1000000 - EQUIV_CODE_BASE, true);
     h8s_cpu_init(cpu, bus);
     bus->cpu = cpu;
     cpu->pc = EQUIV_CODE_BASE;
@@ -767,6 +767,29 @@ static void test_mixed_plain_block_detects_static_mmio(void)
     TEST_CHECK(h8s_mixed_plain_block_supported(&ram_block));
     TEST_CHECK(!h8s_mixed_plain_block_has_static_nonplain_memory(&ram_block, &bus));
 
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_mixed_plain_block_detects_short_absolute_mmio(void)
+{
+    const uint8_t code[] = {
+        0x2a, 0xb3, /* MOV.B @0xffffb3:8,R2L */
+        0x46, 0x00  /* BNE +0 */
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(code, sizeof(code), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+    TEST_CHECK(h8s_mixed_plain_block_supported(&block));
+
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    const uint8_t nop[] = {0x00, 0x00};
+    uint32_t er[8] = {0};
+    setup_memory_equiv_cpu(&bus, &cpu, nop, sizeof(nop), er, 0);
+    TEST_CHECK(h8s_mixed_plain_block_has_static_nonplain_memory(&block, &bus));
+    h8s_block_cpu_state_t state = {.pc = 0};
+    TEST_CHECK(!h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    TEST_CHECK(state.pc == 0);
     teardown_memory_equiv_cpu(&bus);
 }
 
@@ -2243,6 +2266,7 @@ TEST_LIST = {
     { "plain_memory_instruction_reads_absolute32_long_ram", test_plain_memory_instruction_reads_absolute32_long_ram },
     { "plain_memory_instruction_rejects_mmio_and_rom_write", test_plain_memory_instruction_rejects_mmio_and_rom_write },
     { "mixed_plain_block_detects_static_mmio", test_mixed_plain_block_detects_static_mmio },
+    { "mixed_plain_block_detects_short_absolute_mmio", test_mixed_plain_block_detects_short_absolute_mmio },
     { "plain_memory_instruction_matches_byte_postincrement", test_plain_memory_instruction_matches_byte_postincrement },
     { "plain_memory_instruction_matches_long_displacement", test_plain_memory_instruction_matches_long_displacement },
     { "plain_memory_instruction_matches_long32_displacement_read", test_plain_memory_instruction_matches_long32_displacement_read },

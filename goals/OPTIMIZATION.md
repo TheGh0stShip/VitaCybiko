@@ -1355,6 +1355,30 @@ work remains a broader core-throughput change: branch-aware cached
 interpretation, a bounded ARMv7 tier, or a measured peripheral scheduling
 optimization with stronger before/after evidence.
 
+Accepted Xtreme short-absolute MMIO classification: the opcode/reject profile
+after the all-model fixture workflow showed the hottest remaining Xtreme window
+reject at RAM PC `0x49b928`, starting with `0x2ab3`
+(`MOV.B @0xffffb3:8,R2L`). That short absolute range is I/O/peripheral space,
+so it must not be executed as plain memory. The mixed-block classifier now
+recognizes `0x20xx`/`0x30xx` short absolute byte moves, allowing the block to be
+classified as static nonplain/MMIO and cached as a hardware-boundary reject
+instead of repeatedly treating the shape as an unsupported window. A regression
+test proves `0x2ab3` is supported enough to classify while still rejecting
+execution through the plain-memory helper.
+
+Validation:
+
+- focused H8S block suite passed;
+- full host suite passed 17/17;
+- Xtreme 600-frame direct smoke passed and moved from `cpu_seconds=1.765898`
+  in the profile run before the classifier change to `cpu_seconds=1.651582`
+  after it;
+- three-model 600-frame smoke passed using Vita-pulled fixtures:
+  Classic V1 1.51 s, Classic V2 0.52 s, Xtreme 1.72 s wall time.
+
+This is accepted as a safe throughput cleanup, not a device emulation shortcut:
+the actual `0xffffxx` access remains on the interpreter/MMIO path.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
