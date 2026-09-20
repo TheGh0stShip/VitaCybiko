@@ -149,6 +149,17 @@ Current block-discovery gate:
 - The emulator API and `cybiko-smoke` now expose those counters, so firmware
   smoke/performance runs print semantic fast-path block, cycle, and reject
   counts alongside CPU time and frame activity.
+- The CPU now keeps a tiny negative cache for immutable-ROM PCs that are known
+  not to be eligible for the guarded semantic fast path. This prevents the
+  runtime from repeatedly paying decoded-block support checks at hot unsupported
+  PCs. On the locally staged Classic V2 candidate smoke command
+  (`emu_rom.bin`, `emu_cyos.bin`, `emu_flash.bin`, 600 frames), CPU time moved
+  from 3.986120 s to 3.605913 s while semantic fast-path counters remained
+  `blocks=3460`, `cycles=11721`, `rejects=110559225`. The unchanged reject
+  count is expected because it records rejected attempts; the speedup comes
+  from making repeated static rejects cheaper. This is a narrow dispatch-cost
+  fix, not proof that the current semantic tier is broad enough for Vita
+  smoothness.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware

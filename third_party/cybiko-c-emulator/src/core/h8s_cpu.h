@@ -18,6 +18,14 @@ typedef struct address_bus address_bus_t;
 #define MAX_PENDING_IRQS 32
 
 #define H8S_ROM_FETCH_BLOCK_WORDS 16
+#define H8S_SEMANTIC_REJECT_CACHE_ENTRIES 512
+
+typedef struct {
+    bool valid;
+    const uint8_t *data;
+    uint32_t pc;
+} h8s_semantic_reject_entry_t;
+
 typedef struct h8s_cpu {
     uint32_t er[8];
     uint32_t pc;
@@ -48,6 +56,7 @@ typedef struct h8s_cpu {
     bool rom_block_valid;
     h8s_block_cache_t semantic_block_cache;
     h8s_branch_edge_cache_t semantic_edge_cache;
+    h8s_semantic_reject_entry_t semantic_reject_cache[H8S_SEMANTIC_REJECT_CACHE_ENTRIES];
     uint64_t semantic_fast_blocks;
     uint64_t semantic_fast_cycles;
     uint64_t semantic_fast_rejects;
