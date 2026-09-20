@@ -40,6 +40,7 @@ typedef struct {
     uint64_t semantic_mutable_execute_other;
     uint64_t semantic_mutable_prefix_blocks;
     uint64_t semantic_mutable_prefix_cycles;
+    uint64_t hot_plain_memory_2b_instructions;
 } cybiko_cpu_stats_t;
 
 cybiko_emu_t *cybiko_create(const cybiko_hal_t *hal);

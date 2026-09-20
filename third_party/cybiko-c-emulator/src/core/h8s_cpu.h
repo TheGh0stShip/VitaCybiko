@@ -110,6 +110,7 @@ typedef struct h8s_cpu {
     uint64_t semantic_mutable_execute_other;
     uint64_t semantic_mutable_prefix_blocks;
     uint64_t semantic_mutable_prefix_cycles;
+    uint64_t hot_plain_memory_2b_instructions;
 } h8s_cpu_t;
 
 void     h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus);

@@ -521,6 +521,29 @@ static void test_semantic_mutable_block_fast_path_matches_steps(void) {
     teardown();
 }
 
+static void test_hot_plain_memory_2b_step_fast_path(void) {
+    setup();
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    uint32_t address = bus.machine->ram_base + 0x300;
+    bus_write16(&bus, address, 0x4321);
+    write_code16(0, 0x6910); /* MOV.W @ER1,R0 */
+    cpu.pc = CODE_BASE;
+    cpu.ccr = CCR_I;
+    cpu.er[1] = address;
+
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.pc == CODE_BASE + 2);
+    TEST_CHECK((cpu.er[0] & 0xffff) == 0x4321);
+    TEST_CHECK(cpu.hot_plain_memory_2b_instructions == 1);
+    TEST_CHECK(cpu.cycle_count == 1);
+    TEST_CHECK(!(cpu.ccr & CCR_Z));
+
+    memory_free(&bus.external_ram);
+    teardown();
+}
+
 static void test_semantic_mutable_reject_cache_invalidates_on_code_write(void) {
     setup();
     memory_init(&bus.external_ram, bus.machine->ram_size, true);
@@ -1033,6 +1056,7 @@ TEST_LIST = {
     {"semantic_rom_block_fast_path_executes_rts_to_rom", test_semantic_rom_block_fast_path_executes_rts_to_rom},
     {"semantic_rom_block_fast_path_executes_branch_only_rts", test_semantic_rom_block_fast_path_executes_branch_only_rts},
     {"semantic_mutable_block_fast_path_matches_steps", test_semantic_mutable_block_fast_path_matches_steps},
+    {"hot_plain_memory_2b_step_fast_path", test_hot_plain_memory_2b_step_fast_path},
     {"semantic_mutable_reject_cache_invalidates_on_code_write", test_semantic_mutable_reject_cache_invalidates_on_code_write},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},

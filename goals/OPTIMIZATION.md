@@ -1472,6 +1472,29 @@ targeted hand-fast paths for specific hot memory opcodes, or an ARMv7/Vita
 translation tier that fuses register ops, plain memory access and branch exits
 without repeatedly constructing mixed executor runs.
 
+Accepted targeted 2-byte plain-memory opcode fast path: instead of routing
+ROM/RAM memory forms through the rejected generic mixed-block executor, the CPU
+now recognizes the hot two-byte `MOV.B/W @ERn` and auto-increment/decrement
+forms after instruction fetch and before the full decoder. The helper commits
+only when the data address is a plain memory range; MMIO, LCD, timers and other
+side-effecting addresses fall through to the existing decoder. Writes still use
+the bus write helpers so code-page invalidation remains intact.
+
+Validation:
+
+- focused H8S CPU suite passed with a new test that executes `MOV.W @ER1,R0`
+  through the hot path and verifies the counter, PC, cycle count and flags;
+- full host suite passed 17/17;
+- direct Xtreme repeat comparison against commit `2ed650f` showed the baseline
+  at 1.498/1.556/1.623 s and the hot-path build at 1.231/1.488/1.597 s, with
+  about 3.24M hot-path instructions in a 600-frame Xtreme smoke;
+- three-model smoke passed using Vita-pulled fixtures:
+  Classic V1 0.90 s, Classic V2 0.35 s, Xtreme 1.43 s wall time.
+
+This is accepted as a targeted cheap interpreter fast path. It does not solve
+the remaining Xtreme gap by itself, but it proves the profitable direction:
+specialize hot opcodes cheaply before escalating to an ARMv7 translation tier.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

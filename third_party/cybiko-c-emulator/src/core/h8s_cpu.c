@@ -571,6 +571,57 @@ static inline uint32_t fetch32(h8s_cpu_t *cpu) {
     return ((uint32_t)hi << 16) | lo;
 }
 
+CPU_INLINE bool execute_hot_plain_memory_2b(h8s_cpu_t *cpu, uint16_t op)
+{
+    uint8_t hi = (uint8_t)(op >> 8);
+    if (hi != 0x68 && hi != 0x69 && hi != 0x6c && hi != 0x6d)
+        return false;
+
+    uint8_t lo = (uint8_t)op;
+    bool write = (lo & 0x80u) != 0;
+    unsigned reg = lo & 0xfu;
+    unsigned address_reg = (lo >> 4) & 0x7u;
+    unsigned bytes = (hi == 0x68 || hi == 0x6c) ? 1u : 2u;
+    bool auto_adjust = hi == 0x6c || hi == 0x6d;
+    uint32_t address = cpu->er[address_reg] & 0xffffffu;
+    if (auto_adjust && write)
+        address = (address - bytes) & 0xffffffu;
+
+    if (write) {
+        if (!bus_is_plain_write_range(cpu->bus, address, bytes))
+            return false;
+        uint32_t value = bytes == 1 ? get_reg_b(cpu, (int)reg) :
+                                      get_r(cpu, (int)reg);
+        if (auto_adjust)
+            cpu->er[address_reg] = (cpu->er[address_reg] - bytes) & 0xffffffffu;
+        if (bytes == 1) {
+            bus_write8(cpu->bus, address, (uint8_t)value);
+            set_nz_b(cpu, (int)value);
+        } else {
+            bus_write16(cpu->bus, address, (uint16_t)value);
+            set_nz_w(cpu, (int)value);
+        }
+    } else {
+        const uint8_t *ptr = bus_plain_read_ptr(cpu->bus, address, bytes);
+        if (!ptr)
+            return false;
+        if (auto_adjust)
+            cpu->er[address_reg] = (cpu->er[address_reg] + bytes) & 0xffffffffu;
+        if (bytes == 1) {
+            uint8_t value = ptr[0];
+            set_reg_b(cpu, (int)reg, value);
+            set_nz_b(cpu, value);
+        } else {
+            uint16_t value = (uint16_t)((ptr[0] << 8) | ptr[1]);
+            set_r(cpu, (int)reg, value);
+            set_nz_w(cpu, value);
+        }
+    }
+    set_flag(cpu, BIT_V, false);
+    cpu->hot_plain_memory_2b_instructions++;
+    return true;
+}
+
 /* ---- Branch condition evaluator ---- */
 static bool evaluate_condition(const h8s_cpu_t *cpu, int cond) {
     bool c = get_flag(cpu, BIT_C);
@@ -2211,6 +2262,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->semantic_mutable_execute_other = 0;
     cpu->semantic_mutable_prefix_blocks = 0;
     cpu->semantic_mutable_prefix_cycles = 0;
+    cpu->hot_plain_memory_2b_instructions = 0;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
@@ -2339,6 +2391,10 @@ CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
     cpu->last_start_pc = cpu->pc;
     uint16_t op = fetch16(cpu);
     opcode_profile_record(op);
+    if (execute_hot_plain_memory_2b(cpu, op)) {
+        cpu->cycle_count++;
+        return;
+    }
     decode(cpu, op);
     cpu->cycle_count++;
 }
