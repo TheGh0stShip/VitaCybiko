@@ -1799,6 +1799,38 @@ callgrind moved from about 6.6086B to 6.6076B total guest-emulator
 instructions with the same workload counters. This is a small but measurable
 cleanup inside an already accepted hot path.
 
+Rejected shared hot-condition helper: factoring the accepted direct branch
+condition switch into a reusable inline helper and using it in fallback Bcc
+decode sites passed focused CPU tests and three-model smoke, but same-command
+120-frame Xtreme callgrind regressed to about 6.888B. The duplicated switch in
+`execute_hot_branch8` remains faster for the hot path; fallback Bcc decode does
+not justify perturbing that code shape.
+
+Rejected lazy register-bit operand evaluation: moving `bit_value` and
+`operand_value` calculation inside only the register-bit switch cases that need
+them looked like it would save work for `BSET`/`BNOT`/`BCLR`, and passed
+focused CPU tests plus three-model smoke. Same-command 120-frame Xtreme
+callgrind regressed to about 6.862B. The original up-front computation keeps a
+better code shape for the hot register-bit helper and remains preferred.
+
+Rejected direct plain-write fast path: replacing hot plain-memory writes with
+`bus_plain_write_ptr` plus direct byte stores and explicit code-write notes
+passed focused CPU tests, semantic block tests, and 600-frame smokes for
+Classic V1, Classic V2, and Xtreme. Same-command 120-frame Xtreme callgrind
+regressed to about 6.836B from the accepted 6.6076B baseline, so the existing
+`bus_is_plain_write_range` plus `bus_write*` code shape is faster.
+
+Accepted max cached-reject backoff: Xtreme spends substantial time revisiting
+semantic ROM/mutable block PCs that are already cached as unsupported. Raising
+`H8S_SEMANTIC_CACHED_REJECT_BACKOFF` from 2048 to larger values keeps the
+normal first-time reject path intact while probing cached static rejects less
+often. Focused H8S CPU tests, semantic block tests, and 600-frame smokes for
+Classic V1, Classic V2, and Xtreme all passed. Same-command 120-frame Xtreme
+callgrind improved from the accepted 6.6076B baseline to about 6.4265B at
+8192, 6.4104B at 16384, 6.4064B at 32768, and 6.3626B at the legal 16-bit
+maximum of 65535. The attempted 65536 setting overflowed the `uint16_t`
+backoff field and was rejected by the build, so 65535 is the accepted value.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

@@ -25,9 +25,11 @@ typedef struct address_bus address_bus_t;
  * reducing repeated cached-reject probes on Xtreme after the BHI/BLS fix. */
 #define H8S_SEMANTIC_REJECT_BACKOFF 256
 /* Cached static rejects are already proven not to enter the current semantic
- * fast path. Probe them less often than first-time misses while preserving
- * regular opportunities to discover phase changes or future coverage wins. */
-#define H8S_SEMANTIC_CACHED_REJECT_BACKOFF 2048
+ * fast path. Probe them far less often than first-time misses; the 16-bit
+ * maximum was measured fastest for the Xtreme boot/menu workload and still
+ * preserves periodic opportunities to discover phase changes or future
+ * coverage wins. */
+#define H8S_SEMANTIC_CACHED_REJECT_BACKOFF 65535
 
 typedef struct {
     bool valid;
