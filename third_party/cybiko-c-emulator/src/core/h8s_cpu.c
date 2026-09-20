@@ -799,7 +799,21 @@ CPU_INLINE bool execute_hot_branch8(h8s_cpu_t *cpu, uint16_t op)
     int cond = hi & 0xf;
     int8_t disp = (int8_t)(op & 0xff);
     uint32_t target = (cpu->pc + disp) & 0xffffffu;
-    bool taken = evaluate_condition(cpu, cond);
+    bool taken;
+    switch (cond) {
+    case 0x0:
+        taken = true;
+        break;
+    case 0x6:
+        taken = (cpu->ccr & CCR_Z) == 0;
+        break;
+    case 0x7:
+        taken = (cpu->ccr & CCR_Z) != 0;
+        break;
+    default:
+        taken = evaluate_condition(cpu, cond);
+        break;
+    }
     if (taken)
         cpu->pc = target;
     branch_profile_record(1, taken, target);

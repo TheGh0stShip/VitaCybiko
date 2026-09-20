@@ -1723,6 +1723,32 @@ Validation:
   `hot_prefix0100_plain_memory_instructions=1679846`, and
   `hot_branch8_instructions=7328813`).
 
+Rejected semantic-block memory CCR combine: applying the same fused NZ+clear-V
+idea inside `h8s_execute_plain_memory_instruction` and the LCD byte-write
+prefix path passed focused block/CPU tests and three-model smoke, but did not
+improve the measured Xtreme workload. Same-command 120-frame Xtreme callgrind
+reported about 6.731328B guest-emulator instructions versus the accepted
+hot-helper baseline of about 6.731324B, with only tiny counter drift. The patch
+was removed; the helper-level combine remains accepted because it showed a real
+drop from the previous 7.277B baseline, but the block-executor variant should
+not be retried unless the block executor is redesigned more broadly.
+
+Accepted narrow hot-branch condition specialization: a previous broad rewrite
+of branch condition evaluation regressed, but the latest symbolized Xtreme
+profile showed the hot 8-bit branch path still spending heavily in generic
+flag reads. The accepted version only specializes the dominant safe cases
+inside `execute_hot_branch8`: unconditional BRA/BT plus BNE/BEQ Z-bit tests.
+All other conditions still use the existing evaluator, avoiding the broad
+rewrite that was already rejected.
+
+Validation:
+
+- focused H8S CPU tests passed;
+- three-model 600-frame smoke passed with Classic V1 0.766s, Classic V2
+  0.456s, and Xtreme 1.671s in one direct run;
+- same-command 120-frame Xtreme callgrind dropped from about 6.731B to 6.634B
+  total guest-emulator instructions after the narrow branch specialization.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
