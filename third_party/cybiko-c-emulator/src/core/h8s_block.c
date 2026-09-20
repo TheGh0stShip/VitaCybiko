@@ -2027,7 +2027,8 @@ static bool plain_memory_instruction_supported(const h8s_block_instruction_t *in
     uint16_t op = insn->op;
     uint8_t hi = (uint8_t)(op >> 8);
     if (op == 0x0100) {
-        if (insn->bytes != 4 && insn->bytes != 6) return false;
+        if (insn->bytes != 4 && insn->bytes != 6 && insn->bytes != 8)
+            return false;
         uint16_t op2 = insn->bytes == 4 ? (uint16_t)insn->imm :
                        (uint16_t)(insn->imm >> 16);
         uint8_t hi2 = (uint8_t)(op2 >> 8);
@@ -2058,6 +2059,53 @@ static bool plain_memory_instruction_supported(const h8s_block_instruction_t *in
     return (hi == 0x68 || hi == 0x69 || hi == 0x6c || hi == 0x6d) ?
            insn->bytes == 2 :
            (hi == 0x6e || hi == 0x6f) ? insn->bytes == 4 : false;
+}
+
+static bool static_plain_memory_operand(const h8s_block_instruction_t *insn,
+                                        uint32_t *address,
+                                        unsigned *bytes,
+                                        bool *write)
+{
+    if (!insn || !address || !bytes || !write) return false;
+    uint16_t op = insn->op;
+    uint8_t hi = (uint8_t)(op >> 8);
+    uint8_t lo = (uint8_t)op;
+    uint32_t absolute32 = ((insn->imm & 0xffffu) << 16) | insn->ext;
+
+    if (op == 0x0100) {
+        if (insn->bytes != 6 && insn->bytes != 8) return false;
+        uint16_t op2 = (uint16_t)(insn->imm >> 16);
+        uint8_t hi2 = (uint8_t)(op2 >> 8);
+        uint8_t lo2 = (uint8_t)op2;
+        if (hi2 != 0x6b) return false;
+        *write = (lo2 & 0x80) != 0;
+        *bytes = 4;
+        if (lo2 & 0x20) {
+            if (insn->bytes != 8) return false;
+            *address = absolute32 & 0xffffffu;
+        } else {
+            if (insn->bytes != 6) return false;
+            *address = (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+        }
+        *address &= 0xffffffu;
+        return true;
+    }
+
+    if (hi != 0x6a && hi != 0x6b) return false;
+    *write = (lo & 0x80) != 0;
+    *bytes = hi == 0x6a ? 1u : 2u;
+    if (hi == 0x6a && ((lo >> 4) == 1 || (lo >> 4) == 3)) {
+        if (insn->bytes != 8) return false;
+        *address = absolute32 & 0xffffffu;
+    } else if (lo & 0x20) {
+        if (insn->bytes != 6) return false;
+        *address = insn->imm & 0xffffffu;
+    } else {
+        if (insn->bytes != 4) return false;
+        *address = (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+    }
+    *address &= 0xffffffu;
+    return true;
 }
 
 static bool execute_one_semantic_instruction(const h8s_block_instruction_t *insn,
@@ -2104,6 +2152,26 @@ bool h8s_mixed_plain_block_supported(const h8s_block_t *block)
         }
     }
     return true;
+}
+
+bool h8s_mixed_plain_block_has_static_nonplain_memory(const h8s_block_t *block,
+                                                      const address_bus_t *bus)
+{
+    if (!block || !bus) return false;
+    for (unsigned i = 0; i < block->instructions; ++i) {
+        uint32_t address = 0;
+        unsigned bytes = 0;
+        bool write = false;
+        if (!static_plain_memory_operand(&block->decoded[i], &address, &bytes, &write))
+            continue;
+        if (write) {
+            if (!bus_is_plain_write_range(bus, address, bytes))
+                return true;
+        } else if (!bus_is_plain_read_range(bus, address, bytes)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool h8s_execute_mixed_plain_block_exit(const h8s_block_t *block,

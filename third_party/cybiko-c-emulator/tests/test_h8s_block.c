@@ -742,6 +742,34 @@ static void test_plain_memory_instruction_rejects_mmio_and_rom_write(void)
     teardown_memory_equiv_cpu(&bus);
 }
 
+static void test_mixed_plain_block_detects_static_mmio(void)
+{
+    const uint8_t mmio_code[] = {
+        0x6b, 0x02, 0xfe, 0xa6, /* MOV.W @0xfffea6:16,R2 */
+        0x46, 0x00              /* BNE +0 */
+    };
+    const uint8_t ram_code[] = {
+        0x01, 0x00, 0x6b, 0x23, 0x00, 0x40, 0x01, 0x20,
+        0x46, 0x00              /* MOV.L @0x00400120:32,ER3; BNE +0 */
+    };
+    h8s_block_t mmio_block, ram_block;
+    TEST_ASSERT(h8s_analyze_rom_block(mmio_code, sizeof(mmio_code), 0, 4, &mmio_block));
+    TEST_ASSERT(h8s_analyze_rom_block(ram_code, sizeof(ram_code), 0, 4, &ram_block));
+
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    uint32_t er[8] = {0};
+    const uint8_t nop[] = {0x00, 0x00};
+    setup_memory_equiv_cpu(&bus, &cpu, nop, sizeof(nop), er, 0);
+
+    TEST_CHECK(h8s_mixed_plain_block_supported(&mmio_block));
+    TEST_CHECK(h8s_mixed_plain_block_has_static_nonplain_memory(&mmio_block, &bus));
+    TEST_CHECK(h8s_mixed_plain_block_supported(&ram_block));
+    TEST_CHECK(!h8s_mixed_plain_block_has_static_nonplain_memory(&ram_block, &bus));
+
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_plain_memory_instruction_matches_byte_postincrement(void)
 {
     const uint8_t code[] = {0x6c, 0x08}; /* MOV.B @ER0+, R0L */
@@ -1954,6 +1982,7 @@ TEST_LIST = {
     { "plain_memory_instruction_reads_absolute_long_rom", test_plain_memory_instruction_reads_absolute_long_rom },
     { "plain_memory_instruction_reads_absolute32_long_ram", test_plain_memory_instruction_reads_absolute32_long_ram },
     { "plain_memory_instruction_rejects_mmio_and_rom_write", test_plain_memory_instruction_rejects_mmio_and_rom_write },
+    { "mixed_plain_block_detects_static_mmio", test_mixed_plain_block_detects_static_mmio },
     { "plain_memory_instruction_matches_byte_postincrement", test_plain_memory_instruction_matches_byte_postincrement },
     { "plain_memory_instruction_matches_long_displacement", test_plain_memory_instruction_matches_long_displacement },
     { "plain_memory_instruction_matches_absolute_byte_read", test_plain_memory_instruction_matches_absolute_byte_read },
