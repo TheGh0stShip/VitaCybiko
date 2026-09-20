@@ -32,6 +32,23 @@ static void test_counts_variable_immediates(void)
     TEST_CHECK(block.stop_pc == 10);
 }
 
+static void test_counts_absolute_and_compound_bit_lengths(void)
+{
+    const uint8_t rom[] = {
+        0x6a, 0x00, 0x12, 0x34,                   /* MOV.B @aa:16, R0 */
+        0x6b, 0x20, 0x12, 0x34, 0x56, 0x78,       /* MOV.W @aa:24, R0 */
+        0x6a, 0x10, 0x12, 0x34, 0x70, 0x00,       /* bit op @aa:16 */
+        0x6a, 0x30, 0x12, 0x34, 0x56, 0x78, 0x70, 0x00,
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.instructions == 4);
+    TEST_CHECK(block.bytes == 24);
+    TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
+    TEST_CHECK(block.stop_pc == 24);
+}
+
 static void test_prefix_is_conservative_boundary(void)
 {
     const uint8_t rom[] = {
@@ -62,6 +79,7 @@ static void test_truncated_instruction(void)
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
+    { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "prefix_is_conservative_boundary", test_prefix_is_conservative_boundary },
     { "truncated_instruction", test_truncated_instruction },
     { NULL, NULL }

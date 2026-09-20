@@ -37,8 +37,17 @@ static bool instruction_length(uint16_t op, unsigned *bytes, bool *prefix_stop)
         *bytes = 2;
         return true;
     case 0x6:
-        if (hi == 0x6a || hi == 0x6b) {
-            *bytes = (lo & 0x20) ? 4 : 4;
+        if (hi == 0x6a) {
+            uint8_t top_nibble = (uint8_t)(lo >> 4);
+            if (top_nibble == 1 || top_nibble == 3) {
+                *bytes = (top_nibble == 3) ? 8 : 6;
+            } else {
+                *bytes = (lo & 0x20) ? 6 : 4;
+            }
+            return true;
+        }
+        if (hi == 0x6b) {
+            *bytes = (lo & 0x20) ? 6 : 4;
             return true;
         }
         if (hi == 0x6e || hi == 0x6f) {
