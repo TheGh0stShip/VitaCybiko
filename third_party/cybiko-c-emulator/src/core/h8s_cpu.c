@@ -2593,23 +2593,29 @@ CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
     cpu->last_start_pc = cpu->pc;
     uint16_t op = fetch16(cpu);
     opcode_profile_record(op);
-    if (execute_hot_plain_memory_2b(cpu, op)) {
-        cpu->cycle_count++;
-        return;
+    uint8_t hi = (uint8_t)(op >> 8);
+    bool hot_executed = false;
+    if (op == 0x0100) {
+        hot_executed = execute_hot_prefix0100_plain_memory(cpu, op);
+    } else if ((hi & 0xf0u) == 0x40u) {
+        hot_executed = execute_hot_branch8(cpu, op);
+    } else {
+        switch (hi) {
+        case 0x68: case 0x69: case 0x6c: case 0x6d:
+            hot_executed = execute_hot_plain_memory_2b(cpu, op);
+            break;
+        case 0x6e: case 0x6f:
+            hot_executed = execute_hot_plain_memory_4b(cpu, op);
+            break;
+        case 0x70: case 0x71: case 0x72: case 0x73:
+        case 0x74: case 0x75: case 0x76: case 0x77:
+            hot_executed = execute_hot_register_bit(cpu, op);
+            break;
+        default:
+            break;
+        }
     }
-    if (execute_hot_plain_memory_4b(cpu, op)) {
-        cpu->cycle_count++;
-        return;
-    }
-    if (execute_hot_prefix0100_plain_memory(cpu, op)) {
-        cpu->cycle_count++;
-        return;
-    }
-    if (execute_hot_branch8(cpu, op)) {
-        cpu->cycle_count++;
-        return;
-    }
-    if (execute_hot_register_bit(cpu, op)) {
+    if (hot_executed) {
         cpu->cycle_count++;
         return;
     }

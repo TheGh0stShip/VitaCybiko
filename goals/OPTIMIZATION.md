@@ -1638,6 +1638,38 @@ Validation:
 - three-model 600-frame smoke passed with Classic V1 0.81s, Classic V2 0.32s,
   and Xtreme 1.11s in the direct release-host smoke.
 
+Accepted opcode-class hot dispatch: a later Xtreme callgrind sample still put
+`fetch16` and per-instruction dispatch overhead at the top, while opcode
+profiling showed the same high-frequency families (`0x0100`, Bcc `0x40`-`0x4f`,
+plain memory moves, and register bit operations). Instead of calling every hot
+helper for every instruction and paying several negative checks, `execute_step`
+now routes by opcode high byte first and calls only the relevant helper. If a
+memory helper rejects because the address is not plain memory, execution still
+falls back to the existing decoder with the helper's PC/prefetch rollback.
+
+Validation:
+
+- focused H8S CPU tests passed;
+- scheduler equivalence tests passed;
+- three-model 600-frame smoke passed with Classic V1 0.999s, Classic V2 0.384s,
+  and Xtreme 1.624s in the same direct release-host smoke style;
+- the same-session Xtreme baseline immediately before this change measured
+  1.994s for 600 frames, so this is a measured dispatch-cost improvement.
+
+Rejected fetch/shift experiments from the same pass:
+
+- replacing copied immutable-ROM fetch blocks with a pointer window removed the
+  profiled refill loop but regressed the direct 600-frame smoke to Classic V1
+  1.237s, Classic V2 0.590s, and Xtreme 2.207s. The extra byte assembly on
+  every cache hit outweighed the refill saving, so the copied 16-word block
+  remains in place.
+- a conservative hot helper for logical word/long shifts in the frequent
+  `0x10`/`0x11` families passed focused CPU and scheduler tests, but regressed
+  Xtreme whether placed after the existing hot helpers or before them
+  (about 2.32s for 600 frames in the early-dispatch placement). Do not reattempt
+  isolated shift helpers without folding them into a broader decoded-block or
+  cached-interpreter tier.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
