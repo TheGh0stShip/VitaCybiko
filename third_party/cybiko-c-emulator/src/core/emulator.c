@@ -224,14 +224,14 @@ static void tick_peripherals(cybiko_emu_t *emu, int cycles)
 static int cycles_until_next_peripheral_event(cybiko_emu_t *emu)
 {
     int next = INT_MAX;
-    int t = timer8_cycles_until_event(&emu->timer8[0]);
+    int t = emu->timer8[0].cached_divisor ? timer8_cycles_until_event(&emu->timer8[0]) : 0;
     if (t > 0 && t < next) next = t;
-    t = timer8_cycles_until_event(&emu->timer8[1]);
+    t = emu->timer8[1].cached_divisor ? timer8_cycles_until_event(&emu->timer8[1]) : 0;
     if (t > 0 && t < next) next = t;
 
     const cybiko_machine_t *m = emu->bus.machine;
     for (int i = 0; i < m->timer_channels; i++) {
-        t = timer16_cycles_until_event(&emu->timer16[i]);
+        t = emu->timer16[i].cached_divisor ? timer16_cycles_until_event(&emu->timer16[i]) : 0;
         if (t > 0 && t < next) next = t;
     }
 
