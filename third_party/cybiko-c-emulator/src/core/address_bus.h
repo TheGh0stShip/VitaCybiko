@@ -104,6 +104,28 @@ static inline bool bus_is_plain_write_range(const address_bus_t *bus,
     return m && address >= m->on_chip_base && address + bytes <= 0xfffc00u;
 }
 
+static inline const uint8_t *bus_plain_read_ptr(const address_bus_t *bus,
+                                                uint32_t address,
+                                                unsigned bytes) {
+    if (!bus_is_plain_read_range(bus, address, bytes)) return NULL;
+    address &= 0xffffff;
+    const uint8_t *page = bus->read_pages[address >> 12];
+    if (page) return page + (address & 4095u);
+    const cybiko_machine_t *m = bus->machine;
+    return bus->on_chip_ram.data + (address - m->on_chip_base);
+}
+
+static inline uint8_t *bus_plain_write_ptr(address_bus_t *bus,
+                                           uint32_t address,
+                                           unsigned bytes) {
+    if (!bus_is_plain_write_range(bus, address, bytes)) return NULL;
+    address &= 0xffffff;
+    uint8_t *page = bus->write_pages[address >> 12];
+    if (page) return page + (address & 4095u);
+    const cybiko_machine_t *m = bus->machine;
+    return bus->on_chip_ram.data + (address - m->on_chip_base);
+}
+
 static inline uint8_t bus_read8(address_bus_t *bus, uint32_t address) {
     address &= 0xffffff;
     const uint8_t *page = bus->read_pages[address >> 12];

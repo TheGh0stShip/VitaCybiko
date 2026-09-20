@@ -108,11 +108,61 @@ static void test_plain_range_classifier_rejects_mmio_and_page_crossing(void)
     teardown_bus(&bus);
 }
 
+static void test_plain_pointer_helpers_return_live_backing_storage(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    memory_write16(&bus.boot_rom, 0x100, 0x1234);
+    const uint8_t *rom = bus_plain_read_ptr(&bus, 0x100, 2);
+    TEST_ASSERT(rom != NULL);
+    TEST_CHECK(rom[0] == 0x12);
+    TEST_CHECK(rom[1] == 0x34);
+    TEST_CHECK(bus_plain_write_ptr(&bus, 0x100, 2) == NULL);
+
+    uint32_t ram_addr = bus.machine->ram_base + 0x120;
+    uint8_t *ram = bus_plain_write_ptr(&bus, ram_addr, 4);
+    TEST_ASSERT(ram != NULL);
+    ram[0] = 0xde; ram[1] = 0xad; ram[2] = 0xbe; ram[3] = 0xef;
+    TEST_CHECK(bus_read32(&bus, ram_addr) == 0xdeadbeef);
+    TEST_CHECK(bus_plain_read_ptr(&bus, ram_addr, 4) == ram);
+
+    uint8_t *on_chip = bus_plain_write_ptr(&bus, 0xfffbfc, 4);
+    TEST_ASSERT(on_chip != NULL);
+    on_chip[0] = 0xca; on_chip[1] = 0xfe; on_chip[2] = 0xba; on_chip[3] = 0xbe;
+    TEST_CHECK(bus_read32(&bus, 0xfffbfc) == 0xcafebabe);
+    TEST_CHECK(bus_plain_read_ptr(&bus, 0xfffbfc, 4) == on_chip);
+
+    teardown_bus(&bus);
+}
+
+static void test_plain_pointer_helpers_reject_slow_paths(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    TEST_CHECK(bus_plain_read_ptr(&bus, 0xffff84, 1) == NULL);
+    TEST_CHECK(bus_plain_write_ptr(&bus, 0xffff84, 1) == NULL);
+    TEST_CHECK(bus_plain_read_ptr(&bus, 0xfffbfd, 4) == NULL);
+    TEST_CHECK(bus_plain_write_ptr(&bus, 0xfffbfd, 4) == NULL);
+    TEST_CHECK(bus_plain_read_ptr(&bus, bus.machine->ram_base + 0xfff, 2) == NULL);
+    TEST_CHECK(bus_plain_write_ptr(&bus, bus.machine->ram_base + 0xfff, 2) == NULL);
+
+    teardown_bus(&bus);
+}
+
 TEST_LIST = {
     {"plain_on_chip_ram_fast_path_stays_below_io_boundary", test_plain_on_chip_ram_fast_path_stays_below_io_boundary},
     {"on_chip_access_reaching_io_boundary_uses_slow_router", test_on_chip_access_reaching_io_boundary_uses_slow_router},
     {"io_boundary_byte_access_synchronizes", test_io_boundary_byte_access_synchronizes},
     {"plain_range_classifier_accepts_mapped_ram_and_rom", test_plain_range_classifier_accepts_mapped_ram_and_rom},
     {"plain_range_classifier_rejects_mmio_and_page_crossing", test_plain_range_classifier_rejects_mmio_and_page_crossing},
+    {"plain_pointer_helpers_return_live_backing_storage", test_plain_pointer_helpers_return_live_backing_storage},
+    {"plain_pointer_helpers_reject_slow_paths", test_plain_pointer_helpers_reject_slow_paths},
     {NULL, NULL}
 };

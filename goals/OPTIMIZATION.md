@@ -807,6 +807,14 @@ directly reads/writes memory. It mirrors the QEMU-style RAM/ROM fast path vs
 MMIO slow path split: safe ordinary memory can be fast, but device-visible
 addresses remain interpreter exits.
 
+The bus now also exposes tested `bus_plain_read_ptr` and
+`bus_plain_write_ptr` helpers. They return live backing-storage pointers only
+after the plain-range guards pass, return read-only pointers for ROM, return
+writable pointers for RAM/on-chip RAM, and return `NULL` for MMIO or
+page-crossing slow paths. Future memory-aware semantic blocks should use these
+pointers for direct big-endian loads/stores only after resolving an effective
+address and proving the access remains ordinary memory.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
