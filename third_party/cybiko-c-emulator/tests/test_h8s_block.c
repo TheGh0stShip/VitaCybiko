@@ -824,6 +824,73 @@ static void test_plain_memory_instruction_matches_long_displacement(void)
     teardown_memory_equiv_cpu(&bus);
 }
 
+static void test_plain_memory_instruction_matches_long32_displacement_read(void)
+{
+    const uint8_t code[] = {
+        0x01, 0x00, 0x78, 0x20, 0x6b, 0x03,
+        0x00, 0x00, 0x00, 0x10
+    }; /* MOV.L @(0x10:32,ER2),ER3 */
+    uint8_t rom[10] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+    TEST_CHECK(block.decoded[0].bytes == 10);
+    TEST_CHECK(block.decoded[0].imm == 0x78206b03);
+    TEST_CHECK(block.decoded[0].ext == 0x0000);
+    TEST_CHECK(block.decoded[0].ext2 == 0x0010);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+    cpu.er[2] = bus.machine->ram_base + 0x180;
+    memory_write32(&bus.external_ram, 0x190, 0x76543210);
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    state.er[2] = bus.machine->ram_base + 0x180;
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[3] == cpu.er[3]);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_plain_memory_instruction_matches_long32_displacement_write(void)
+{
+    const uint8_t code[] = {
+        0x01, 0x00, 0x78, 0x20, 0x6b, 0x83,
+        0x00, 0x00, 0x00, 0x10
+    }; /* MOV.L ER3,@(0x10:32,ER2) */
+    uint8_t rom[10] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+    TEST_CHECK(block.decoded[0].bytes == 10);
+
+    uint32_t er[8] = {0};
+    er[3] = 0xfedcba98;
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+    cpu.er[2] = bus.machine->ram_base + 0x1a0;
+    cpu.er[3] = er[3];
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    state.er[2] = bus.machine->ram_base + 0x1a0;
+    state.er[3] = er[3];
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(bus_read32(&bus, bus.machine->ram_base + 0x1b0) == 0xfedcba98);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_plain_memory_instruction_matches_long_post_increment(void)
 {
     const uint8_t code[] = {0x01, 0x00, 0x6d, 0x74}; /* MOV.L @ER7+,ER4 */
@@ -2128,6 +2195,8 @@ TEST_LIST = {
     { "mixed_plain_block_detects_static_mmio", test_mixed_plain_block_detects_static_mmio },
     { "plain_memory_instruction_matches_byte_postincrement", test_plain_memory_instruction_matches_byte_postincrement },
     { "plain_memory_instruction_matches_long_displacement", test_plain_memory_instruction_matches_long_displacement },
+    { "plain_memory_instruction_matches_long32_displacement_read", test_plain_memory_instruction_matches_long32_displacement_read },
+    { "plain_memory_instruction_matches_long32_displacement_write", test_plain_memory_instruction_matches_long32_displacement_write },
     { "plain_memory_instruction_matches_long_post_increment", test_plain_memory_instruction_matches_long_post_increment },
     { "plain_memory_instruction_matches_long_pre_decrement", test_plain_memory_instruction_matches_long_pre_decrement },
     { "plain_memory_instruction_matches_absolute_byte_read", test_plain_memory_instruction_matches_absolute_byte_read },

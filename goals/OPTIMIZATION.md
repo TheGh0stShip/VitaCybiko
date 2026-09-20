@@ -1244,6 +1244,22 @@ form in the mixed fast path requires widening the decoded instruction
 representation so the full extra word plus 32-bit displacement are available
 to the executor.
 
+Accepted follow-up for that decoded representation: decoded block instructions
+now store the second 16-bit extension word required by 10-byte prefixed
+long-displacement forms, and the mixed plain-memory executor can execute
+`0x0100/0x78xx` when the resolved runtime address is ordinary memory. The
+executor still asks the bus for a plain read/write range at the final effective
+address, so MMIO and device-register cases remain interpreter-visible.
+
+Validation:
+
+- focused scheduler/H8S block/H8S CPU/emulator tests passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 1.41 s, Classic V2 0.78 s, Xtreme
+  2.09 s;
+- focused H8S block tests compare both read and write variants of the 10-byte
+  form against the interpreter.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

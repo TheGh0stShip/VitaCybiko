@@ -575,6 +575,7 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
         block.decoded[block.instructions].op = op;
         block.decoded[block.instructions].imm = 0;
         block.decoded[block.instructions].ext = 0;
+        block.decoded[block.instructions].ext2 = 0;
         if (bytes == 4) {
             block.decoded[block.instructions].imm = read_be16(rom + block.stop_pc + 2);
         } else if (bytes >= 6) {
@@ -584,6 +585,10 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
             if (bytes >= 8) {
                 block.decoded[block.instructions].ext =
                     read_be16(rom + block.stop_pc + 6);
+            }
+            if (bytes >= 10) {
+                block.decoded[block.instructions].ext2 =
+                    read_be16(rom + block.stop_pc + 8);
             }
         }
         block.decoded[block.instructions].bytes = (uint8_t)bytes;
@@ -1911,6 +1916,16 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
             address = state->er[(lo2 >> 4) & 0x7] +
                       (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
             break;
+        case 0x78: {
+            if (insn->bytes != 10) return false;
+            uint16_t op3 = (uint16_t)insn->imm;
+            write = (op3 & 0x80) != 0;
+            reg = op3 & 0x7;
+            address_reg = (lo2 >> 4) & 0x7;
+            uint32_t disp = ((uint32_t)insn->ext << 16) | insn->ext2;
+            address = state->er[address_reg] + disp;
+            break;
+        }
         default:
             return false;
         }
@@ -2061,6 +2076,7 @@ static bool plain_memory_instruction_supported(const h8s_block_instruction_t *in
         if (hi2 == 0x69 || hi2 == 0x6d) return insn->bytes == 4;
         if (hi2 == 0x6b) return (lo2 & 0x20) ? insn->bytes == 8 : insn->bytes == 6;
         if (hi2 == 0x6f) return insn->bytes == 6;
+        if (hi2 == 0x78) return insn->bytes == 10;
         return false;
     }
     if (op == 0x0110 || op == 0x0120 || op == 0x0130) {
