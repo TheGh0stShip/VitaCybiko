@@ -28,7 +28,7 @@ add_library(cybiko_core STATIC
 )
 target_include_directories(cybiko_core PUBLIC ${CYBIKO_VENDOR_DIR}/src)
 
-add_library(vitacybiko_input STATIC src/frontend/input.c)
+add_library(vitacybiko_input STATIC src/frontend/input.c src/frontend/motion.c)
 target_include_directories(vitacybiko_input PUBLIC src ${CYBIKO_VENDOR_DIR}/src)
 
 option(CYBIKO_TRACE "Enable CPU instruction tracing in the emulation core" OFF)
@@ -51,9 +51,9 @@ if(VITA)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   pkg_check_modules(SDL2_GFX REQUIRED IMPORTED_TARGET SDL2_gfx)
 
-  set(VITA_APP_NAME "VitaCybiko")
+  set(VITA_APP_NAME "VitaCybiko 01.14")
   set(VITA_TITLEID  "VCYB00001")
-  set(VITA_VERSION  "01.13")
+  set(VITA_VERSION  "01.14")
 
   add_executable(${PROJECT_NAME}
     src/vita/main.c
@@ -103,9 +103,22 @@ else()
   target_link_libraries(cybiko-smoke cybiko_core)
   add_executable(cybiko-replay src/host/replay.c)
   target_link_libraries(cybiko-replay cybiko_core)
+  add_executable(cybiko-motion-replay src/host/motion_replay.c)
+  target_link_libraries(cybiko-motion-replay vitacybiko_input)
+  add_executable(cybiko-check-motion-trace src/host/check_motion_trace.c)
+  target_link_libraries(cybiko-check-motion-trace vitacybiko_input)
 
   include(CTest)
   if(BUILD_TESTING)
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+      add_test(NAME motion_trace_decoder COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_motion_trace.py)
+    endif()
+    add_executable(test_motion tests/test_motion.c)
+    target_link_libraries(test_motion vitacybiko_input)
+    target_include_directories(test_motion PRIVATE ${CYBIKO_VENDOR_DIR}/tests)
+    add_test(NAME motion_interpolation COMMAND test_motion)
     if(VITACYBIKO_FRONTEND_TESTS)
       find_package(PkgConfig REQUIRED)
       pkg_check_modules(HOST_SDL REQUIRED IMPORTED_TARGET sdl2 SDL2_gfx)

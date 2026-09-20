@@ -9,7 +9,7 @@
 #include <time.h>
 #include <errno.h>
 
-static FILE *replay_log, *replay_keys;
+static FILE *replay_log, *replay_keys, *replay_video;
 static unsigned replay_frame_index;
 static unsigned next_key_frame, next_key_column, next_key_mask;
 static bool have_key;
@@ -71,6 +71,13 @@ static void replay_frame(cybiko_emu_t *emu)
             read_next_key();
             emu->hal.keyboard_poll = replay_keyboard;
         }
+        path = getenv("CYBIKO_REPLAY_VIDEO");
+        if (path) {
+            /* Raw 160x100 gray8 frames at the guest's 60 Hz frame cadence.
+             * Includes duplicates, so animation timing is preserved. */
+            replay_video = fopen(path, "wb");
+            if (!replay_video) { perror("replay video"); exit(2); }
+        }
         original_audio = emu->hal.audio_output;
         emu->hal.audio_output = replay_audio;
         /* Stable date when no user-provided raw clock was requested. */
@@ -88,6 +95,11 @@ static void replay_frame(cybiko_emu_t *emu)
     clock_t start = clock();
     cybiko_run_frame(emu);
     double ms = (double)(clock() - start) * 1000.0 / CLOCKS_PER_SEC;
+    if (replay_video && fwrite(emu->lcd.frame_buffer, 1,
+        CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT, replay_video) !=
+        CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT) {
+        perror("replay video write"); exit(2);
+    }
     if (replay_log) {
         fprintf(replay_log, "%u,%.6f,%06x,%02x,%08x,%08x,%08x,%08x,%llu\n",
             replay_frame_index, ms, emu->cpu.pc, emu->cpu.ccr,
@@ -110,5 +122,6 @@ int main(int argc, char **argv)
     if (replay_log && (ferror(replay_log) || fflush(replay_log))) result = 6;
     if (replay_log && fclose(replay_log)) result = 6;
     if (replay_keys) fclose(replay_keys);
+    if (replay_video && fclose(replay_video)) result = 6;
     return result;
 }

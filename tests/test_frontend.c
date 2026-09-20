@@ -695,18 +695,6 @@ static void test_presentation_gaps(void)
     TEST_CHECK(timing.max_gap == 0 && timing.late == 0);
 }
 
-static void test_catchup_respects_presentation_budget(void)
-{
-    /* 50 ms CPU work caused 150 ms between presentations in the old loop. */
-    TEST_CHECK(catchup_frame_budget(50000, 16667, 50000, 1000) == 0);
-    TEST_CHECK(catchup_frame_budget(100000, 16667, 10000, 3000) == 0);
-    TEST_CHECK(catchup_frame_budget(50000, 16667, 4000, 3000) == 2);
-    TEST_CHECK(catchup_frame_budget(16667, 16667, 4000, 3000) == 1);
-    TEST_CHECK(catchup_frame_budget(0, 16667, 4000, 3000) == 0);
-    TEST_CHECK(catchup_frame_budget(50000, 16667, 0, 0) == 0);
-    TEST_CHECK(catchup_frame_budget(50000, 16667, 1000, 20000) == 0);
-}
-
 static void test_lcd_upload_preserves_colors_and_skips_duplicates(void)
 {
     app_ctx_t *ctx = calloc(1, sizeof(*ctx));
@@ -844,12 +832,219 @@ static void test_async_save_snapshot(void)
     SDL_Quit();
 }
 
+typedef struct {
+    app_ctx_t *ctx;
+    SDL_sem *entered, *release;
+    uint16_t sampled[CYBIKO_KEYBOARD_COLUMNS];
+} worker_test_gate_t;
+
+static void gated_keyboard_poll(void *ptr, uint16_t *matrix, int columns)
+{
+    worker_test_gate_t *gate = ptr;
+    hal_keyboard_poll(gate->ctx, matrix, columns);
+    memcpy(gate->sampled, matrix, sizeof(gate->sampled));
+    SDL_SemPost(gate->entered);
+    SDL_SemWait(gate->release);
+}
+
+static void gated_render(void *ptr, const uint8_t *pixels, int width, int height)
+{
+    worker_test_gate_t *gate = ptr;
+    hal_render_frame(gate->ctx, pixels, width, height);
+}
+
+static void gated_audio(void *ptr, const uint8_t *samples, int count)
+{
+    worker_test_gate_t *gate = ptr;
+    hal_audio_output(gate->ctx, samples, count);
+}
+
+static void test_guest_worker_handoff(void)
+{
+    app_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    TEST_ASSERT(ctx != NULL);
+    TEST_ASSERT(init_sdl(ctx));
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+    ctx->model = CYBIKO_CLASSIC_V1;
+    input_reset(&ctx->physical_input, ctx->model);
+    worker_test_gate_t gate = {.ctx = ctx,
+        .entered = SDL_CreateSemaphore(0), .release = SDL_CreateSemaphore(0)};
+    TEST_ASSERT(gate.entered && gate.release);
+    cybiko_hal_t hal = {.ctx = &gate, .keyboard_poll = gated_keyboard_poll,
+        .render_frame = gated_render, .audio_output = gated_audio};
+    cybiko_emu_t *emu = cybiko_create_model(&hal, ctx->model);
+    TEST_ASSERT(emu != NULL);
+    cybiko_reset(emu);
+    TEST_ASSERT(start_guest_worker(ctx, emu));
+    dispatch_guest_frame(ctx);
+    TEST_ASSERT(SDL_SemWaitTimeout(gate.entered, 5000) == 0);
+    TEST_CHECK(ctx->guest->busy);
+    TEST_CHECK(!collect_guest_frame(ctx, false, true));
+
+    /* Guest is deliberately blocked. UI rendering and a complete short key
+     * tap must still work, without changing the in-flight keyboard snapshot. */
+    SDL_Event event = {.type = SDL_KEYDOWN};
+    event.key.keysym.scancode = SDL_SCANCODE_RIGHT;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    event.type = SDL_KEYUP;
+    TEST_ASSERT(SDL_PushEvent(&event) == 1);
+    bool running = true;
+    process_sdl_events(ctx, &running);
+    TEST_CHECK(running);
+    for (int i = 0; i < 12; ++i) render_frame(ctx);
+    TEST_CHECK(ctx->physical_input.keys[6][12].hold == 8);
+    TEST_CHECK(!(gate.sampled[4] & 1));
+    TEST_CHECK(!collect_guest_frame(ctx, false, true));
+    SDL_SemPost(gate.release);
+    TEST_CHECK(collect_guest_frame(ctx, true, true));
+    TEST_CHECK(!ctx->guest->busy);
+    TEST_CHECK(ctx->guest->lcd_valid);
+    TEST_CHECK(ctx->guest->audio_count <= AUDIO_CONVERT_MAX_SAMPLES);
+    TEST_CHECK(!collect_guest_frame(ctx, false, true));
+
+    /* Hold duration advances per dispatched guest frame, not per UI poll. */
+    for (int frame = 0; frame < 9; ++frame) {
+        dispatch_guest_frame(ctx);
+        TEST_ASSERT(SDL_SemWaitTimeout(gate.entered, 5000) == 0);
+        TEST_CHECK(!!(gate.sampled[4] & 1) == (frame < 8));
+        SDL_SemPost(gate.release);
+        TEST_CHECK(collect_guest_frame(ctx, true, false));
+    }
+    ctx->validation_menu = true;
+    input_reset(&ctx->validation_input, ctx->model);
+    ctx->validation_frame = 950;
+    dispatch_guest_frame(ctx);
+    TEST_ASSERT(SDL_SemWaitTimeout(gate.entered, 5000) == 0);
+    TEST_CHECK(gate.sampled[4] & 1);
+    SDL_SemPost(gate.release);
+    TEST_CHECK(collect_guest_frame(ctx, true, false));
+    ctx->validation_menu = false;
+    dispatch_guest_frame(ctx);
+    TEST_ASSERT(SDL_SemWaitTimeout(gate.entered, 5000) == 0);
+    TEST_CHECK(!(gate.sampled[4] & 1));
+    SDL_SemPost(gate.release);
+    TEST_CHECK(collect_guest_frame(ctx, true, false));
+    /* Paused boundary is safe for snapshot capture and worker recreation. */
+    save_snapshot_t *snapshot = capture_save_snapshot(emu);
+    TEST_ASSERT(snapshot != NULL);
+    free_save_snapshot(snapshot);
+    stop_guest_worker(ctx);
+    TEST_CHECK(ctx->guest == NULL);
+    TEST_ASSERT(start_guest_worker(ctx, emu));
+    dispatch_guest_frame(ctx);
+    TEST_ASSERT(SDL_SemWaitTimeout(gate.entered, 5000) == 0);
+    SDL_SemPost(gate.release);
+    stop_guest_worker(ctx); /* Join an in-flight frame before destroy. */
+    cybiko_destroy(emu);
+    SDL_DestroySemaphore(gate.entered);
+    SDL_DestroySemaphore(gate.release);
+    cleanup(ctx);
+}
+
+static void test_launch_options(void)
+{
+    launch_options_t options;
+    char *valid[] = {"VitaCybiko", "--boot-model", "classic-v1", "--run-seconds", "45"};
+    TEST_CHECK(parse_launch_options(5, valid, &options));
+    TEST_CHECK(options.options && options.model == CYBIKO_CLASSIC_V1 && options.run_seconds == 45);
+    valid[2] = "xtreme";
+    TEST_CHECK(parse_launch_options(5, valid, &options));
+    TEST_CHECK(options.model == CYBIKO_XTREME);
+    valid[4] = "-1";
+    TEST_CHECK(!parse_launch_options(5, valid, &options));
+    valid[4] = "999999999999999999999999999999999";
+    TEST_CHECK(!parse_launch_options(5, valid, &options));
+    valid[4] = "1junk";
+    TEST_CHECK(!parse_launch_options(5, valid, &options));
+    valid[4] = "10"; valid[2] = "not-a-profile";
+    TEST_CHECK(!parse_launch_options(5, valid, &options));
+    TEST_CHECK(parse_launch_options(1, valid, &options));
+    TEST_CHECK(!options.options && options.model == -1 && !options.run_seconds);
+    char *diagnostic[] = {"VitaCybiko", "--boot-model", "classic-v1",
+                          "--run-seconds", "60", "--validate-menu"};
+    TEST_CHECK(parse_launch_options(6, diagnostic, &options));
+    TEST_CHECK(options.validation_menu && options.run_seconds == 60);
+    char *unbounded[] = {"VitaCybiko", "--boot-model", "classic-v1", "--validate-menu"};
+    TEST_CHECK(!parse_launch_options(4, unbounded, &options));
+}
+
+static void test_interpolated_lcd_render(void)
+{
+    app_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    motion_pair_t *pair = calloc(1, sizeof(*pair));
+    uint32_t *pixels = malloc(LCD_W * LCD_H * sizeof(*pixels));
+    TEST_ASSERT(ctx && pair && pixels);
+    TEST_ASSERT(init_sdl(ctx));
+    ctx->landscape = true;
+    for (int y = 0; y < 100; ++y)
+        for (int x = 0; x < 160; ++x) {
+            pair->before[y * 160 + x] = (uint8_t)(x * 17 + y * 37);
+            pair->after[y * 160 + x] = (uint8_t)((x - 6) * 17 + y * 37);
+        }
+    pair->translated = true; pair->dx = 6; pair->moving_blocks = MOTION_BLOCKS;
+    memset(pair->row_dx, 6, sizeof(pair->row_dx));
+    ctx->motion_trace = calloc(MOTION_TRACE_CAPACITY, sizeof(*ctx->motion_trace));
+    TEST_ASSERT(ctx->motion_trace != NULL);
+    ctx->validation_frame = 950;
+    upload_lcd(ctx, pair->before, 160, 100);
+    uint64_t now = presentation_microseconds();
+    motion_presenter_accept(&ctx->motion, pair, now - 300000);
+    motion_presenter_accept(&ctx->motion, pair, now - 100000);
+    render_frame(ctx);
+    TEST_CHECK(ctx->motion_texture_active);
+    TEST_CHECK(ctx->generated_lcd_frames == 1);
+    TEST_CHECK(ctx->motion_trace_count == 1);
+    TEST_CHECK(!memcmp(ctx->motion_trace[0].before, pair->before, MOTION_PIXELS));
+    TEST_CHECK(!memcmp(ctx->motion_trace[0].after, pair->after, MOTION_PIXELS));
+    TEST_CHECK(!memcmp(ctx->motion_trace[0].output, ctx->interpolated_lcd, sizeof(ctx->interpolated_lcd)));
+    /* Presented backbuffers are undefined. Read a render target before
+     * present to verify the texture actually contains the synthesized image. */
+    SDL_Texture *target = SDL_CreateTexture(ctx->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                            SDL_TEXTUREACCESS_TARGET, LCD_W, LCD_H);
+    TEST_ASSERT(target != NULL);
+    TEST_CHECK(SDL_SetRenderTarget(ctx->renderer, target) == 0);
+    TEST_CHECK(SDL_RenderCopy(ctx->renderer, ctx->motion_texture, NULL, NULL) == 0);
+    TEST_CHECK(SDL_RenderReadPixels(ctx->renderer, NULL, SDL_PIXELFORMAT_ARGB8888,
+                                    pixels, LCD_W * sizeof(*pixels)) == 0);
+    TEST_CHECK(!memcmp(pixels, ctx->motion_pixels, LCD_W * LCD_H * sizeof(*pixels)));
+    SDL_SetRenderTarget(ctx->renderer, NULL);
+    SDL_DestroyTexture(target);
+    pair->cut = true;
+    motion_presenter_accept(&ctx->motion, pair, presentation_microseconds());
+    render_frame(ctx);
+    TEST_CHECK(!ctx->motion_texture_active);
+    TEST_CHECK(!memcmp(ctx->lcd_previous, pair->after, MOTION_PIXELS));
+    TEST_CHECK(ctx->motion_trace_count == 2);
+    unsigned errors = 0;
+    for (int y = 0; y < LCD_H; ++y)
+        for (int x = 0; x < LCD_W; ++x)
+            errors += ctx->motion_trace[1].output[y * LCD_W + x] !=
+                      pair->after[(y / LCD_SCALE) * MOTION_W + x / LCD_SCALE];
+    TEST_CHECK(errors == 0);
+    ctx->motion_trace_count = MOTION_TRACE_CAPACITY / 2;
+    motion_presenter_accept(&ctx->motion, pair, presentation_microseconds() + 1000);
+    render_frame(ctx);
+    TEST_CHECK(ctx->motion_trace_count == MOTION_TRACE_CAPACITY / 2);
+    ctx->validation_frame = 1100;
+    motion_presenter_accept(&ctx->motion, pair, presentation_microseconds() + 2000);
+    render_frame(ctx);
+    TEST_CHECK(ctx->motion_trace_count == MOTION_TRACE_CAPACITY / 2 + 1);
+    ctx->motion_trace_count = MOTION_TRACE_CAPACITY;
+    motion_presenter_accept(&ctx->motion, pair, presentation_microseconds() + 1000);
+    render_frame(ctx);
+    TEST_CHECK(ctx->motion_trace_count == MOTION_TRACE_CAPACITY);
+    free(pixels); free(pair);
+    cleanup(ctx);
+}
+
 TEST_LIST = {
+    {"launch_options", test_launch_options},
+    {"interpolated_lcd_render", test_interpolated_lcd_render},
+    {"guest_worker_handoff", test_guest_worker_handoff},
     {"frame_log_bounds", test_frame_log_bounds},
     {"presentation_gaps", test_presentation_gaps},
     {"async_save_snapshot", test_async_save_snapshot},
     {"lcd_colors_and_duplicate_uploads", test_lcd_upload_preserves_colors_and_skips_duplicates},
-    {"catchup_presentation_budget", test_catchup_respects_presentation_budget},
     {"classic_ram_storage", test_classic_ram_storage},
     {"classic_input_timing_after_reset", test_classic_input_timing_after_reset},
     {"runtime_dir_creation_on_prepared_storage", test_runtime_dir_creation_on_prepared_storage},

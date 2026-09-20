@@ -6,7 +6,7 @@
 | --- | --- |
 | Classic V2 / CyOS 1.3.58 | Genuine first-run setup, Main Desktop, Pinball gameplay/exit, Calculator 2 + 3 = 5, Text Editor save/reopen in Windows Vita3K |
 | Classic V1 / original stock | Matching firmware staged; host smoke reaches desktop; Windows Vita3K reaches stock desktop, but app-by-app behavior and performance are not validated |
-| Xtreme / CyOS 1.5.08 | Matching firmware staged; host smoke reaches first-run setup; Windows Vita3K reaches setup, but performance is slow and app compatibility is not validated |
+| Xtreme / CyOS 1.5.08 | Matching firmware staged; Windows Vita3K ran an application and produced 01.14 timing logs, but only ~9.9 guest frames/sec; app-by-app behavior and performance remain open |
 | Physical Vita / PSTV | v0.1.3 fixed VPK and app folder staged over FTP to a physical Vita; launch/performance evidence still pending user confirmation |
 | Persistence | Setup, a created text document and clock continuity survive Vita3K restart; RAM/flash binding and corruption rejection tested on host |
 | Input | Touch setup and game launch observed; host tests cover controller/touch isolation, modifiers, focus release and layout switching |
@@ -32,6 +32,13 @@ Classic `apps/` folder does not install them: Classic uses a different filesyste
 format from the Xtreme importer.
 
 ## Xtreme software tools
+
+The 2026-09-20 physical-Vita 01.14 log contains 81 one-second rows for the
+Xtreme profile. It records 9.86 guest frames/sec across the captured run, with
+zero SDL audio underrun counters after the continuity change. This does not
+mean audio is perceptually correct: repeated last-frame audio is a bounded
+gap-avoidance measure while the guest falls behind. The Xtreme CPU path remains
+the highest-priority performance backlog item.
 
 `tools/extract_cd_pack.py` recovers a user-supplied original CD CAP pack without
 running its Windows installer. The inspected pack contains 13 applications and

@@ -285,8 +285,7 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
      * skip directly to the next timer/DMA event instead of calling the CPU
      * halt fast path once per emulated cycle. */
     for (int cycle = 0; cycle < frame_cycles;) {
-        if (m->model != CYBIKO_XTREME &&
-            emu->cpu.halted && emu->cpu.pending_irq_count == 0) {
+        if (emu->cpu.halted && emu->cpu.pending_irq_count == 0) {
             int chunk = frame_cycles - cycle;
             int next_event = cycles_until_next_peripheral_event(emu);
             if (next_event > 0 && next_event < chunk) chunk = next_event;
@@ -299,9 +298,9 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
             }
         }
 
-        /* Classic benefits from batching. Xtreme's frequent I/O accesses
-         * cost more deadline recalculations than they save in tick work. */
-        if (m->model == CYBIKO_XTREME || emu->cpu.halted
+        /* The event boundary and I/O synchronization apply to every model.
+         * Keep the per-instruction path as an independent test oracle. */
+        if (emu->cpu.halted
 #ifdef CYBIKO_SCHEDULER_TEST
             || emu->reference_scheduler
 #endif

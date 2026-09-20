@@ -1,6 +1,7 @@
-param([Parameter(Mandatory=$true)][int]$VitaProcessId, [Parameter(Mandatory=$true)][string]$OutputPath, [int[]]$Keys, [int]$Delay=300, [int]$TouchX=-1, [int]$TouchY=-1, [ValidateRange(20,3000)][int]$Hold=180, [switch]$BackgroundCapture)
+param([Parameter(Mandatory=$true)][int]$VitaProcessId, [Parameter(Mandatory=$true)][string]$OutputPath, [int[]]$Keys, [int]$Delay=300, [int]$TouchX=-1, [int]$TouchY=-1, [ValidateRange(20,3000)][int]$Hold=180, [switch]$BackgroundCapture, [ValidateRange(1,600)][int]$FrameCount=1, [ValidateRange(1,5000)][int]$Interval=100)
 $ErrorActionPreference = 'Stop'
 if ($BackgroundCapture -and ($Keys.Count -gt 0 -or $TouchX -ge 0 -or $TouchY -ge 0)) { throw 'Background capture cannot inject input' }
+if ($FrameCount -gt 1 -and -not $BackgroundCapture) { throw 'Sequences must use passive background capture' }
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
 using System;
@@ -51,7 +52,7 @@ if ($Keys.Count -gt 0) {
     if ([VitaWindowCapture]::GetForegroundWindow() -ne $handle) { throw 'Game not foreground' }
     try {
         foreach ($key in $Keys) { $flags=0; if ($key -ge 33 -and $key -le 40) {$flags=1}; [VitaWindowCapture]::keybd_event([byte]$key,[byte][VitaWindowCapture]::MapVirtualKey($key,0),$flags,[UIntPtr]::Zero) }
-        Start-Sleep -Milliseconds 90
+        Start-Sleep -Milliseconds $Hold
     } finally {
         foreach ($key in $Keys) { $flags=2; if ($key -ge 33 -and $key -le 40) {$flags=3}; [VitaWindowCapture]::keybd_event([byte]$key,[byte][VitaWindowCapture]::MapVirtualKey($key,0),$flags,[UIntPtr]::Zero) }
     }
@@ -77,6 +78,13 @@ if ($width -lt 100 -or $height -lt 100) { throw 'Window is minimized or too smal
 $bitmap = New-Object System.Drawing.Bitmap($width, $height)
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
 try {
+    $captures = @()
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+    for ($frame = 0; $frame -lt $FrameCount; ++$frame) {
+    $currentTitle = New-Object System.Text.StringBuilder 512
+    [void][VitaWindowCapture]::GetWindowText($handle, $currentTitle, 512)
+    if ($currentTitle.ToString() -notlike '*VitaCybiko*') { throw 'VitaCybiko capture window closed' }
+    $captureStart = $timer.Elapsed.TotalMilliseconds
     if ($BackgroundCapture) {
         $dc = $graphics.GetHdc()
         try {
@@ -86,7 +94,15 @@ try {
         if ([VitaWindowCapture]::GetForegroundWindow() -ne $handle) { throw 'Game lost foreground before capture' }
         $graphics.CopyFromScreen($origin.X, $origin.Y, 0, 0, $bitmap.Size)
     }
-    $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $framePath = $OutputPath
+    if ($FrameCount -gt 1) {
+        $framePath = Join-Path ([IO.Path]::GetDirectoryName($OutputPath)) (([IO.Path]::GetFileNameWithoutExtension($OutputPath)) + ('-{0:D4}.png' -f $frame))
+    }
+    $bitmap.Save($framePath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $captures += [pscustomobject]@{frame=$frame;start_ms=$captureStart;end_ms=$timer.Elapsed.TotalMilliseconds;path=$framePath}
+    if ($frame + 1 -lt $FrameCount) { Start-Sleep -Milliseconds $Interval }
+    }
+    if ($FrameCount -gt 1) { $captures | Export-Csv -NoTypeInformation -Path ($OutputPath + '.csv') }
     $process | Select-Object Id,Responding,MainWindowTitle
 } finally {
     $graphics.Dispose()

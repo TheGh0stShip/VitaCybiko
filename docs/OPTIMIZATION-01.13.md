@@ -1,8 +1,10 @@
 # 01.13 workbench — not a completed 60 FPS release
 
-The user requested no further manual retests until the optimization is complete.
-No 01.13 build has been installed on the physical Vita or published as a release.
-Its 01.12 installation, saves, firmware and plugins remain unchanged.
+The user subsequently requested testing on the physical Vita. The tested 01.13
+menu-correction package has now replaced the existing 01.12 app files over FTP,
+with backups and read-back verification. Saves, firmware and plugins remain
+unchanged. Hardware execution is pending: remote-launch plugins are disabled
+in the boot-stable configuration. This is not a completed or published release.
 
 ## Hardware evidence retrieved without requesting another run
 
@@ -25,6 +27,20 @@ SHA-256: `44f583878a715fc6fa7bcee38ea0b0a506958a521d181e0c68a3d9d909de6cc5`.
 
 ## Changes under test
 
+- Guest CPU execution now runs on a persistent worker, separate from UI event
+  polling and presentation. There is only one in-flight guest frame. A
+  semaphore publishes its keyboard snapshot, and an atomic completion flag
+  publishes its LCD/audio output and timing. SDL texture and audio operations
+  remain on the UI thread; no renderer is accessed from the worker.
+  Input hold counters advance at guest dispatch, not on UI presentations;
+  short taps arriving during a slow guest frame survive until the next sample.
+  Autosave capture waits for an idle guest boundary without blocking the UI;
+  explicit save/suspend and shutdown wait for completion before touching the
+  emulator. The guest thread is joined before model teardown.
+  Presentation and guest scheduling have independent deadlines. This removes
+  synchronous CPU execution from presentation, but does **not** accelerate
+  the interpreter, generate intermediate animation images, or cure audio
+  starvation when the guest cannot run in real time.
 - Live 4 KiB RAM/ROM mappings bypass repeated address decoding. Partial pages,
   mirror/page boundaries and peripheral accesses retain the slow router.
   Mappings alias backing memory, so self-modifying code remains visible.
@@ -51,11 +67,47 @@ SHA-256: `44f583878a715fc6fa7bcee38ea0b0a506958a521d181e0c68a3d9d909de6cc5`.
   125% of the target period. This measures application submission timing, not
   physical panel scanout, and does not imply motion interpolation.
 
+## Motion interpolation and menu-artifact investigation
+
+The workbench now generates spatially warped intermediate LCD images at the
+480×300 display resolution. Estimation runs on the guest worker; SDL texture
+upload remains on the UI thread. A bounded 16-pair history uses 200 ms of LCD
+lookahead to cover uneven source animation intervals. This adds visible input
+response latency; keyboard sampling and audio are not deliberately delayed.
+Scene cuts and long idle gaps discard the history. Exact endpoints retain the
+original pixels and palette; the app layout and controls are unchanged.
+
+The reported artifacts occurred in **Windows Vita3K**. A deterministic 1,600
+guest-frame Classic V1 navigation replay also contains overlapping icon redraws
+before interpolation, with intact settled menus. An experimental complete-VRAM
+transfer latch did not eliminate those overlaps and was removed; no LCD/core
+behavior change is being claimed as their fix.
+
+Interpolation added another problem: one dominant motion vector was applied to
+independently moving regions. In recorded source frames 960→970, the carousel
+moves −19 pixels, the title −15, and the clock stays still. Horizontal estimation
+now separates bands at uniform background rows and validates their motion
+individually. Stable/blinking status rows remain at native positions. Repeated
+glyph strokes that also match the verified translation are no longer incorrectly
+pinned as stationary tiles. Full-resolution refinement no longer skips alternate
+pixels, which could mistake a 19-pixel displacement for 18 pixels.
+
+New regression tests cover independent scrolling bands, unaligned/blinking HUD
+glyphs, odd-pixel motion, exact endpoints, scaled subpixel motion, cuts, history
+bounds, and SDL texture readback. Local/non-rigid interpolation remains an
+approximation, not a guarantee of artifact-free output in every application.
+
+`CYBIKO_REPLAY_VIDEO=/path/frames.gray` records native 160×100 gray8 guest frames.
+`cybiko-motion-replay input.gray output.gray metrics.csv 3` exercises the actual
+presenter at 480×300. The revised navigation replay generates 195 non-endpoint frames
+from 78 source changes. These are **host replay** results, not Vita measurements.
+Firmware-derived raw recordings stay local and are not bundled.
+
 ## Automated validation
 
-The current core suite passes 13/13; the frontend-enabled suite passes 14/14.
+With Python available, the current core-plus-motion suite has 15 groups; the frontend-enabled suite passes 16/16.
 The frontend-enabled AddressSanitizer/UndefinedBehaviorSanitizer build also
-passes 14/14 (the local SDL2 compatibility runtime requires the Homebrew SDL3
+passes 16/16 (the local SDL2 compatibility runtime requires the Homebrew SDL3
 library directory in `LD_LIBRARY_PATH` for its intercepted dynamic load).
 600-frame real-firmware scheduler comparisons pass for all three models, and
 the saved Classic V1 full-charge/navigation regression passes.
@@ -63,7 +115,12 @@ the saved Classic V1 full-charge/navigation regression passes.
 Tests cover every mapped page and boundary, all 256 byte values under all 256
 initial CCR values, 24,576 long-arithmetic cases, every byte-multiply register
 pair, CRC equivalence, and immutable asynchronous save/log snapshots for all
-three profiles. The full-charge Classic V1 navigation fixture and real-firmware
+three profiles. A gated worker test deliberately stalls guest execution while
+the UI renders and receives a complete Right-key tap, then verifies all eight
+Classic hold frames, snapshot capture at an idle boundary, worker recreation,
+and shutdown with a frame in flight. It is a concurrency/ownership regression,
+not a physical-Vita frame-rate measurement. The full-charge Classic V1
+navigation fixture and real-firmware
 scheduler comparisons remain required after core changes.
 
 `cybiko-replay` adds deterministic RTC progression, optional scripted keyboard
@@ -127,6 +184,18 @@ diagnostic log fix and final instruction-fetch path.
 The Windows app/data directories were restored byte-for-byte to their pre-test
 backups after closing Vita3K. Trial app/data and logs were retained separately.
 
+A subsequent 60-second run of the motion-enabled ARM build booted Classic V1
+to the [desktop](vita3k-0113-motion-workbench.png). Explicit `--boot-model
+classic-v1 --run-seconds 60` arguments selected the profile and exited normally;
+`tools/run_vita3k_validation.ps1` wraps this without synthetic background keys.
+The closed trace records 3,480 presentations, 3,375 guest frames, 609 intermediate
+submissions, 182 producer-observed audio underruns, and 23 late presentations
+over 59.022 logged seconds. Startup still misses the budget. Intermediate
+submission counts do not prove every image is unique or physical panel scanout.
+The final screenshot proves boot/rendering only, not artifact-free navigation.
+Original Windows app/data/config were restored byte-for-byte afterward; trial
+data was retained separately. No physical-Vita files were changed.
+
 WSL reads of an open Windows log returned stale contents during this session;
 reading/copying through Windows showed the current version. Validate version
 and collect a closed/new copy before interpreting these logs.
@@ -135,10 +204,10 @@ and collect a closed/new copy before interpreting these logs.
 
 1. Native Vita startup and game execution must fit the frame/audio budget;
    the latest available hardware trace clearly fails this gate.
-2. Decoupled presentation and genuine motion interpolation are **not**
-   implemented. In the deterministic saved V1 boot, parts of the desktop
-   transition update only every 6–10 guest frames even at full emulation speed.
-   Rendering identical frames at 60 Hz cannot fill those gaps.
+2. Decoupled presentation and genuine motion interpolation are implemented and
+   tested, but require physical-target timing and broader visual validation.
+   Source gaps longer than the lookahead can still produce held frames, and
+   interpolation cannot repair incorrect or partially drawn guest source images.
 3. Controlled game/animation and audio runs, input/persistence checks, and
    Labyrinth rendering validation must pass before a completion claim.
 4. The inherited one-instruction-per-clock model is not full H8 bus/instruction

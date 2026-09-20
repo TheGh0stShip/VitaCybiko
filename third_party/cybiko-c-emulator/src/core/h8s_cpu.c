@@ -1720,7 +1720,10 @@ CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
      * instruction. CyOS uses ANDC followed by a stack-pointer load during a
      * task switch; taking an IRQ between them corrupts the task context. */
     if (cpu->irq_deferred) cpu->irq_deferred = false;
-    else if (process_interrupts(cpu)) { cpu->cycle_count++; return; }
+    else if (cpu->pending_irq_count && !(cpu->ccr & CCR_I) && process_interrupts(cpu)) {
+        cpu->cycle_count++;
+        return;
+    }
 
     if (cpu->halted) {
         if (cpu->pending_irq_count > 0) {

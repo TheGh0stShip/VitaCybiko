@@ -2,17 +2,111 @@
 
 ## 01.13 workbench — not released or hardware-qualified
 
-See [optimization evidence and unmet release gates](OPTIMIZATION-01.13.md).
-Core tests pass 13/13; frontend and ASan/UBSan frontend-enabled suites pass 14/14.
-Real-firmware scheduler equivalence passes for Classic V1/V2 and Xtreme, and
-the saved V1 full-battery/navigation test passes. A Vita VPK builds successfully:
+### Physical Vita deployment — execution pending
+
+**Deployment preference:** The user subsequently requested full VPK delivery
+for manual installation on every update because direct app-file replacements
+did not refresh the LiveArea. Future physical updates must upload a clearly
+versioned VPK for the user to install, not replace installed app files. Do not
+equate an FTP upload with installation or runtime verification.
+
+On the user's subsequent request to test on Vita, FTP at `10.0.0.202:1337`
+was reachable. The installed executable matched 01.12
+(`cf6b2ed2085fc6c2604db542fbada30113c1a73ecf9c2e65a0b94784566faf6c`).
+All nine existing package files and the previous Classic V1 performance log
+were retained under `/tmp/vitacybiko-physical-0113.DBO0Qm`.
+
+Five changed package files were staged, read back, then renamed into place:
+`eboot.bin`, `sce_sys/param.sfo`, and the LiveArea background, startup image and
+template. Original changed files also remain beside their targets with suffix
+`.vc0113-DBO0Qm.backup`. All nine resulting package files were downloaded and
+compared byte-for-byte with the tested VPK. Installed executable SHA-256 is
+`3ebf2deb8eb07d319f71e1ac254f204a5666dd1e2b3f2817a5bac59768ab3fd4`.
+No saves, firmware, preferences or plugins were written.
+
+This verifies deployment, **not execution**. The existing boot-stable taiHEN
+configuration explicitly disables VitaCompanion and the remote-control plugins.
+It was inspected read-only and left unchanged. The retained performance log is
+still unchanged 01.12 evidence; a manual app launch is needed before fresh
+physical 01.13 timing can be collected. No hardware smoothness pass is claimed.
+
+The user then separately authorized restoring PSP/Adrenaline plugins. NoNpDrm
+was already enabled. The installed Adrenaline kernel and NoPspEmuDrm kernel/user
+modules were checked for nonempty SELF headers, and exactly those three entries
+were restored to their prior sections (`*KERNEL`, `*KERNEL`, `*ALL`). All existing
+active entries, including YAMT and PSVshellPlus, were preserved. The new config
+was read back byte-for-byte; the previous config is retained on-device at
+`ur0:tai/config.before-adrenaline-pDn5pa.txt` and locally under
+`/tmp/vitacybiko-adrenaline-plugins.pDn5pa`. No reboot was performed, so neither
+post-change boot stability nor loaded-plugin status has been verified. Remote
+control plugins remain disabled.
+
+### Latest menu-correction candidate
+
+The corrected local-flow and periodic-row interpolation was tested in a separate
+Windows Vita3K storage directory, then installed into the normal Windows app
+directory. No Vita3K process was active at installation. The prior app is backed
+up locally in `/tmp/vitacybiko-menu-correction-backup.n2Fe8h/app`; a sorted
+SHA-256 manifest digest of every file found in the normal VitaCybiko data folder
+was identical immediately before and after installation. Firmware, saves and
+preferences were not overwritten. The normal app was then launched as Classic
+V1 without scripted input, diagnostic allocation, or auto-exit and captured at
+the You & Me desktop. It remains installed, not reverted to the older workbench.
 
 ```text
-201961b1269a40defb4519628506d9648699d8e01bda1fdb4635e3c9727319a3  VitaCybiko.vpk
-e05e374114a1db2ec1267a058d1b4b5411db2d59e0dc028bcbf982ead868c1d0  eboot.bin
+cd7a0093f1e7017e2e7664906c1bc97a079b65c9f005ee179fe602066e10275f  VitaCybiko.vpk
+3ebf2deb8eb07d319f71e1ac254f204a5666dd1e2b3f2817a5bac59768ab3fd4  eboot.bin
 ```
 
-An intermediate ARM build booted in Windows Vita3K. This does not establish
+Two isolated 60-second runs each saved 64 source/output records with zero
+ARM/host pixel or motion-metadata mismatches. The second exercised both menu
+directions and captured 340 passive window screenshots. See the
+[paired-frame evidence and limitations](MENU-ARTIFACTS-01.13.md). These are
+Windows Vita3K results, not physical-Vita performance qualification.
+
+### Windows installation correction
+
+After the earlier test cleanup, the user reported missing Vita3K input. Inspection
+found that the restored pre-test Windows app was **01.02**, not 01.13 (installed
+eboot SHA-256 `45fd818b706635556385e20b23d509ae0921f88d361f52c24fdd7ec860345df2`).
+Restoring that old app had also rolled back newer input fixes. The running guest
+was closed through its window, the old app/data were backed up, and only package
+files were updated to the 01.13 workbench below. Data was compared byte-for-byte
+before relaunch; no firmware, preferences, or saved-state files were replaced.
+
+The updated app was left installed and running, not reverted again. Captured
+desktop selection changed from You & Me to People during navigation; the user
+was also actively navigating, so this is not an isolated automated-key test.
+It is an actual Vita3K navigation observation, separate from host SDL tests and
+not a claim about every controller or physical-Vita performance. The capture helper now honors its
+`-Hold` argument for keyboard presses as well as mouse touches. The two frontend
+input/event test groups also pass.
+
+The subsequent passive 100-image sequence confirms unresolved icon tearing
+during user navigation. See the [live artifact observations](MENU-ARTIFACTS-01.13.md)
+and original captures. No app changes were made during that observation.
+
+See [optimization evidence and unmet release gates](OPTIMIZATION-01.13.md).
+Frontend and ASan/UBSan frontend-enabled suites pass 16/16, including ten
+motion-interpolation cases, 23 frontend cases, and the trace decoder checks.
+Real-firmware scheduler equivalence passes for Classic V1/V2 and Xtreme, and
+the saved V1 full-battery/navigation test passes. The subsequent frontend-only
+worker change passes the normal and ASan/UBSan suites, including a deliberately
+stalled guest with concurrent UI rendering and short-tap input preservation.
+The initially installed Windows workbench had these package hashes (not the
+later isolated-validation candidate):
+
+```text
+af57853dd2b079dd8a9ecc4f36708f1e89198d5c0a98a34dead37c3a494d8055  VitaCybiko.vpk
+4c2d06c21b55d1a39a5c73f814d7b391d24ea3d872159f801ccb46c269ad1b94  eboot.bin
+```
+
+The current motion-enabled ARM build booted in Windows Vita3K during a
+60-second automated run; see the [actual desktop capture](vita3k-0113-motion-workbench.png).
+The menu investigation fixed independent-region scrolling and odd-pixel matching
+errors in interpolation, with regression tests. Native overlapping icon redraws
+and general non-rigid interpolation remain limits under investigation. The
+Windows trace still includes startup audio underruns. This does not establish
 60 FPS guest animation, audio stability, or physical-Vita performance. No new
 VPK was deployed to the physical device and no manual retest was requested.
 

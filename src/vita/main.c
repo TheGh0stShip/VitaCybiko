@@ -29,6 +29,7 @@
 #include "core/emulator.h"
 #include "core/speaker.h"
 #include "frontend/input.h"
+#include "frontend/motion.h"
 
 #ifndef VITACYBIKO_VERSION
 #define VITACYBIKO_VERSION "dev"
@@ -76,9 +77,8 @@
 #define AUDIO_DEVICE_SAMPLES 512
 #define AUDIO_FRAME_SAMPLES (SPEAKER_SAMPLE_RATE / CYBIKO_FPS)
 #define AUDIO_TARGET_QUEUE_FRAMES 2u
-#define AUDIO_MAX_QUEUE_FRAMES 4u
+#define AUDIO_MAX_QUEUE_FRAMES 8u
 #define AUDIO_CONVERT_MAX_SAMPLES 8192
-#define EMULATION_CATCHUP_MAX_FRAMES 2
 
 /* Defaults keep old host tests and the legacy Xtreme layout valid. Selection
  * replaces all paths together; Classic never uses the legacy Xtreme save. */
@@ -277,18 +277,54 @@ static const key_mapping_t num_key_map[] = {
     { SDL_SCANCODE_0, 9, 0x0010 },
 };
 
+/* One in-flight guest frame. The semaphore publishes inputs; the atomic done
+ * flag publishes outputs. SDL rendering and live input remain on the UI
+ * thread; the producer queues audio before motion estimation/UI collection. */
+typedef struct {
+    SDL_Thread *thread;
+    SDL_sem *wake;
+    SDL_atomic_t done;
+    bool stop, busy;
+    cybiko_emu_t *emu;
+    void *app;
+    unsigned audio_epoch;
+    bool audible;
+    uint16_t keys[CYBIKO_KEYBOARD_COLUMNS];
+    uint8_t lcd[CYBIKO_LCD_WIDTH * CYBIKO_LCD_HEIGHT];
+    uint8_t audio[AUDIO_CONVERT_MAX_SAMPLES];
+    bool lcd_valid;
+    int audio_count;
+    uint64_t ticks;
+    uint32_t pc;
+    motion_pair_t motion;
+    uint8_t previous_lcd[MOTION_PIXELS];
+    bool motion_changed;
+    uint64_t motion_ticks;
+} guest_worker_t;
+
+enum { MOTION_TRACE_CAPACITY = 64 };
+typedef struct {
+    uint32_t header[8]; /* frame, source update, phase, dx, dy, flags, width, height */
+    uint8_t before[MOTION_PIXELS], after[MOTION_PIXELS];
+    uint8_t output[MOTION_PIXELS * LCD_SCALE * LCD_SCALE];
+} motion_trace_record_t;
+_Static_assert(sizeof(motion_trace_record_t) == 176032, "VCMT0001 trace layout changed");
+
 typedef struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *portrait_target;
     SDL_Texture *ui_cache;
     SDL_Texture *lcd_texture;
+    SDL_Texture *motion_texture;
     SDL_AudioDeviceID audio_dev;
     SDL_AudioSpec audio_have;
     Uint32 audio_frame_bytes;
     Uint32 audio_target_queue_bytes;
     Uint32 audio_max_queue_bytes;
     bool audio_started;
+    SDL_mutex *audio_lock;
+    unsigned audio_epoch;
     unsigned audio_underruns;
     unsigned audio_dropped_frames;
     uint64_t audio_ticks;
@@ -317,6 +353,9 @@ typedef struct {
     bool lcd_previous_valid;
     unsigned lcd_updates;
     int16_t audio_s16_stereo_buf[AUDIO_CONVERT_MAX_SAMPLES * 2];
+    uint8_t audio_last_frame[AUDIO_FRAME_SAMPLES];
+    int audio_last_count;
+    bool audio_last_valid;
     bool ui_cache_valid;
     bool ui_cache_landscape;
     bool ui_cache_keyboard_mode;
@@ -344,9 +383,20 @@ typedef struct {
     bool quit_requested;
     cybiko_model_t model;
     char status[128];
+    guest_worker_t *guest;
+    motion_presenter_t motion;
+    uint8_t interpolated_lcd[MOTION_PIXELS * LCD_SCALE * LCD_SCALE];
+    uint32_t motion_pixels[MOTION_PIXELS * LCD_SCALE * LCD_SCALE];
+    unsigned source_lcd_updates, generated_lcd_frames;
+    unsigned motion_presented_phase;
+    uint64_t motion_presented_pair;
+    bool motion_texture_active;
+    bool validation_menu;
+    unsigned validation_frame, motion_trace_count;
+    input_state_t validation_input;
+    motion_trace_record_t *motion_trace;
 } app_ctx_t;
 
-static void advance_emulated_frame(cybiko_emu_t *emu, app_ctx_t *ctx);
 static void cycle_skin(app_ctx_t *ctx, int direction);
 static void release_all_inputs(app_ctx_t *ctx);
 static void toggle_layout(app_ctx_t *ctx);
@@ -1371,9 +1421,8 @@ static bool load_classic_storage(cybiko_emu_t *emu)
     return ok;
 }
 
-static void hal_render_frame(void *ctx_ptr, const uint8_t *pixels, int width, int height)
+static void upload_lcd(app_ctx_t *ctx, const uint8_t *pixels, int width, int height)
 {
-    app_ctx_t *ctx = ctx_ptr;
     if (!ctx->lcd_texture || width != CYBIKO_LCD_WIDTH ||
         height != CYBIKO_LCD_HEIGHT) {
         return;
@@ -1402,9 +1451,23 @@ static void hal_render_frame(void *ctx_ptr, const uint8_t *pixels, int width, in
     ctx->lcd_ticks += SDL_GetPerformanceCounter() - started;
 }
 
-static void hal_audio_output(void *ctx_ptr, const uint8_t *samples, int count)
+static void hal_render_frame(void *ctx_ptr, const uint8_t *pixels, int width, int height)
 {
     app_ctx_t *ctx = ctx_ptr;
+    if (ctx->guest) {
+        if (pixels && width == CYBIKO_LCD_WIDTH && height == CYBIKO_LCD_HEIGHT) {
+            memcpy(ctx->guest->lcd, pixels, sizeof(ctx->guest->lcd));
+            ctx->guest->lcd_valid = true;
+        }
+        return;
+    }
+    upload_lcd(ctx, pixels, width, height);
+}
+
+/* Caller owns audio_lock: conversion, start state, counters and suspend
+ * invalidation must be one transaction with the producer's queue operation. */
+static void queue_audio_locked(app_ctx_t *ctx, const uint8_t *samples, int count)
+{
     if (!ctx->audio_dev || !samples || count <= 0) {
         return;
     }
@@ -1453,35 +1516,89 @@ static void hal_audio_output(void *ctx_ptr, const uint8_t *samples, int count)
     ctx->audio_ticks += SDL_GetPerformanceCounter() - started;
 }
 
+static void queue_audio(app_ctx_t *ctx, const uint8_t *samples, int count)
+{
+    SDL_LockMutex(ctx->audio_lock);
+    queue_audio_locked(ctx, samples, count);
+    SDL_UnlockMutex(ctx->audio_lock);
+}
+
+static void queue_guest_audio(app_ctx_t *ctx, guest_worker_t *worker)
+{
+    SDL_LockMutex(ctx->audio_lock);
+    if (worker->audible && worker->audio_epoch == ctx->audio_epoch) {
+        /* Preserve the most recent speaker frame. If emulation takes longer
+         * than the audio period, repeat that tiny frame to bridge the gap
+         * instead of letting SDL drain to zero. This is bounded catch-up, not
+         * a second clock: fresh guest audio always replaces the held frame. */
+        if (worker->audio_count > 0 && worker->audio_count <= (int)sizeof(ctx->audio_last_frame)) {
+            memcpy(ctx->audio_last_frame, worker->audio, (size_t)worker->audio_count);
+            ctx->audio_last_count = worker->audio_count;
+            ctx->audio_last_valid = true;
+        }
+        queue_audio_locked(ctx, worker->audio, worker->audio_count);
+        if (ctx->audio_last_valid && ctx->audio_last_count > 0 && ctx->audio_started) {
+            Uint32 frame_bytes = ctx->audio_frame_bytes;
+            Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
+            unsigned guard = 0;
+            while (queued < ctx->audio_target_queue_bytes && guard++ < AUDIO_MAX_QUEUE_FRAMES)
+            {
+                queue_audio_locked(ctx, ctx->audio_last_frame, ctx->audio_last_count);
+                Uint32 next = SDL_GetQueuedAudioSize(ctx->audio_dev);
+                if (next <= queued) break;
+                queued = next;
+                if (!frame_bytes) break;
+            }
+        }
+    }
+    SDL_UnlockMutex(ctx->audio_lock);
+}
+
+static void service_audio_continuity(app_ctx_t *ctx)
+{
+    SDL_LockMutex(ctx->audio_lock);
+    if (ctx->audio_started && ctx->audio_last_valid && ctx->audio_last_count > 0) {
+        Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
+        unsigned guard = 0;
+        while (queued < ctx->audio_target_queue_bytes && guard++ < AUDIO_MAX_QUEUE_FRAMES) {
+            queue_audio_locked(ctx, ctx->audio_last_frame, ctx->audio_last_count);
+            Uint32 next = SDL_GetQueuedAudioSize(ctx->audio_dev);
+            if (next <= queued) break;
+            queued = next;
+        }
+    }
+    SDL_UnlockMutex(ctx->audio_lock);
+}
+
+static void hal_audio_output(void *ctx_ptr, const uint8_t *samples, int count)
+{
+    app_ctx_t *ctx = ctx_ptr;
+    if (ctx->guest) {
+        guest_worker_t *worker = ctx->guest;
+        /* The core produces one frame of samples per run_frame. Keep bounded
+         * storage even if a future core emits several chunks. */
+        if (!samples || count <= 0) return;
+        int available = (int)sizeof(worker->audio) - worker->audio_count;
+        if (count > available) count = available;
+        memcpy(worker->audio + worker->audio_count, samples, (size_t)count);
+        worker->audio_count += count;
+        return;
+    }
+    queue_audio(ctx, samples, count);
+}
+
 static void reset_audio(app_ctx_t *ctx)
 {
-    if (!ctx->audio_dev) return;
-    SDL_PauseAudioDevice(ctx->audio_dev, 1);
-    SDL_ClearQueuedAudio(ctx->audio_dev);
+    SDL_LockMutex(ctx->audio_lock);
+    ++ctx->audio_epoch; /* Reject a pre-suspend frame still on the worker. */
+    if (ctx->audio_dev) {
+        SDL_PauseAudioDevice(ctx->audio_dev, 1);
+        SDL_ClearQueuedAudio(ctx->audio_dev);
+    }
     ctx->audio_started = false;
-}
-
-static void advance_emulated_frame(cybiko_emu_t *emu, app_ctx_t *ctx)
-{
-    cybiko_run_frame(emu);
-    input_tick(&ctx->physical_input);
-    input_tick(&ctx->controller_input);
-    input_tick(&ctx->touch_input);
-    input_tick(&ctx->virtual_input);
-}
-
-/* Extra guest frames are useful only when they fit in a presentation period.
- * A slow frame must be displayed immediately, not followed by more CPU work. */
-static int catchup_frame_budget(uint64_t late, uint64_t interval,
-                               uint64_t core, uint64_t overhead)
-{
-    if (!interval || !core || overhead >= interval || core >= interval - overhead)
-        return 0;
-    uint64_t budget = (interval - overhead) / core - 1;
-    uint64_t due = late / interval;
-    if (budget > due) budget = due;
-    if (budget > EMULATION_CATCHUP_MAX_FRAMES) budget = EMULATION_CATCHUP_MAX_FRAMES;
-    return (int)budget;
+    ctx->audio_last_valid = false;
+    ctx->audio_last_count = 0;
+    SDL_UnlockMutex(ctx->audio_lock);
 }
 
 typedef struct {
@@ -1506,12 +1623,143 @@ static void hal_keyboard_poll(void *ctx_ptr, uint16_t *matrix, int num_columns)
         ? num_columns
         : CYBIKO_KEYBOARD_COLUMNS;
     memset(matrix, 0, (size_t)num_columns * sizeof(uint16_t));
+    if (ctx->guest) {
+        memcpy(matrix, ctx->guest->keys, (size_t)cols * sizeof(uint16_t));
+        return;
+    }
     void (*merge)(const input_state_t *, uint16_t *, int) =
         ctx->model == CYBIKO_XTREME ? input_merge : input_merge_classic;
     merge(&ctx->physical_input, matrix, cols);
     merge(&ctx->controller_input, matrix, cols);
     merge(&ctx->touch_input, matrix, cols);
     merge(&ctx->virtual_input, matrix, cols);
+}
+
+static int run_guest_worker(void *ptr)
+{
+    guest_worker_t *worker = ptr;
+    for (;;) {
+        SDL_SemWait(worker->wake);
+        if (worker->stop) return 0;
+        uint64_t start = SDL_GetPerformanceCounter();
+        cybiko_run_frame(worker->emu);
+        worker->ticks = SDL_GetPerformanceCounter() - start;
+        queue_guest_audio(worker->app, worker);
+        worker->pc = cybiko_get_program_counter(worker->emu);
+        worker->motion_changed = worker->lcd_valid &&
+            memcmp(worker->previous_lcd, worker->lcd, sizeof(worker->lcd));
+        worker->motion_ticks = 0;
+        if (worker->motion_changed) {
+            uint64_t motion_start = SDL_GetPerformanceCounter();
+            motion_estimate(&worker->motion, worker->previous_lcd, worker->lcd);
+            memcpy(worker->previous_lcd, worker->lcd, sizeof(worker->lcd));
+            worker->motion_ticks = SDL_GetPerformanceCounter() - motion_start;
+        }
+        SDL_AtomicSet(&worker->done, 1);
+    }
+}
+
+static uint64_t presentation_microseconds(void)
+{
+    uint64_t ticks = SDL_GetPerformanceCounter(), frequency = SDL_GetPerformanceFrequency();
+    /* Multiplying the absolute nanosecond counter first overflows after only
+     * a few hours of host uptime. Split seconds from the fractional part. */
+    return ticks / frequency * 1000000u + ticks % frequency * 1000000u / frequency;
+}
+
+static bool start_guest_worker(app_ctx_t *ctx, cybiko_emu_t *emu)
+{
+    guest_worker_t *worker = calloc(1, sizeof(*worker));
+    if (!worker) return false;
+    worker->emu = emu;
+    worker->app = ctx;
+    memset(worker->previous_lcd, 255, sizeof(worker->previous_lcd));
+    motion_presenter_reset(&ctx->motion);
+    ctx->motion_presented_phase = 257;
+    ctx->motion_texture_active = false;
+    worker->wake = SDL_CreateSemaphore(0);
+    if (!worker->wake) { free(worker); return false; }
+    ctx->guest = worker;
+    worker->thread = SDL_CreateThread(run_guest_worker, "cybiko-cpu", worker);
+    if (!worker->thread) {
+        ctx->guest = NULL;
+        SDL_DestroySemaphore(worker->wake);
+        free(worker);
+        return false;
+    }
+    return true;
+}
+
+static void dispatch_guest_frame(app_ctx_t *ctx)
+{
+    guest_worker_t *worker = ctx->guest;
+    if (!worker || worker->busy) return;
+    SDL_LockMutex(ctx->audio_lock);
+    worker->audio_epoch = ctx->audio_epoch;
+    worker->audible = !ctx->backgrounded && !ctx->focus_lost;
+    SDL_UnlockMutex(ctx->audio_lock);
+    memset(worker->keys, 0, sizeof(worker->keys));
+    void (*merge)(const input_state_t *, uint16_t *, int) =
+        ctx->model == CYBIKO_XTREME ? input_merge : input_merge_classic;
+    merge(&ctx->physical_input, worker->keys, CYBIKO_KEYBOARD_COLUMNS);
+    merge(&ctx->controller_input, worker->keys, CYBIKO_KEYBOARD_COLUMNS);
+    merge(&ctx->touch_input, worker->keys, CYBIKO_KEYBOARD_COLUMNS);
+    merge(&ctx->virtual_input, worker->keys, CYBIKO_KEYBOARD_COLUMNS);
+    if (ctx->validation_menu) {
+        /* Explicit, bounded test mode only. Uses the same input mapping and
+         * guest mailbox as physical controls; no Windows key injection. */
+        unsigned frame = ctx->validation_frame++;
+        input_key(&ctx->validation_input, 6, 0x1000, frame >= 950 && frame < 958);
+        input_key(&ctx->validation_input, 6, 0x4000, frame >= 1100 && frame < 1108);
+        merge(&ctx->validation_input, worker->keys, CYBIKO_KEYBOARD_COLUMNS);
+        input_tick(&ctx->validation_input);
+    }
+    /* Age only the state actually sampled. Input arriving during this job is
+     * left untouched until the next dispatch, including short press/releases. */
+    input_tick(&ctx->physical_input);
+    input_tick(&ctx->controller_input);
+    input_tick(&ctx->touch_input);
+    input_tick(&ctx->virtual_input);
+    worker->lcd_valid = false;
+    worker->audio_count = 0;
+    worker->busy = true;
+    SDL_AtomicSet(&worker->done, 0);
+    SDL_SemPost(worker->wake);
+}
+
+static bool collect_guest_frame(app_ctx_t *ctx, bool wait, bool audible)
+{
+    guest_worker_t *worker = ctx->guest;
+    if (!worker || !worker->busy) return false;
+    if (!audible) reset_audio(ctx);
+    while (!SDL_AtomicGet(&worker->done)) {
+        if (!wait) return false;
+        SDL_Delay(1);
+    }
+    if (worker->motion_changed) {
+        uint64_t us = presentation_microseconds();
+        motion_presenter_accept(&ctx->motion, &worker->motion, us);
+        ++ctx->source_lcd_updates;
+    } else if (worker->lcd_valid && !ctx->motion.valid) {
+        upload_lcd(ctx, worker->lcd, CYBIKO_LCD_WIDTH, CYBIKO_LCD_HEIGHT);
+    }
+    worker->busy = false;
+    return true;
+}
+
+static void stop_guest_worker(app_ctx_t *ctx)
+{
+    guest_worker_t *worker = ctx->guest;
+    if (!worker) return;
+    collect_guest_frame(ctx, true, false);
+    worker->stop = true;
+    SDL_SemPost(worker->wake);
+    SDL_WaitThread(worker->thread, NULL);
+    SDL_DestroySemaphore(worker->wake);
+    ctx->guest = NULL;
+    motion_presenter_reset(&ctx->motion);
+    ctx->motion_texture_active = false;
+    free(worker);
 }
 
 static void hal_serial_output(void *ctx_ptr, uint8_t byte)
@@ -1809,13 +2057,62 @@ static void render_landscape(app_ctx_t *ctx)
     SDL_Rect dst = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
     SDL_RenderCopy(ctx->renderer, ctx->ui_cache, &src, &dst);
     SDL_Rect lcd = {20, 96, 480, 300};
-    SDL_RenderCopy(ctx->renderer, ctx->lcd_texture, NULL, &lcd);
+    SDL_RenderCopy(ctx->renderer, ctx->motion_texture_active ? ctx->motion_texture : ctx->lcd_texture, NULL, &lcd);
     rectangleRGBA(ctx->renderer, 19, 95, 500, 396, 160, 182, 162, 255);
     SDL_RenderPresent(ctx->renderer);
 }
 
 static void render_frame(app_ctx_t *ctx)
 {
+    if (ctx->motion.valid) {
+        uint64_t us = presentation_microseconds();
+        unsigned phase = motion_presenter_phase(&ctx->motion, us);
+        if (phase != ctx->motion_presented_phase ||
+            ctx->motion.selected_end_us != ctx->motion_presented_pair) {
+            if (!phase || phase >= 256 || ctx->motion.pair.cut || !ctx->motion.pair.moving_blocks) {
+                const uint8_t *pixels = phase >= 256 || ctx->motion.pair.cut ?
+                    ctx->motion.pair.after : ctx->motion.pair.before;
+                upload_lcd(ctx, pixels, CYBIKO_LCD_WIDTH, CYBIKO_LCD_HEIGHT);
+                ctx->motion_texture_active = false;
+            } else {
+                motion_synthesize_scaled(&ctx->motion.pair, phase, LCD_SCALE, ctx->interpolated_lcd);
+                for (unsigned i = 0; i < sizeof(ctx->interpolated_lcd); ++i)
+                    ctx->motion_pixels[i] = ctx->lcd_palette[ctx->interpolated_lcd[i]];
+                if (SDL_UpdateTexture(ctx->motion_texture, NULL, ctx->motion_pixels,
+                                      LCD_W * sizeof(uint32_t)) == 0) {
+                    ctx->motion_texture_active = true;
+                    ++ctx->generated_lcd_frames;
+                    ++ctx->lcd_updates;
+                }
+            }
+            ctx->motion_presented_phase = phase;
+            ctx->motion_presented_pair = ctx->motion.selected_end_us;
+            if (ctx->motion_trace && ctx->validation_frame >= 950 &&
+                (ctx->motion_trace_count < MOTION_TRACE_CAPACITY / 2 ||
+                 ctx->validation_frame >= 1100) &&
+                ctx->motion_trace_count < MOTION_TRACE_CAPACITY) {
+                motion_trace_record_t *r = &ctx->motion_trace[ctx->motion_trace_count++];
+                const motion_pair_t *p = &ctx->motion.pair;
+                r->header[0] = ctx->validation_frame;
+                r->header[1] = ctx->source_lcd_updates;
+                r->header[2] = phase;
+                r->header[3] = (uint32_t)p->dx; r->header[4] = (uint32_t)p->dy;
+                r->header[5] = p->translated | (p->cut << 1) | (p->local_rejected << 2);
+                r->header[6] = LCD_W; r->header[7] = LCD_H;
+                memcpy(r->before, p->before, MOTION_PIXELS);
+                memcpy(r->after, p->after, MOTION_PIXELS);
+                /* Capture the exact CPU image supplied to the texture, not
+                 * a second synthesis invocation or a desktop screenshot. */
+                if (ctx->motion_texture_active) memcpy(r->output, ctx->interpolated_lcd, sizeof(r->output));
+                else {
+                    const uint8_t *native = phase >= 256 || p->cut ? p->after : p->before;
+                    for (int y = 0; y < LCD_H; ++y)
+                        for (int x = 0; x < LCD_W; ++x)
+                            r->output[y * LCD_W + x] = native[(y / LCD_SCALE) * MOTION_W + x / LCD_SCALE];
+                }
+            }
+        }
+    }
     if (ctx->landscape) { render_landscape(ctx); return; }
 
     update_ui_cache(ctx);
@@ -1824,7 +2121,7 @@ static void render_frame(app_ctx_t *ctx)
     SDL_Rect dst = {0, 0, PORTRAIT_WIDTH, PORTRAIT_HEIGHT};
     SDL_RenderCopy(ctx->renderer, ctx->ui_cache, &src, &dst);
     SDL_Rect lcd = { LCD_X, LCD_Y, LCD_W, LCD_H };
-    SDL_RenderCopy(ctx->renderer, ctx->lcd_texture, NULL, &lcd);
+    SDL_RenderCopy(ctx->renderer, ctx->motion_texture_active ? ctx->motion_texture : ctx->lcd_texture, NULL, &lcd);
     rectangleRGBA(ctx->renderer, LCD_X - 1, LCD_Y - 1,
                   LCD_X + LCD_W + 1, LCD_Y + LCD_H + 1,
                   205, 220, 198, 255);
@@ -2012,7 +2309,11 @@ static bool init_sdl(app_ctx_t *ctx)
         return false;
     }
 
-    ctx->renderer = SDL_CreateRenderer(ctx->window, -1, SDL_RENDERER_ACCELERATED);
+    /* Ask the Vita backend for a presentation-synchronized command queue.
+     * The software fallback remains available for development hosts. */
+    ctx->renderer = SDL_CreateRenderer(ctx->window, -1,
+                                       SDL_RENDERER_ACCELERATED |
+                                       SDL_RENDERER_PRESENTVSYNC);
     if (!ctx->renderer) {
         ctx->renderer = SDL_CreateRenderer(ctx->window, -1, SDL_RENDERER_SOFTWARE);
     }
@@ -2051,6 +2352,12 @@ static bool init_sdl(app_ctx_t *ctx)
                                          CYBIKO_LCD_HEIGHT);
     if (!ctx->lcd_texture) {
         fprintf(stderr, "SDL_CreateTexture failed: %s\n", SDL_GetError());
+        return false;
+    }
+    ctx->motion_texture = SDL_CreateTexture(ctx->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                            SDL_TEXTUREACCESS_STREAMING, LCD_W, LCD_H);
+    if (!ctx->motion_texture) {
+        fprintf(stderr, "SDL_CreateTexture motion failed: %s\n", SDL_GetError());
         return false;
     }
 
@@ -2096,6 +2403,8 @@ static void cleanup(app_ctx_t *ctx)
     if (!ctx) {
         return;
     }
+    free(ctx->motion_trace);
+    if (ctx->motion_texture) SDL_DestroyTexture(ctx->motion_texture);
     if (ctx->audio_dev) {
         SDL_CloseAudioDevice(ctx->audio_dev);
     }
@@ -2121,10 +2430,42 @@ static void cleanup(app_ctx_t *ctx)
     free(ctx);
 }
 
+typedef struct {
+    int model;
+    unsigned run_seconds;
+    bool options, validation_menu;
+} launch_options_t;
+
+static bool parse_launch_options(int argc, char **argv, launch_options_t *out)
+{
+    *out = (launch_options_t){.model = -1};
+    if (argc < 2 || strncmp(argv[1], "--", 2)) return true; /* legacy ROM paths */
+    out->options = true;
+    for (int i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "--boot-model") && i + 1 < argc) {
+            const char *name = argv[++i];
+            if (!strcmp(name, "classic-v1")) out->model = CYBIKO_CLASSIC_V1;
+            else if (!strcmp(name, "classic-v2")) out->model = CYBIKO_CLASSIC_V2;
+            else if (!strcmp(name, "xtreme")) out->model = CYBIKO_XTREME;
+            else return false;
+        } else if (!strcmp(argv[i], "--run-seconds") && i + 1 < argc) {
+            char *end = NULL;
+            unsigned long seconds = strtoul(argv[++i], &end, 10);
+            if (!*argv[i] || *end || seconds < 1 || seconds > 3600) return false;
+            out->run_seconds = (unsigned)seconds;
+        } else if (!strcmp(argv[i], "--validate-menu")) out->validation_menu = true;
+        else return false;
+    }
+    return out->model >= 0 && (!out->validation_menu || out->run_seconds);
+}
+
 int main(int argc, char *argv[])
 {
-    (void)argc;
-    (void)argv;
+    launch_options_t launch;
+    if (!parse_launch_options(argc, argv, &launch)) {
+        fprintf(stderr, "usage: VitaCybiko [--boot-model classic-v1|classic-v2|xtreme [--run-seconds 1..3600] [--validate-menu]]\n");
+        return 2;
+    }
 
 #ifdef VITA
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
@@ -2139,6 +2480,11 @@ int main(int argc, char *argv[])
     app_ctx_t *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
         return 1;
+    }
+    ctx->validation_menu = launch.validation_menu;
+    if (ctx->validation_menu) {
+        ctx->motion_trace = calloc(MOTION_TRACE_CAPACITY, sizeof(*ctx->motion_trace));
+        if (!ctx->motion_trace) { free(ctx); return 1; }
     }
 
     snprintf(ctx->status, sizeof(ctx->status), "ux0:data/VitaCybiko");
@@ -2160,9 +2506,12 @@ int main(int argc, char *argv[])
 
 select_model:
     reset_audio(ctx);
-    int selection = choose_model(ctx);
+    int selection = launch.model >= 0 ? launch.model : choose_model(ctx);
+    launch.model = -1; /* a later return to the menu never reboots automatically */
     if (selection < 0) { cleanup(ctx); return 0; }
     ctx->model = (cybiko_model_t)selection;
+    input_reset(&ctx->validation_input, ctx->model);
+    ctx->validation_frame = ctx->motion_trace_count = 0;
     save_preferences(ctx);
     bool classic = ctx->model != CYBIKO_XTREME;
     vk_rows[VK_ROW_COUNT - 1].keys = classic ? vk_classic_symbols : vk_row_symbols;
@@ -2174,8 +2523,8 @@ select_model:
         message_loop(ctx, "Cannot create model folders", "Check ux0:data/VitaCybiko is writable.", "");
         goto select_model;
     }
-    const char *boot_path = argc >= 3 && !classic ? argv[1] : runtime_boot_path;
-    const char *flash_path = argc >= 3 && !classic ? argv[2] : runtime_flash_path;
+    const char *boot_path = argc >= 3 && !classic && !launch.options ? argv[1] : runtime_boot_path;
+    const char *flash_path = argc >= 3 && !classic && !launch.options ? argv[2] : runtime_flash_path;
     size_t boot_size = 0;
     size_t flash_size = 0;
     uint8_t *boot_data = load_file(boot_path, &boot_size, true);
@@ -2264,33 +2613,58 @@ select_model:
 
     cybiko_reset(emu);
     reset_audio(ctx);
+    if (!start_guest_worker(ctx, emu)) {
+        cybiko_destroy(emu);
+        message_loop(ctx, "Cannot start guest CPU thread", SDL_GetError(), "");
+        goto select_model;
+    }
 
     bool running = true;
     save_snapshot_t *pending_save = NULL;
     uint32_t next_autosave = SDL_GetTicks() + AUTOSAVE_INTERVAL_MS;
+    uint32_t verification_start = SDL_GetTicks();
     uint64_t perf_frequency = SDL_GetPerformanceFrequency();
     uint64_t frame_interval = perf_frequency / CYBIKO_FPS;
     uint64_t frame_deadline = SDL_GetPerformanceCounter();
+    uint64_t guest_deadline = frame_deadline;
+    uint32_t guest_pc = cybiko_get_program_counter(emu);
     uint64_t last_render_ticks = 0;
     char perf_path[MAX_PATH_CHARS + sizeof("/performance.csv")];
     snprintf(perf_path, sizeof(perf_path), "%s/performance.csv", runtime_root);
     frame_log_t *perf_log = create_frame_log(perf_path);
     if (perf_log) {
-        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents\n");
+        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents,source_lcd_updates,generated_lcd_frames,motion_estimate_ms,interpolation_delay_ms\n");
     }
     unsigned perf_presents = 0, perf_guest = 0, perf_rows = 0;
     unsigned perf_lcd_start = ctx->lcd_updates;
+    unsigned perf_source_start = ctx->source_lcd_updates, perf_generated_start = ctx->generated_lcd_frames;
+    uint64_t perf_motion = 0;
     ctx->audio_ticks = ctx->lcd_ticks = 0;
     ctx->audio_underruns = ctx->audio_dropped_frames = 0;
     uint64_t perf_start = frame_deadline, perf_core = 0, perf_render = 0, perf_max_core = 0;
     double perf_save_capture_ms = 0, perf_save_worker_ms = 0;
     present_timing_t present_timing = {0};
     while (running) {
-        uint64_t work_start = SDL_GetPerformanceCounter();
         process_sdl_events(ctx, &running);
         update_controller_input(ctx, &running);
+        /* Keep the device fed while a slow guest frame is still executing. */
+        service_audio_continuity(ctx);
+
+        if (collect_guest_frame(ctx, ctx->save_requested,
+                                !ctx->backgrounded && !ctx->focus_lost && running)) {
+            uint64_t ticks = ctx->guest->ticks;
+            perf_core += ticks;
+            perf_motion += ctx->guest->motion_ticks;
+            if (ticks > perf_max_core) perf_max_core = ticks;
+            ++perf_guest;
+            guest_pc = ctx->guest->pc;
+        }
 
         uint32_t now = SDL_GetTicks();
+        if (launch.run_seconds && now - verification_start >= launch.run_seconds * 1000u) {
+            ctx->quit_requested = true;
+            running = false;
+        }
         bool save_ok = false;
         double save_write_ms = 0;
         if (finish_async_save(&pending_save, false, &save_ok, &save_write_ms)) {
@@ -2310,7 +2684,8 @@ select_model:
             ctx->save_requested = false;
             if (perf_log) write_file(perf_log->path, perf_log->data, perf_log->used);
             next_autosave = now + AUTOSAVE_INTERVAL_MS;
-        } else if (!pending_save && (int32_t)(now - next_autosave) >= 0) {
+        } else if (!pending_save && !ctx->guest->busy &&
+                   (int32_t)(now - next_autosave) >= 0) {
             uint64_t capture_start = SDL_GetPerformanceCounter();
             pending_save = start_async_save(emu, perf_log);
             perf_save_capture_ms += (SDL_GetPerformanceCounter() - capture_start) *
@@ -2327,62 +2702,61 @@ select_model:
         if (ctx->backgrounded || ctx->focus_lost) {
             memset(&present_timing, 0, sizeof(present_timing));
             frame_deadline = SDL_GetPerformanceCounter();
+            guest_deadline = frame_deadline;
             perf_start = frame_deadline;
             perf_presents = perf_guest = 0;
             perf_core = perf_render = perf_max_core = 0;
             perf_lcd_start = ctx->lcd_updates;
+            perf_source_start = ctx->source_lcd_updates;
+            perf_generated_start = ctx->generated_lcd_frames;
+            perf_motion = 0;
             ctx->audio_ticks = ctx->lcd_ticks = 0;
             ctx->audio_underruns = ctx->audio_dropped_frames = 0;
             SDL_Delay(20);
             continue;
         }
 
-        uint64_t core_start = SDL_GetPerformanceCounter();
-        advance_emulated_frame(emu, ctx);
-
         uint64_t frame_now = SDL_GetPerformanceCounter();
-        uint64_t core_ticks = frame_now - core_start;
-        int catchup_frames = catchup_frame_budget(
-            frame_now > frame_deadline ? frame_now - frame_deadline : 0,
-            frame_interval, core_ticks, core_start - work_start + last_render_ticks);
-        int extra_frames = 0;
-        for (int i = 0; i < catchup_frames; ++i) {
-            if (ctx->audio_dev && SDL_GetQueuedAudioSize(ctx->audio_dev) >=
-                ctx->audio_target_queue_bytes) break;
-            frame_deadline += frame_interval;
-            advance_emulated_frame(emu, ctx);
-            ++extra_frames;
-            /* Recheck the real cost; guest work can change between frames. */
-            if (SDL_GetPerformanceCounter() - work_start + last_render_ticks >= frame_interval) {
-                break;
-            }
+        if (!ctx->guest->busy && frame_now >= guest_deadline &&
+            (!ctx->audio_dev || SDL_GetQueuedAudioSize(ctx->audio_dev) <
+             ctx->audio_max_queue_bytes - ctx->audio_frame_bytes)) {
+            dispatch_guest_frame(ctx);
+            guest_deadline += frame_interval;
+            if (frame_now > guest_deadline + frame_interval * 4u)
+                guest_deadline = frame_now;
+        }
+        /* Service completions and input without tying either to presentation.
+         * This is deliberately not a wait on the guest CPU: a 100 ms guest
+         * frame must not prevent six UI presentations. */
+        if (frame_now < frame_deadline) {
+            SDL_Delay(1);
+            continue;
         }
 
         uint64_t render_start = SDL_GetPerformanceCounter();
-        core_ticks = render_start - core_start;
         render_frame(ctx);
         uint64_t present_stamp = SDL_GetPerformanceCounter();
         last_render_ticks = present_stamp - render_start;
         record_present(&present_timing, present_stamp, frame_interval);
-        perf_core += core_ticks;
         perf_render += last_render_ticks;
-        if (core_ticks > perf_max_core) perf_max_core = core_ticks;
-        perf_guest += 1 + extra_frames;
         if (++perf_presents == 60) {
             uint64_t stamp = SDL_GetPerformanceCounter();
             if (perf_log && perf_rows++ < 600) {
                 double ms = 1000.0 / (double)perf_frequency;
-                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u\n",
+                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u,%u,%u,%.3f,%u\n",
                         VITACYBIKO_VERSION, ctx->model, perf_presents, perf_guest,
                         ctx->lcd_updates - perf_lcd_start,
                         (stamp - perf_start) * ms, perf_core * ms,
                         perf_render * ms, perf_max_core * ms,
-                        cybiko_get_program_counter(emu),
+                        guest_pc,
                         ctx->audio_ticks * ms, ctx->lcd_ticks * ms,
                         ctx->audio_underruns, ctx->audio_dropped_frames,
                         ctx->audio_dev ? SDL_GetQueuedAudioSize(ctx->audio_dev) : 0,
                         perf_save_capture_ms, perf_save_worker_ms,
-                        present_timing.max_gap * ms, present_timing.late);
+                        present_timing.max_gap * ms, present_timing.late,
+                        ctx->source_lcd_updates - perf_source_start,
+                        ctx->generated_lcd_frames - perf_generated_start,
+                        perf_motion * ms, MOTION_DELAY_US / 1000);
             }
             perf_start = stamp;
             perf_save_capture_ms = perf_save_worker_ms = 0;
@@ -2391,24 +2765,37 @@ select_model:
             perf_presents = perf_guest = 0;
             perf_core = perf_render = perf_max_core = 0;
             perf_lcd_start = ctx->lcd_updates;
+            perf_source_start = ctx->source_lcd_updates;
+            perf_generated_start = ctx->generated_lcd_frames;
+            perf_motion = 0;
             ctx->audio_ticks = ctx->lcd_ticks = 0;
             ctx->audio_underruns = ctx->audio_dropped_frames = 0;
         }
 
         frame_deadline += frame_interval;
         frame_now = SDL_GetPerformanceCounter();
-        if (frame_now < frame_deadline) {
-            uint64_t remaining_ms =
-                (frame_deadline - frame_now) * 1000u / perf_frequency;
-            if (remaining_ms > 0) {
-                SDL_Delay((uint32_t)remaining_ms);
-            }
-        } else if (frame_now - frame_deadline > frame_interval * 4u) {
+        if (frame_now > frame_deadline + frame_interval * 4u) {
             /* Do not attempt a long catch-up burst after suspend or a stall. */
             frame_deadline = frame_now;
         }
     }
 
+    stop_guest_worker(ctx);
+    if (ctx->motion_trace) {
+        char trace_path[MAX_PATH_CHARS + 32];
+        snprintf(trace_path, sizeof(trace_path), "%s/motion-trace-v1.bin", runtime_root);
+        FILE *trace = fopen(trace_path, "wb");
+        bool trace_ok = false;
+        if (trace) {
+            uint8_t header[12] = {'V','C','M','T','0','0','0','1'};
+            for (unsigned i = 0; i < 4; ++i)
+                header[8 + i] = (uint8_t)(ctx->motion_trace_count >> (i * 8));
+            trace_ok = fwrite(header, 1, sizeof(header), trace) == sizeof(header) &&
+                fwrite(ctx->motion_trace, sizeof(*ctx->motion_trace), ctx->motion_trace_count, trace) == ctx->motion_trace_count;
+            if (fclose(trace)) trace_ok = false;
+        }
+        fprintf(stderr, "motion validation trace %s: %u records\n", trace_ok ? "saved" : "failed", ctx->motion_trace_count);
+    }
     bool final_async_ok;
     double final_async_ms;
     finish_async_save(&pending_save, true, &final_async_ok, &final_async_ms);
