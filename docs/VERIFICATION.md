@@ -412,6 +412,13 @@ Raw linked executable SHA-256:
   semantic cached-reject backoff tuning.
 - Local host verification passed `test_h8s_cpu`, the full 16-test Release host
   suite and the three-model firmware smoke benchmark documented above.
+- The published `v0.1.18-preview` release assets were downloaded after
+  publication; `sha256sum -c SHA256SUMS` reported `VitaCybiko.vpk: OK`.
+- Public main CI and tag CI on commit `1dcf415` passed the Host tests workflow:
+  [main run](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/35522138994)
+  and [tag run](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/35522144734)
+  both completed `release-host` and sanitizer/frontend `host` jobs
+  successfully.
 
 ## v0.1.3-preview candidate
 
