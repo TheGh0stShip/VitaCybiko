@@ -765,6 +765,68 @@ static void test_plain_memory_instruction_matches_long_displacement(void)
     teardown_memory_equiv_cpu(&bus);
 }
 
+static void test_plain_memory_instruction_matches_multi_pop(void)
+{
+    const uint8_t code[] = {0x01, 0x10, 0x6d, 0x75}; /* MOV.L @SP+,ER5-ER4 */
+    uint8_t rom[4] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0xa5);
+    cpu.er[7] = bus.machine->ram_base + 0x200;
+    memory_write32(&bus.external_ram, 0x200, 0x11112222);
+    memory_write32(&bus.external_ram, 0x204, 0x33334444);
+
+    h8s_block_cpu_state_t state = {.ccr = 0xa5, .pc = 0};
+    state.er[7] = bus.machine->ram_base + 0x200;
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[4] == cpu.er[4]);
+    TEST_CHECK(state.er[5] == cpu.er[5]);
+    TEST_CHECK(state.er[7] == cpu.er[7]);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_plain_memory_instruction_matches_multi_push(void)
+{
+    const uint8_t code[] = {0x01, 0x10, 0x6d, 0xf4}; /* MOV.L ER4-ER5,@-SP */
+    uint8_t rom[4] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0x5a);
+    cpu.er[4] = 0x11112222;
+    cpu.er[5] = 0x33334444;
+    cpu.er[7] = bus.machine->ram_base + 0x220;
+
+    h8s_block_cpu_state_t state = {.ccr = 0x5a, .pc = 0};
+    state.er[4] = 0x11112222;
+    state.er[5] = 0x33334444;
+    state.er[7] = bus.machine->ram_base + 0x220;
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[7] == cpu.er[7]);
+    TEST_CHECK(bus_read32(&bus, state.er[7]) == bus_read32(&bus, cpu.er[7]));
+    TEST_CHECK(bus_read32(&bus, state.er[7] + 4) == bus_read32(&bus, cpu.er[7] + 4));
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1703,6 +1765,8 @@ TEST_LIST = {
     { "plain_memory_instruction_rejects_mmio_and_rom_write", test_plain_memory_instruction_rejects_mmio_and_rom_write },
     { "plain_memory_instruction_matches_byte_postincrement", test_plain_memory_instruction_matches_byte_postincrement },
     { "plain_memory_instruction_matches_long_displacement", test_plain_memory_instruction_matches_long_displacement },
+    { "plain_memory_instruction_matches_multi_pop", test_plain_memory_instruction_matches_multi_pop },
+    { "plain_memory_instruction_matches_multi_push", test_plain_memory_instruction_matches_multi_push },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },

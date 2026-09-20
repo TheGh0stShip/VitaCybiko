@@ -1099,6 +1099,27 @@ Because this is PS Vita-targeted work, the accepted shape is the batched,
 Xtreme-only path. Do not reintroduce all-model mutable probing or
 one-instruction semantic wrapping; both are hostile to the Vita CPU budget.
 
+Small accepted follow-up: the mixed plain-memory tier now also supports the
+H8S multi-register long stack forms used by `0x0110`/`0x0120`/`0x0130`
+prefixes when their second word is `0x6d70` (pop from `@SP+`) or `0x6df0`
+(push to `@-SP`). These are guarded as plain 32-bit memory transfers and do not
+modify flags, matching the interpreter. Focused tests compare both
+`MOV.L @SP+,ER5-ER4` and `MOV.L ER4-ER5,@-SP` against `h8s_cpu_step`.
+
+Validation:
+
+- focused `test_h8s_block` and `test_h8s_cpu` passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 pass (wrapper timing artifact
+  `-1.76` ignored), Classic V2 0.50 s, Xtreme 1.65 s;
+- direct Xtreme repeats: 1.624/1.901/1.552 s.
+
+This is accepted as correctness/coverage for hot RAM stack forms, not as a
+major standalone speedup. The next Vita-relevant bottleneck is no longer these
+stack MOV forms; the profile still shows ~46.8k Xtreme window rejects, with
+top sites now around `0x49b928` (`0x2ab3 0x735a`), `0x4adf4e`
+(`0x6b02 0xfea6`), and call/return-heavy targets.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

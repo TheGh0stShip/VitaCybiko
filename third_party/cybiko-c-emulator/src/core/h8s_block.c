@@ -1825,6 +1825,40 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
     bool post_increment = false;
     bool pre_decrement = false;
 
+    if (op == 0x0110 || op == 0x0120 || op == 0x0130) {
+        if (insn->bytes != 4) return false;
+        uint16_t op2 = (uint16_t)insn->imm;
+        unsigned count = ((op & 0x00f0u) >> 4);
+        unsigned rn = op2 & 0x7;
+        if ((op2 & 0xfff8u) == 0x6d70u) {
+            if (rn < count) return false;
+            for (unsigned i = 0; i <= count; ++i) {
+                uint32_t addr = state->er[7] & 0xffffffu;
+                const uint8_t *ptr = bus_plain_read_ptr(bus, addr, 4);
+                if (!ptr) return false;
+                state->er[rn - i] = ((uint32_t)ptr[0] << 24) |
+                                    ((uint32_t)ptr[1] << 16) |
+                                    ((uint32_t)ptr[2] << 8) |
+                                    ptr[3];
+                state->er[7] += 4;
+            }
+            state->pc += insn->bytes;
+            return true;
+        }
+        if ((op2 & 0xfff8u) == 0x6df0u) {
+            if (rn + count >= 8) return false;
+            for (unsigned i = 0; i <= count; ++i) {
+                state->er[7] -= 4;
+                uint32_t addr = state->er[7] & 0xffffffu;
+                if (!bus_is_plain_write_range(bus, addr, 4)) return false;
+                bus_write32(bus, addr, state->er[rn + i]);
+            }
+            state->pc += insn->bytes;
+            return true;
+        }
+        return false;
+    }
+
     if (op == 0x0100) {
         uint16_t op2 = insn->bytes == 4 ? (uint16_t)insn->imm :
                        (uint16_t)(insn->imm >> 16);
@@ -1962,6 +1996,17 @@ static bool plain_memory_instruction_supported(const h8s_block_instruction_t *in
         if (hi2 == 0x69) return insn->bytes == 4;
         if (hi2 == 0x6b) return insn->bytes == 6 && !(lo2 & 0x20);
         if (hi2 == 0x6f) return insn->bytes == 6;
+        return false;
+    }
+    if (op == 0x0110 || op == 0x0120 || op == 0x0130) {
+        if (insn->bytes != 4) return false;
+        uint16_t op2 = (uint16_t)insn->imm;
+        unsigned count = ((op & 0x00f0u) >> 4);
+        unsigned rn = op2 & 0x7;
+        if ((op2 & 0xfff8u) == 0x6d70u)
+            return rn >= count;
+        if ((op2 & 0xfff8u) == 0x6df0u)
+            return rn + count < 8;
         return false;
     }
     return (hi == 0x68 || hi == 0x69 || hi == 0x6c || hi == 0x6d) ?
