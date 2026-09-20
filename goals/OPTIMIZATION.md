@@ -849,6 +849,21 @@ counters. The patch was removed. Treat broad MOV.L micro-cleanups as
 insufficient until a profiler shows instruction helper overhead, not
 reject/backoff/call-return structure, is the limiting cost.
 
+Rejected follow-up experiment: a guarded whole-call fast path for semantic
+`JSR_ABS24` callers was prototyped after upstream research on direct block
+chaining/call-return-aware traces. The prototype delayed the JSR stack write
+until success, simulated only immutable-ROM semantic blocks, required the
+callee to reach `RTS` with the expected stack pointer, then committed the return
+address and CPU state. A focused `ADD; JSR; semantic callee; RTS` equivalence
+test passed, but the three-model smoke worsened/noised to Classic V1 1.90 s,
+Classic V2 1.06 s, Xtreme 7.73 s, and direct Xtreme still showed unchanged
+accepted counters (`semantic_fast_blocks=71141`,
+`semantic_fast_cycles=172273`). The patch was removed. The likely issue is
+that the real hot Xtreme callee loop exceeds the safe per-event cycle window,
+so this trace shape rejects in practice. Future call/return work needs an event
+deadline-aware trace scheduler or a lower-overhead translated loop body, not a
+single bounded call wrapper.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
