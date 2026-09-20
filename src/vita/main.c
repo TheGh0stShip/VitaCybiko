@@ -1422,6 +1422,18 @@ static bool load_classic_storage(cybiko_emu_t *emu)
     return ok;
 }
 
+static void ensure_lcd_palette(app_ctx_t *ctx)
+{
+    if (ctx->lcd_palette_ready) return;
+    for (int g = 0; g < 256; ++g) {
+        uint32_t r = 36 + (g * 174) / 255;
+        uint32_t green = 45 + (g * 176) / 255;
+        uint32_t b = 38 + (g * 158) / 255;
+        ctx->lcd_palette[g] = 0xff000000u | (r << 16) | (green << 8) | b;
+    }
+    ctx->lcd_palette_ready = true;
+}
+
 static void upload_lcd(app_ctx_t *ctx, const uint8_t *pixels, int width, int height)
 {
     if (!ctx->lcd_texture || width != CYBIKO_LCD_WIDTH ||
@@ -1432,15 +1444,7 @@ static void upload_lcd(app_ctx_t *ctx, const uint8_t *pixels, int width, int hei
     if (ctx->lcd_previous_valid &&
         !memcmp(ctx->lcd_previous, pixels, sizeof(ctx->lcd_previous))) return;
     uint64_t started = SDL_GetPerformanceCounter();
-    if (!ctx->lcd_palette_ready) {
-        for (int g = 0; g < 256; ++g) {
-            uint32_t r = 36 + (g * 174) / 255;
-            uint32_t green = 45 + (g * 176) / 255;
-            uint32_t b = 38 + (g * 158) / 255;
-            ctx->lcd_palette[g] = 0xff000000u | (r << 16) | (green << 8) | b;
-        }
-        ctx->lcd_palette_ready = true;
-    }
+    ensure_lcd_palette(ctx);
     for (int i = 0; i < width * height; ++i)
         ctx->lcd_pixels[i] = ctx->lcd_palette[pixels[i]];
     if (SDL_UpdateTexture(ctx->lcd_texture, NULL, ctx->lcd_pixels,
@@ -2101,9 +2105,17 @@ static void render_frame(app_ctx_t *ctx)
                 upload_lcd(ctx, pixels, CYBIKO_LCD_WIDTH, CYBIKO_LCD_HEIGHT);
                 ctx->motion_texture_active = false;
             } else {
-                motion_synthesize_scaled(&ctx->motion.pair, phase, LCD_SCALE, ctx->interpolated_lcd);
-                for (unsigned i = 0; i < sizeof(ctx->interpolated_lcd); ++i)
-                    ctx->motion_pixels[i] = ctx->lcd_palette[ctx->interpolated_lcd[i]];
+                ensure_lcd_palette(ctx);
+                bool direct_argb = !ctx->motion_trace &&
+                    motion_synthesize_scaled_argb_fast(&ctx->motion.pair, phase,
+                                                       ctx->lcd_palette,
+                                                       ctx->motion_pixels);
+                if (!direct_argb) {
+                    motion_synthesize_scaled(&ctx->motion.pair, phase, LCD_SCALE,
+                                             ctx->interpolated_lcd);
+                    for (unsigned i = 0; i < sizeof(ctx->interpolated_lcd); ++i)
+                        ctx->motion_pixels[i] = ctx->lcd_palette[ctx->interpolated_lcd[i]];
+                }
                 if (SDL_UpdateTexture(ctx->motion_texture, NULL, ctx->motion_pixels,
                                       LCD_W * sizeof(uint32_t)) == 0) {
                     ctx->motion_texture_active = true;

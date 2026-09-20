@@ -347,6 +347,8 @@ static bool is_tier1_executable(uint16_t op)
     if ((hi >> 4) >= 0x8) return true; /* immediate byte ALU/MOV */
 
     switch (hi) {
+    case 0x02:
+        return true;
     case 0x08: case 0x09: case 0x0c: case 0x0d: case 0x0e:
     case 0x18: case 0x19: case 0x1c: case 0x1d: case 0x1e:
     case 0x14: case 0x15: case 0x16:
@@ -982,6 +984,8 @@ bool h8s_semantic_instruction_supported(uint16_t op)
     uint8_t lo = (uint8_t)op;
 
     switch (hi) {
+    case 0x02:
+        return true;
     case 0x08: case 0x09: case 0x0c: case 0x0d: case 0x0e:
     case 0x14: case 0x15: case 0x16:
     case 0x18: case 0x19: case 0x1c: case 0x1d: case 0x1e:
@@ -1053,6 +1057,11 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
         uint8_t lo = (uint8_t)op;
 
         switch (hi) {
+        case 0x02: {
+            unsigned rd = lo & 0xf;
+            block_set_reg_b(state, rd, state->ccr);
+            break;
+        }
         case 0x01: {
             if (lo != 0xf0 || block->decoded[i].bytes != 4) return false;
             uint16_t op2 = (uint16_t)block->decoded[i].imm;

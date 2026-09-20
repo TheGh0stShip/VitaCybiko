@@ -397,6 +397,35 @@ static void vertical_scaled(const motion_pair_t *p, unsigned phase, uint8_t *out
     }
 }
 
+static void vertical_scaled_argb(const motion_pair_t *p, unsigned phase,
+                                 const uint32_t palette[256], uint32_t *out)
+{
+    int da = p->dy * (int)phase * 3, db = p->dy * (int)(256 - phase) * 3;
+    for (int y = 0; y < 300; ++y) {
+        axis_sample_t a = axis_sample(y * 256 - da, 100);
+        axis_sample_t b = axis_sample(y * 256 + db, 100);
+        int sy = y / 3, tile_row = sy / 8 * MOTION_COLS;
+        for (int x = 0; x < 160; ++x) {
+            int index = sy * 160 + x, col = x / 8, va = -1, vb = -1;
+            uint8_t value;
+            if (p->stationary[tile_row + col]) value = p->after[index];
+            else {
+                if (a.valid && !p->stationary[a.lo / 8 * MOTION_COLS + col] &&
+                    (!a.fraction || !p->stationary[a.hi / 8 * MOTION_COLS + col]))
+                    va = mix_axis(p->before[a.lo * 160 + x], p->before[a.hi * 160 + x], a.fraction);
+                if (b.valid && !p->stationary[b.lo / 8 * MOTION_COLS + col] &&
+                    (!b.fraction || !p->stationary[b.hi / 8 * MOTION_COLS + col]))
+                    vb = mix_axis(p->after[b.lo * 160 + x], p->after[b.hi * 160 + x], b.fraction);
+                value = combine(va, vb, phase, phase < 128 ? p->before[index] : p->after[index]);
+            }
+            uint32_t pixel = palette[value];
+            out[y * 480 + x * 3] = pixel;
+            out[y * 480 + x * 3 + 1] = pixel;
+            out[y * 480 + x * 3 + 2] = pixel;
+        }
+    }
+}
+
 static void horizontal_scaled(const motion_pair_t *p, unsigned phase,
                               uint8_t out[static MOTION_PIXELS * 9])
 {
@@ -430,6 +459,46 @@ static void horizontal_scaled(const motion_pair_t *p, unsigned phase,
             }
             line[x + 480] = line[x];
             line[x + 960] = line[x];
+        }
+    }
+}
+
+static void horizontal_scaled_argb(const motion_pair_t *p, unsigned phase,
+                                   const uint32_t palette[256], uint32_t *out)
+{
+    axis_sample_t a[480], b[480];
+    int previous_dx = INT_MAX;
+    for (int y = 0; y < 100; ++y) {
+        int dx = p->row_dx[y];
+        bool tile_mask = dx == p->dx;
+        if (!p->stationary_rows[y] && dx != previous_dx) {
+            int da = dx * (int)phase * 3, db = dx * (int)(256 - phase) * 3;
+            for (int x = 0; x < 480; ++x) {
+                a[x] = axis_sample(x * 256 - da, 160);
+                b[x] = axis_sample(x * 256 + db, 160);
+            }
+            previous_dx = dx;
+        }
+        int row = y * 160, tile_row = y / 8 * MOTION_COLS;
+        uint32_t *line = out + y * 3 * 480;
+        for (int x = 0; x < 480; ++x) {
+            int index = row + x / 3, va = -1, vb = -1;
+            uint8_t value;
+            if (p->stationary_rows[y] || (tile_mask && p->stationary[tile_row + x / 24]))
+                value = p->after[index];
+            else {
+                if (a[x].valid && (!tile_mask || (!p->stationary[tile_row + a[x].lo / 8] &&
+                    (!a[x].fraction || !p->stationary[tile_row + a[x].hi / 8]))))
+                    va = mix_axis(p->before[row + a[x].lo], p->before[row + a[x].hi], a[x].fraction);
+                if (b[x].valid && (!tile_mask || (!p->stationary[tile_row + b[x].lo / 8] &&
+                    (!b[x].fraction || !p->stationary[tile_row + b[x].hi / 8]))))
+                    vb = mix_axis(p->after[row + b[x].lo], p->after[row + b[x].hi], b[x].fraction);
+                value = combine(va, vb, phase, phase < 128 ? p->before[index] : p->after[index]);
+            }
+            uint32_t pixel = palette[value];
+            line[x] = pixel;
+            line[x + 480] = pixel;
+            line[x + 960] = pixel;
         }
     }
 }
@@ -487,6 +556,25 @@ void motion_synthesize_scaled(const motion_pair_t *p, unsigned phase,
      * Cortex-A9 must not call software integer division for every sample. */
     if (scale == 1) synthesize_scaled(p, phase, 1, out);
     else if (scale == 3) synthesize_scaled(p, phase, 3, out);
+}
+
+bool motion_synthesize_scaled_argb_fast(const motion_pair_t *p, unsigned phase,
+                                        const uint32_t palette[256],
+                                        uint32_t *out)
+{
+    if (!p || !palette || !out || phase >= 256 || !phase ||
+        p->cut || !p->moving_blocks || !p->translated) {
+        return false;
+    }
+    if (!p->dx) {
+        vertical_scaled_argb(p, phase, palette, out);
+        return true;
+    }
+    if (!p->dy) {
+        horizontal_scaled_argb(p, phase, palette, out);
+        return true;
+    }
+    return false;
 }
 
 void motion_synthesize(const motion_pair_t *p, unsigned phase, uint8_t *out)

@@ -1376,6 +1376,8 @@ static void test_semantic_block_rejects_unsupported_tier1(void)
     TEST_CHECK(!block.executable);
     TEST_CHECK(!h8s_semantic_block_supported(&block));
     TEST_CHECK(!h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK(h8s_semantic_instruction_supported(0x0208));  /* STC CCR,R0L: safe copy from CCR. */
+    TEST_CHECK(!h8s_semantic_instruction_supported(0x0308)); /* LDC R0L,CCR: changes IRQ deferral. */
 }
 
 static void test_semantic_block_executes_byte_immediates(void)
@@ -1738,6 +1740,7 @@ static void test_semantic_block_matches_interpreter_representative_ops(void)
     const uint8_t or_w[] = {0x64, 0x45};
     const uint8_t btst_reg[] = {0x63, 0x67};
     const uint8_t bld_imm[] = {0x77, 0x07};
+    const uint8_t stc_ccr[] = {0x02, 0x08};
     const uint8_t add_b_imm[] = {0x88, 0x7f};
     const uint8_t mov_w_imm[] = {0x79, 0x04, 0x80, 0x00};
     const uint8_t xor_l_imm[] = {0x7a, 0x53, 0x12, 0x34, 0x56, 0x78};
@@ -1759,6 +1762,7 @@ static void test_semantic_block_matches_interpreter_representative_ops(void)
             check_semantic_matches_interpreter("OR.W R4,R5", or_w, sizeof(or_w), ers[e], ccrs[c]);
             check_semantic_matches_interpreter("BTST R6H bit,R7H", btst_reg, sizeof(btst_reg), ers[e], ccrs[c]);
             check_semantic_matches_interpreter("BLD #0,R7H", bld_imm, sizeof(bld_imm), ers[e], ccrs[c]);
+            check_semantic_matches_interpreter("STC CCR,R0L", stc_ccr, sizeof(stc_ccr), ers[e], ccrs[c]);
             check_semantic_matches_interpreter("ADD.B #0x7f,R0L", add_b_imm, sizeof(add_b_imm), ers[e], ccrs[c]);
             check_semantic_matches_interpreter("MOV.W #0x8000,R4", mov_w_imm, sizeof(mov_w_imm), ers[e], ccrs[c]);
             check_semantic_matches_interpreter("XOR.L #0x12345678,ER3", xor_l_imm, sizeof(xor_l_imm), ers[e], ccrs[c]);

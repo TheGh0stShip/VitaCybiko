@@ -33,6 +33,12 @@ void motion_synthesize(const motion_pair_t *pair, unsigned phase, uint8_t *out);
  * source pixels instead of magnifying a one-guest-pixel blur threefold. */
 void motion_synthesize_scaled(const motion_pair_t *pair, unsigned phase,
                               unsigned scale, uint8_t *out);
+/* Vita hot path: for optimized scale-3 translated scrolls, synthesize directly
+ * into ARGB texture pixels and skip the intermediate indexed frame. Returns
+ * false when the generic indexed synthesizer should be used instead. */
+bool motion_synthesize_scaled_argb_fast(const motion_pair_t *pair, unsigned phase,
+                                        const uint32_t palette[256],
+                                        uint32_t *out);
 
 typedef struct {
     motion_pair_t pair;
