@@ -353,6 +353,12 @@ b06a0ee813d77bc450cf9a5fe40e9c9df578067e80668ec3e1cb11e3e83b8ed1
   [Host tests workflow](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/35521286530):
   Release host build/tests and sanitizer/frontend host build/tests both
   completed successfully.
+- The published `v0.1.17-preview` release assets were downloaded after
+  publication; `sha256sum -c SHA256SUMS` reported `VitaCybiko.vpk: OK`.
+- Public tag CI on commit `40f1691` passed the
+  [release workflow](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/35521433978):
+  Release host build/tests and sanitizer/frontend host build/tests both
+  completed successfully.
 
 ## v0.1.3-preview candidate
 

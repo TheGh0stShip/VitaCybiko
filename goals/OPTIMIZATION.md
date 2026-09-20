@@ -4,6 +4,9 @@ These are the remaining engineering goals derived from physical performance
 logs and upstream research. They are measurable and do not substitute frame
 drops for emulation speed.
 
+Start new work from [`EXECUTION.md`](EXECUTION.md). This file is the detailed
+optimization ledger; it is not permission to repeat rejected experiments.
+
 ## Goal A — ROM prefetch hardening
 
 Status: implemented in `27aeb68`.
