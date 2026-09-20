@@ -65,6 +65,8 @@ int main(int argc, char **argv)
     unsigned long long instructions = 0;
     unsigned long long executable_blocks = 0;
     unsigned long long executable_prefix_instructions = 0;
+    unsigned long long semantic_blocks = 0;
+    unsigned long long semantic_instructions = 0;
     unsigned long long bytes = 0;
     unsigned long long stops[H8S_BLOCK_STOP_UNSUPPORTED + 1] = {0};
     unsigned longest = 0;
@@ -78,6 +80,10 @@ int main(int argc, char **argv)
         instructions += block.instructions;
         executable_prefix_instructions += block.executable_prefix_instructions;
         if (block.executable && block.instructions > 0) executable_blocks++;
+        if (h8s_semantic_block_supported(&block)) {
+            semantic_blocks++;
+            semantic_instructions += block.instructions;
+        }
         bytes += block.bytes;
         if (block.stop <= H8S_BLOCK_STOP_UNSUPPORTED) stops[block.stop]++;
         if (block.instructions > longest) {
@@ -95,6 +101,8 @@ int main(int argc, char **argv)
            blocks ? (double)bytes / (double)blocks : 0.0);
     printf("tier1_executable_blocks=%llu tier1_executable_prefix_instructions=%llu\n",
            executable_blocks, executable_prefix_instructions);
+    printf("semantic_supported_blocks=%llu semantic_supported_instructions=%llu\n",
+           semantic_blocks, semantic_instructions);
     printf("longest_block_pc=0x%06x longest_instructions=%u\n", longest_pc, longest);
     for (unsigned i = 0; i <= H8S_BLOCK_STOP_UNSUPPORTED; ++i)
         printf("stop_%s=%llu\n", stop_name((h8s_block_stop_t)i), stops[i]);

@@ -62,17 +62,19 @@ Current block-discovery gate:
   OR/XOR/AND, plus unary NOT/EXTU/EXTS/NEG register forms) against a small
   standalone CPU state. It is deliberately not wired into `h8s_cpu_run` yet;
   tests prove the semantics before runtime integration.
+- `cybiko-block-scan` now reports blocks fully supported by the semantic
+  executor, separately from broader tier-one classification.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
-| Image | Avg insns | Tier1 blocks | Tier1 prefix insns | Stop branch | Stop prefix | Stop unsupported |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Classic V1 boot | 13.19 | 4,881 | 125,482 | 11,634 | 0 | 0 |
-| Classic V1 flash | 9.29 | 38,325 | 412,395 | 250,552 | 0 | 0 |
-| Classic V2 boot | 11.91 | 4,119 | 96,277 | 12,384 | 0 | 0 |
-| Classic V2 flash | 5.65 | 16,584 | 59,818 | 123,488 | 0 | 0 |
-| Xtreme boot | 8.11 | 2,643 | 36,270 | 14,591 | 0 | 0 |
-| Xtreme flash | 8.68 | 46,533 | 556,157 | 246,250 | 0 | 0 |
+| Image | Avg insns | Tier1 blocks | Tier1 prefix insns | Semantic blocks | Semantic insns | Stop branch | Stop prefix | Stop unsupported |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Classic V1 boot | 13.19 | 5,451 | 128,763 | 5,077 | 120,583 | 11,634 | 0 | 0 |
+| Classic V1 flash | 9.29 | 47,638 | 490,464 | 32,340 | 120,014 | 250,552 | 0 | 0 |
+| Classic V2 boot | 11.91 | 4,835 | 100,540 | 4,275 | 90,118 | 12,384 | 0 | 0 |
+| Classic V2 flash | 5.65 | 21,645 | 75,613 | 19,756 | 33,738 | 123,488 | 0 | 0 |
+| Xtreme boot | 8.11 | 3,425 | 40,759 | 2,810 | 29,043 | 14,591 | 0 | 0 |
+| Xtreme flash | 8.68 | 55,432 | 631,234 | 39,631 | 276,777 | 246,250 | 0 | 0 |
 
 The scan shows branch boundaries now dominate; unsupported and prefix length
 decoding are no longer the blocker. The next decoded-block step should begin

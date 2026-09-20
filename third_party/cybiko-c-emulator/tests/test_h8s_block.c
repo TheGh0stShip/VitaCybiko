@@ -243,6 +243,7 @@ static void test_semantic_block_executes_register_ops(void)
     };
     h8s_block_t block;
     TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(h8s_semantic_block_supported(&block));
     h8s_block_cpu_state_t state = {
         .er = {0x10, 0, 0, 0, 0, 0, 0, 0},
         .ccr = 0xff,
@@ -265,6 +266,7 @@ static void test_semantic_block_rejects_unsupported_tier1(void)
     TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
     h8s_block_cpu_state_t state = {.pc = 0};
     TEST_CHECK(block.executable);
+    TEST_CHECK(!h8s_semantic_block_supported(&block));
     TEST_CHECK(!h8s_execute_semantic_block(&block, &state));
 }
 

@@ -388,6 +388,52 @@ static void block_set_arithmetic_l(h8s_block_cpu_state_t *state, uint32_t d,
         (subtract ? d < s : result < d));
 }
 
+static bool semantic_instruction_supported(uint16_t op)
+{
+    uint8_t hi = (uint8_t)(op >> 8);
+    uint8_t lo = (uint8_t)op;
+
+    switch (hi) {
+    case 0x08: case 0x09: case 0x0c: case 0x0d: case 0x0e:
+    case 0x14: case 0x15: case 0x16:
+    case 0x18: case 0x19: case 0x1c: case 0x1d: case 0x1e:
+        return true;
+    case 0x0a: case 0x1a: case 0x1f:
+        return (lo & 0x80) != 0;
+    case 0x0b: case 0x1b:
+        switch (lo & 0xf0) {
+        case 0x00: case 0x80: case 0x90: case 0xf0:
+            return true;
+        default:
+            return false;
+        }
+    case 0x0f:
+        return (lo & 0x80) != 0;
+    case 0x17:
+        switch ((lo >> 4) & 0xf) {
+        case 0x0: case 0x1: case 0x3: case 0x5: case 0x7:
+        case 0x8: case 0x9: case 0xb: case 0xd: case 0xf:
+            return true;
+        default:
+            return false;
+        }
+    case 0x79: case 0x7a:
+        return ((lo >> 4) & 0xf) <= 6;
+    default:
+        return (hi >> 4) >= 0x8;
+    }
+}
+
+bool h8s_semantic_block_supported(const h8s_block_t *block)
+{
+    if (!block || !block->executable || block->instructions == 0) return false;
+    for (unsigned i = 0; i < block->instructions; ++i) {
+        if (!semantic_instruction_supported(block->decoded[i].op))
+            return false;
+    }
+    return true;
+}
+
 bool h8s_execute_semantic_block(const h8s_block_t *block,
                                 h8s_block_cpu_state_t *state)
 {
