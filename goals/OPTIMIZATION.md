@@ -143,6 +143,9 @@ Current block-discovery gate:
 - The guarded runtime fast path now also accepts static absolute JMP exits.
   Bcc exits remain ROM-window-relative, while JMP @aa:24 exits are treated as
   absolute machine addresses and must still land in immutable boot ROM or flash.
+- The CPU now records semantic fast-path accepted blocks, accepted cycles, and
+  guarded rejects. These counters make future Vita/host smoke runs measurable
+  instead of guessing whether decoded-block execution is being used.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -246,6 +249,9 @@ Branch edge-cache gate:
 - A JMP @aa:24 frame-runner equivalence test covers the absolute-target path
   and caught the distinction between window-relative branch offsets and absolute
   H8S jump addresses.
+- Runtime fast-path counter tests cover accepted block/cycle accounting and
+  rejection accounting for mutable RAM, insufficient cycle budget, and pending
+  unmasked IRQ guards.
 
 Current Classic V2 static chain-edge scan:
 

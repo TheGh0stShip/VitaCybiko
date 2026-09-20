@@ -403,6 +403,9 @@ static void test_semantic_rom_block_fast_path_executes_bcc(void) {
     TEST_CHECK((cpu.er[0] & 0xff) == 0);
     TEST_CHECK(cpu.ccr & CCR_Z);
     TEST_CHECK(cpu.cycle_count == 2);
+    TEST_CHECK(cpu.semantic_fast_blocks == 1);
+    TEST_CHECK(cpu.semantic_fast_cycles == 2);
+    TEST_CHECK(cpu.semantic_fast_rejects == 0);
     teardown();
 }
 
@@ -415,6 +418,7 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     TEST_CHECK(cycles == 0x1234);
     TEST_CHECK(cpu.pc == CODE_BASE);
     TEST_CHECK(cpu.cycle_count == 0);
+    TEST_CHECK(cpu.semantic_fast_rejects == 1);
 
     memory_init(&bus.boot_rom, 32768, true);
     memory_write16(&bus.boot_rom, 0x100, 0xF800);
@@ -423,12 +427,14 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     cpu.pc = 0x8100;
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 1, &cycles));
     TEST_CHECK(cpu.pc == 0x8100);
+    TEST_CHECK(cpu.semantic_fast_rejects == 2);
 
     cpu.pending_irqs[0] = 12;
     cpu.pending_irq_count = 1;
     cpu.ccr = 0;
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
     TEST_CHECK(cpu.pc == 0x8100);
+    TEST_CHECK(cpu.semantic_fast_rejects == 3);
     teardown();
 }
 
@@ -463,6 +469,8 @@ static void test_cpu_run_semantic_fast_path_matches_steps(void) {
     TEST_CHECK(timer_debt == 2);
     TEST_CHECK(completion_debt == 2);
     TEST_CHECK(!io_access);
+    TEST_CHECK(cpu.semantic_fast_blocks == 1);
+    TEST_CHECK(cpu.semantic_fast_cycles == 2);
     TEST_CHECK(cpu.pc == stepped.pc);
     TEST_CHECK(cpu.ccr == stepped.ccr);
     TEST_CHECK(cpu.cycle_count == stepped.cycle_count);

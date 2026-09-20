@@ -48,6 +48,9 @@ typedef struct h8s_cpu {
     bool rom_block_valid;
     h8s_block_cache_t semantic_block_cache;
     h8s_branch_edge_cache_t semantic_edge_cache;
+    uint64_t semantic_fast_blocks;
+    uint64_t semantic_fast_cycles;
+    uint64_t semantic_fast_rejects;
 } h8s_cpu_t;
 
 void     h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus);
