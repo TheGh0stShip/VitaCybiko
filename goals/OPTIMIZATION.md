@@ -925,6 +925,45 @@ Do not keep nibbling at single opcodes unless the Xtreme scheduler histogram
 changes or a profiler shows a specific helper dominating inside those tiny
 deadline windows.
 
+Accepted Xtreme scheduler fix: the event-source profiler identified Timer16
+channel 3 as the overwhelming source of Xtreme's 1-4 cycle CPU chunks. In the
+bad profile, `timer16_3` alone accounted for `scheduler_event_timer16_3_1`
+547,963, `timer16_3_2` 333,420, and `timer16_3_3_4` 13,000,032 events. Its
+last hot configuration was:
+
+`tcr=0xa1 tmdr=0x00 tior=0x00 tier=0x01 tsr=0x01 tcnt=0x0000 tgra=0x0001 tgrb=0xffff divisor=4`.
+
+That means channel 3 was clearing on TGRA every four CPU cycles with TGIA
+enabled, but `TSR.TGFA` was already latched and output compare was disabled.
+Until software clears the flag, repeated compare matches cannot request a new
+interrupt and do not change an output pin; the timer state can be advanced
+correctly at the next I/O/peripheral sync without forcing the CPU out of its
+run loop every 1-4 cycles.
+
+The scheduler now uses `timer16_cycles_until_cpu_event()` for CPU slice
+deadlines while retaining `timer16_advance()` for exact lazy state advancement.
+The new deadline function ignores already-latched, no-output compare matches,
+but still returns deadlines for newly requestable interrupts and output compare
+transitions. Focused Timer16 tests cover the exact Xtreme channel-3 pattern and
+ensure output compare deadlines are preserved.
+
+Gate after the fix:
+
+- focused `timer16` and `emulator` tests passed;
+- full host suite: 17/17 passed;
+- Xtreme profile improved from about `scheduler_run_calls=14.27M` with
+  `scheduler_chunk_3_4=13.0M` to `scheduler_run_calls=2.10M` with
+  `scheduler_chunk_129_plus=2.10M`;
+- direct Xtreme smoke improved to `cpu_seconds=1.549649` in the profile build
+  and `1.186133` in the release host build;
+- official three-model smoke passed: Classic V1 1.09 s, Classic V2 0.49 s,
+  Xtreme 1.49 s.
+
+This is the first large accepted Xtreme-specific optimization. The next Xtreme
+work should build on this larger event window: re-profile hot semantic reject
+PCs after the timer fix, then revisit trace/call/MOV.L coverage under the new
+scheduler shape rather than relying on pre-fix reject data.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

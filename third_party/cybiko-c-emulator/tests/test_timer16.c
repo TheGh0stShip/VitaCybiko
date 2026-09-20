@@ -293,6 +293,42 @@ static void test_advance_matches_single_ticks(void) {
         TEST_CHECK(cpu_advanced.pending_irqs[i] == cpu_stepped.pending_irqs[i]);
 }
 
+static void test_cpu_event_ignores_latched_clear_only_compare(void) {
+    timer16_t t;
+    h8s_cpu_t cpu;
+    memset(&cpu, 0, sizeof(cpu));
+    timer16_init(&t, 3, 4, 48, &cpu);
+
+    timer16_write8(&t, 0, 0xa1);  /* clear on TGRA, /4 on channel 3 */
+    timer16_write8(&t, 2, 0x00);  /* no timer output */
+    timer16_write8(&t, 4, 0x01);  /* TGIA interrupt enabled */
+    timer16_write16(&t, 8, 1);    /* TGRA=1 */
+    timer16_write16(&t, 0xA, 0xffff);
+    timer16_set_enabled(&t, true);
+    t.tsr = 0x01;                 /* TGFA already latched */
+
+    TEST_CHECK(timer16_cycles_until_event(&t) == 4);
+    TEST_CHECK(timer16_cycles_until_cpu_event(&t) == 0);
+
+    t.tsr = 0x00;
+    TEST_CHECK(timer16_cycles_until_cpu_event(&t) == 4);
+}
+
+static void test_cpu_event_keeps_output_compare_deadline(void) {
+    timer16_t t;
+    h8s_cpu_t cpu;
+    memset(&cpu, 0, sizeof(cpu));
+    timer16_init(&t, 1, 2, 40, &cpu);
+
+    timer16_write8(&t, 0, 0x01);  /* /4 on channel 1 */
+    timer16_write8(&t, 2, 0x20);  /* TIOCB set high on B match */
+    timer16_write16(&t, 0xA, 2);
+    timer16_set_enabled(&t, true);
+    t.tsr = 0x02;                 /* TGFB already latched */
+
+    TEST_CHECK(timer16_cycles_until_cpu_event(&t) == 8);
+}
+
 TEST_LIST = {
     { "init_defaults",            test_init_defaults },
     { "init_vectors",             test_init_vectors },
@@ -310,5 +346,7 @@ TEST_LIST = {
     { "channel_clock_divisors",   test_channel_clock_divisors },
     { "register_roundtrips",      test_register_roundtrips },
     { "advance_matches_single_ticks", test_advance_matches_single_ticks },
+    { "cpu_event_ignores_latched_clear_only_compare", test_cpu_event_ignores_latched_clear_only_compare },
+    { "cpu_event_keeps_output_compare_deadline", test_cpu_event_keeps_output_compare_deadline },
     { NULL, NULL }
 };

@@ -24,10 +24,17 @@
 #ifdef CYBIKO_OPCODE_PROFILE
 static uint64_t scheduler_chunk_hist[10];
 static uint64_t scheduler_next_event_hist[10];
+static uint64_t scheduler_event_source_hist[10][10];
 static uint64_t scheduler_run_calls;
 static uint64_t scheduler_run_cycles;
 static uint64_t scheduler_io_breaks;
 static bool scheduler_profile_registered;
+typedef struct {
+    uint8_t tcr, tmdr, tior, tier, tsr;
+    uint16_t tcnt, tgra, tgrb;
+    int divisor;
+} scheduler_timer16_snapshot_t;
+static scheduler_timer16_snapshot_t scheduler_timer16_last[6];
 
 static unsigned scheduler_bucket(int cycles)
 {
@@ -52,6 +59,15 @@ static const char *scheduler_bucket_name(unsigned bucket)
     return bucket < sizeof(names) / sizeof(names[0]) ? names[bucket] : "unknown";
 }
 
+static const char *scheduler_event_source_name(unsigned source)
+{
+    static const char *names[] = {
+        "none", "timer8_0", "timer8_1", "timer16_0", "timer16_1",
+        "timer16_2", "timer16_3", "timer16_4", "timer16_5", "completion"
+    };
+    return source < sizeof(names) / sizeof(names[0]) ? names[source] : "unknown";
+}
+
 static void scheduler_profile_dump(void)
 {
     if (scheduler_run_calls)
@@ -71,24 +87,65 @@ static void scheduler_profile_dump(void)
                     scheduler_bucket_name(i),
                     (unsigned long long)scheduler_next_event_hist[i]);
     }
+    for (unsigned source = 0; source < 10; ++source) {
+        for (unsigned bucket = 0; bucket < 10; ++bucket) {
+            if (scheduler_event_source_hist[source][bucket])
+                fprintf(stderr, "scheduler_event_%s_%s=%llu\n",
+                        scheduler_event_source_name(source),
+                        scheduler_bucket_name(bucket),
+                        (unsigned long long)scheduler_event_source_hist[source][bucket]);
+        }
+    }
+    for (unsigned i = 0; i < 6; ++i) {
+        scheduler_timer16_snapshot_t s = scheduler_timer16_last[i];
+        if (!s.divisor) continue;
+        fprintf(stderr,
+                "scheduler_timer16_%u_last tcr=0x%02x tmdr=0x%02x tior=0x%02x tier=0x%02x tsr=0x%02x tcnt=0x%04x tgra=0x%04x tgrb=0x%04x divisor=%d\n",
+                i, s.tcr, s.tmdr, s.tior, s.tier, s.tsr, s.tcnt, s.tgra, s.tgrb, s.divisor);
+    }
 }
 
-static void scheduler_profile_record(int chunk, int next_event, int ran, bool io_break)
+static void scheduler_profile_record_timer16(int index, const timer16_t *t)
+{
+    if (index < 0 || index >= 6 || !t) return;
+    scheduler_timer16_last[index] = (scheduler_timer16_snapshot_t){
+        .tcr = t->tcr,
+        .tmdr = t->tmdr,
+        .tior = t->tior,
+        .tier = t->tier,
+        .tsr = t->tsr,
+        .tcnt = t->tcnt,
+        .tgra = t->tgra,
+        .tgrb = t->tgrb,
+        .divisor = t->cached_divisor
+    };
+}
+
+static void scheduler_profile_record(int chunk, int next_event, int event_source,
+                                     int ran, bool io_break)
 {
     if (!scheduler_profile_registered) {
         atexit(scheduler_profile_dump);
         scheduler_profile_registered = true;
     }
     scheduler_chunk_hist[scheduler_bucket(chunk)]++;
-    scheduler_next_event_hist[scheduler_bucket(next_event)]++;
+    unsigned event_bucket = scheduler_bucket(next_event);
+    scheduler_next_event_hist[event_bucket]++;
+    if (event_source < 0 || event_source > 9) event_source = 0;
+    scheduler_event_source_hist[event_source][event_bucket]++;
     scheduler_run_calls++;
     scheduler_run_cycles += (uint64_t)ran;
     if (io_break) scheduler_io_breaks++;
 }
 #else
-static void scheduler_profile_record(int chunk, int next_event, int ran, bool io_break)
+static void scheduler_profile_record_timer16(int index, const timer16_t *t)
 {
-    (void)chunk; (void)next_event; (void)ran; (void)io_break;
+    (void)index; (void)t;
+}
+static void scheduler_profile_record(int chunk, int next_event, int event_source,
+                                     int ran, bool io_break)
+{
+    (void)chunk; (void)next_event; (void)event_source; (void)ran; (void)io_break;
 }
 #endif
 
@@ -292,25 +349,35 @@ static void tick_peripherals(cybiko_emu_t *emu, int cycles)
     bus_advance_dma_completion(&emu->bus, cycles);
 }
 
-static int cycles_until_next_peripheral_event(cybiko_emu_t *emu)
+static int cycles_until_next_peripheral_event(cybiko_emu_t *emu, int *source)
 {
     int next = INT_MAX;
+    int next_source = 0;
     int t = emu->timer8[0].cached_divisor ? timer8_cycles_until_event(&emu->timer8[0]) : 0;
-    if (t > 0 && t < next) next = t;
+    if (t > 0 && t < next) { next = t; next_source = 1; }
     t = emu->timer8[1].cached_divisor ? timer8_cycles_until_event(&emu->timer8[1]) : 0;
-    if (t > 0 && t < next) next = t;
+    if (t > 0 && t < next) { next = t; next_source = 2; }
 
     const cybiko_machine_t *m = emu->bus.machine;
     for (int i = 0; i < m->timer_channels; i++) {
-        t = emu->timer16[i].cached_divisor ? timer16_cycles_until_event(&emu->timer16[i]) : 0;
-        if (t > 0 && t < next) next = t;
+        t = emu->timer16[i].cached_divisor ? timer16_cycles_until_cpu_event(&emu->timer16[i]) : 0;
+        if (t > 0 && t < next) {
+            next = t;
+            next_source = 3 + i;
+            scheduler_profile_record_timer16(i, &emu->timer16[i]);
+        }
     }
 
     if (bus_has_pending_completion(&emu->bus)) {
         t = bus_cycles_until_dma_completion(&emu->bus);
-        if (t > 0 && t < next) next = t;
+        if (t > 0 && t < next) { next = t; next_source = 9; }
     }
-    return next == INT_MAX ? 0 : next;
+    if (next == INT_MAX) {
+        if (source) *source = 0;
+        return 0;
+    }
+    if (source) *source = next_source;
+    return next;
 }
 
 static void sync_peripherals(void *ctx)
@@ -361,7 +428,8 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
     for (int cycle = 0; cycle < frame_cycles;) {
         if (emu->cpu.halted && emu->cpu.pending_irq_count == 0) {
             int chunk = frame_cycles - cycle;
-            int next_event = cycles_until_next_peripheral_event(emu);
+            int next_event_source = 0;
+            int next_event = cycles_until_next_peripheral_event(emu, &next_event_source);
             if (next_event > 0 && next_event < chunk) chunk = next_event;
             if (chunk >= HALT_FAST_FORWARD_MIN_CYCLES) {
                 emu->speaker.frame_cycle = cycle + chunk - 1;
@@ -391,14 +459,16 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
         /* Batch until an observable event or I/O access. The latter can
          * change a prescaler, counter, or transfer deadline. */
         int chunk = frame_cycles - cycle;
-        int next_event = cycles_until_next_peripheral_event(emu);
+        int next_event_source = 0;
+        int next_event = cycles_until_next_peripheral_event(emu, &next_event_source);
         if (next_event > 0 && next_event < chunk) chunk = next_event;
         emu->peripheral_access = false;
         int ran = h8s_cpu_run(&emu->cpu, chunk, cycle,
                               &emu->pending_timer_cycles,
                               &emu->pending_completion_cycles,
                               &emu->peripheral_access);
-        scheduler_profile_record(chunk, next_event, ran, emu->peripheral_access);
+        scheduler_profile_record(chunk, next_event, next_event_source,
+                                 ran, emu->peripheral_access);
         cycle += ran;
         sync_peripherals(emu);
     }

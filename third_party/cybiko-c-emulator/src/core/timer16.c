@@ -28,6 +28,7 @@
  */
 #include "core/timer16.h"
 #include "core/h8s_cpu.h"
+#include <limits.h>
 
 #if defined(__GNUC__) || defined(__clang__)
 #define TIMER16_INLINE static inline __attribute__((always_inline))
@@ -312,6 +313,50 @@ int timer16_cycles_until_event(const timer16_t *t) {
     if (first_tick <= 0) return 0;
     int ticks = timer16_counter_ticks_until_event(t);
     return first_tick + (ticks - 1) * t->cached_divisor;
+}
+
+static bool timer16_match_a_observable(const timer16_t *t)
+{
+    if ((t->tier & TIER_TGIEA) && !(t->tsr & TSR_TGFA))
+        return true;
+    int new_a = tior_match_level(t->tior & 0x0F, t->output_a_level);
+    return new_a >= 0 && new_a != t->output_a_level;
+}
+
+static bool timer16_match_b_observable(const timer16_t *t)
+{
+    if ((t->tier & TIER_TGIEB) && !(t->tsr & TSR_TGFB))
+        return true;
+    int new_b = tior_match_level((t->tior >> 4) & 0x0F, t->output_b_level);
+    return new_b >= 0 && new_b != t->output_b_level;
+}
+
+static bool timer16_overflow_observable(const timer16_t *t)
+{
+    return (t->tier & TIER_OVIE) && !(t->tsr & TSR_OVF);
+}
+
+int timer16_cycles_until_cpu_event(const timer16_t *t) {
+    int first_tick = timer16_cycles_until_counter_tick_inline(t);
+    if (first_tick <= 0) return 0;
+
+    int dist_a = timer16_counter_distance(t->tcnt, t->tgra);
+    int dist_b = timer16_counter_distance(t->tcnt, t->tgrb);
+    int dist_o = timer16_counter_distance(t->tcnt, 0);
+    bool obs_a = timer16_match_a_observable(t);
+    bool obs_b = timer16_match_b_observable(t);
+    bool obs_o = timer16_overflow_observable(t);
+
+    int best = INT_MAX;
+    if (obs_a && dist_a < best) best = dist_a;
+    if (obs_b && dist_b < best) best = dist_b;
+    if (obs_o && dist_o < best) best = dist_o;
+
+    int clear_mode = (t->tcr >> 5) & 0x03;
+    if (clear_mode == 1 && !obs_a && dist_a <= best) return 0;
+    if (clear_mode == 2 && !obs_b && dist_b <= best) return 0;
+    if (best == INT_MAX) return 0;
+    return first_tick + (best - 1) * t->cached_divisor;
 }
 
 TIMER16_INLINE void timer16_advance_no_event(timer16_t *t, int cycles) {
