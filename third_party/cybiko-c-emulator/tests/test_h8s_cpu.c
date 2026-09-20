@@ -346,6 +346,43 @@ static void test_instruction_mapping_cache(void) {
     teardown();
 }
 
+static void test_immutable_fetch_window_accepts_boot_and_flash(void) {
+    setup();
+    const uint8_t *data = NULL;
+    uint32_t base = 0, size = 0;
+
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0xF856);
+    bus_build_memory_map(&bus);
+    cpu.pc = 0x8100; /* Mirrored boot-ROM window. */
+    TEST_CHECK(h8s_cpu_get_immutable_fetch_window(&cpu, &data, &base, &size));
+    TEST_CHECK(data == bus.boot_rom.data);
+    TEST_CHECK(base == 0x8000);
+    TEST_CHECK(size == 32768);
+
+    memory_init(&bus.flash_rom, bus.machine->flash_size, true);
+    memory_write16(&bus.flash_rom, 0x200, 0xF878);
+    bus_build_memory_map(&bus);
+    cpu.pc = bus.machine->flash_base + 0x200;
+    TEST_CHECK(h8s_cpu_get_immutable_fetch_window(&cpu, &data, &base, &size));
+    TEST_CHECK(data == bus.flash_rom.data);
+    TEST_CHECK(base == bus.machine->flash_base);
+    TEST_CHECK(size == bus.machine->flash_size);
+    teardown();
+}
+
+static void test_immutable_fetch_window_rejects_ram_and_io(void) {
+    setup();
+    const uint8_t *data = NULL;
+    uint32_t base = 0, size = 0;
+
+    cpu.pc = CODE_BASE;
+    TEST_CHECK(!h8s_cpu_get_immutable_fetch_window(&cpu, &data, &base, &size));
+    cpu.pc = 0xFFFF00;
+    TEST_CHECK(!h8s_cpu_get_immutable_fetch_window(&cpu, &data, &base, &size));
+    teardown();
+}
+
 static void test_long_displacement_store(void) {
     setup();
     cpu.er[1] = CODE_BASE + 0x100;
@@ -590,6 +627,8 @@ TEST_LIST = {
     {"signed_multiply_word_destination", test_signed_multiply_word_destination},
     {"signed_divide_registers_and_flags", test_signed_divide_registers_and_flags},
     {"instruction_mapping_cache", test_instruction_mapping_cache},
+    {"immutable_fetch_window_accepts_boot_and_flash", test_immutable_fetch_window_accepts_boot_and_flash},
+    {"immutable_fetch_window_rejects_ram_and_io", test_immutable_fetch_window_rejects_ram_and_io},
     {"long_displacement_store", test_long_displacement_store},
     {"interrupt_frame", test_interrupt_frame},
     {"trap_and_task_frame", test_trap_and_task_frame},

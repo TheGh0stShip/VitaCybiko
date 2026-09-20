@@ -126,6 +126,10 @@ Current block-discovery gate:
   straight-line block first, then resolves Bcc/JMP exits using the post-block
   CCR. This prevents the future runtime tier from resolving conditional
   branches with stale flags. Rejected exits leave the caller's state unchanged.
+- The CPU now exposes a tested immutable fetch-window helper for boot ROM and
+  flash. Future runtime block-cache integration can ask the CPU for a
+  const-backed ROM window instead of duplicating machine-specific address
+  mapping, and RAM/I/O PCs are rejected before any decoded-block lookup.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -213,6 +217,9 @@ Branch edge-cache gate:
   branch-aware tier. Unit tests prove that conditional exits use CCR after
   semantic block execution, not stale entry flags, and that rejected static
   calls do not partially mutate the supplied state.
+- `h8s_cpu_get_immutable_fetch_window` is the runtime mapping gate. Unit tests
+  cover mirrored boot ROM, model-profile flash, and rejection of mutable
+  on-chip RAM plus I/O space.
 
 Current Classic V2 static chain-edge scan:
 

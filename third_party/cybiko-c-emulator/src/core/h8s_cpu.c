@@ -1898,6 +1898,23 @@ void h8s_cpu_step(h8s_cpu_t *cpu) {
     execute_step(cpu);
 }
 
+bool h8s_cpu_get_immutable_fetch_window(h8s_cpu_t *cpu, const uint8_t **data,
+                                        uint32_t *base, uint32_t *size)
+{
+    if (!cpu || !data || !base || !size) return false;
+    uint32_t pc = cpu->pc & 0xffffff;
+    if (!cpu->fetch_data || pc < cpu->fetch_base || pc >= cpu->fetch_end)
+        cache_instruction_memory(cpu, pc);
+    if (!cpu->fetch_immutable || !cpu->fetch_data ||
+        pc < cpu->fetch_base || pc >= cpu->fetch_end)
+        return false;
+
+    *data = cpu->fetch_data;
+    *base = cpu->fetch_base;
+    *size = cpu->fetch_end - cpu->fetch_base;
+    return true;
+}
+
 int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
                 int *timer_debt, int *completion_debt, bool *io_access) {
     int done = 0;
