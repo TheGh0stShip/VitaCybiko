@@ -95,6 +95,72 @@ static void test_truncated_instruction(void)
     TEST_CHECK(block.stop_pc == 0);
 }
 
+static void test_cache_hit_and_miss_accounting(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x00,
+        0x0b, 0x01,
+        0x54, 0x70
+    };
+    h8s_block_cache_t cache;
+    h8s_block_cache_init(&cache, 16);
+    const h8s_block_t *first = h8s_block_cache_get(&cache, rom, sizeof(rom), 0);
+    const h8s_block_t *second = h8s_block_cache_get(&cache, rom, sizeof(rom), 0);
+    TEST_ASSERT(first != NULL);
+    TEST_ASSERT(second != NULL);
+    TEST_CHECK(first == second);
+    TEST_CHECK(cache.misses == 1);
+    TEST_CHECK(cache.hits == 1);
+    TEST_CHECK(cache.evictions == 0);
+    TEST_CHECK(second->instructions == 2);
+}
+
+static void test_cache_collision_evicts(void)
+{
+    uint8_t rom[1024] = {0};
+    rom[0] = 0x0b; rom[1] = 0x00; rom[2] = 0x54; rom[3] = 0x70;
+    rom[512] = 0x0b; rom[513] = 0x01; rom[514] = 0x54; rom[515] = 0x70;
+    h8s_block_cache_t cache;
+    h8s_block_cache_init(&cache, 16);
+    TEST_ASSERT(h8s_block_cache_get(&cache, rom, sizeof(rom), 0) != NULL);
+    TEST_ASSERT(h8s_block_cache_get(&cache, rom, sizeof(rom), 512) != NULL);
+    TEST_CHECK(cache.misses == 2);
+    TEST_CHECK(cache.hits == 0);
+    TEST_CHECK(cache.evictions == 1);
+}
+
+static void test_cache_clear_preserves_limit(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x00,
+        0x0b, 0x01,
+        0x0b, 0x02,
+        0x54, 0x70
+    };
+    h8s_block_cache_t cache;
+    h8s_block_cache_init(&cache, 2);
+    const h8s_block_t *block = h8s_block_cache_get(&cache, rom, sizeof(rom), 0);
+    TEST_ASSERT(block != NULL);
+    TEST_CHECK(block->instructions == 2);
+    TEST_CHECK(block->stop == H8S_BLOCK_STOP_LIMIT);
+    h8s_block_cache_clear(&cache);
+    TEST_CHECK(cache.max_instructions == 2);
+    TEST_CHECK(cache.misses == 0);
+    block = h8s_block_cache_get(&cache, rom, sizeof(rom), 0);
+    TEST_ASSERT(block != NULL);
+    TEST_CHECK(block->instructions == 2);
+}
+
+static void test_cache_rejects_invalid_start(void)
+{
+    const uint8_t rom[] = {0x0b, 0x00};
+    h8s_block_cache_t cache;
+    h8s_block_cache_init(&cache, 16);
+    TEST_CHECK(h8s_block_cache_get(&cache, rom, sizeof(rom), sizeof(rom)) == NULL);
+    TEST_CHECK(cache.misses == 0);
+    TEST_CHECK(cache.hits == 0);
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -102,5 +168,9 @@ TEST_LIST = {
     { "counts_prefix_lengths", test_counts_prefix_lengths },
     { "sleep_is_control_boundary", test_sleep_is_control_boundary },
     { "truncated_instruction", test_truncated_instruction },
+    { "cache_hit_and_miss_accounting", test_cache_hit_and_miss_accounting },
+    { "cache_collision_evicts", test_cache_collision_evicts },
+    { "cache_clear_preserves_limit", test_cache_clear_preserves_limit },
+    { "cache_rejects_invalid_start", test_cache_rejects_invalid_start },
     { NULL, NULL }
 };

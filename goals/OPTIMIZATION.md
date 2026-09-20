@@ -15,8 +15,9 @@ per 600 frames.
 ## Goal B — Immutable-ROM decoded blocks
 
 Status: partial — raw immutable-ROM fetch blocks landed in `495aa2a`; a
-conservative straight-line ROM block analyzer and `h8s_block` test gate landed
-after `dfce4b2`; semantic decoded block execution remains open.
+conservative straight-line ROM block analyzer, block scanner, and bounded
+PC-keyed block cache have landed; semantic decoded block execution remains
+open.
 
 Build a bounded cache keyed by ROM PC. A block ends before branches, interrupts,
 I/O, event deadlines, or any instruction whose operands leave immutable ROM.
@@ -39,7 +40,10 @@ Current block-discovery gate:
   can use the ranges;
 - all 17 host test groups pass with `h8s_block` included;
 - `cybiko-block-scan` can scan operator-supplied ROM files without storing
-  proprietary bytes in the repository.
+  proprietary bytes in the repository;
+- `h8s_block_cache_t` now provides a 256-entry direct-mapped cache keyed by ROM
+  PC, with tests for hit/miss accounting, collision eviction, clearing, and
+  invalid starts.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -54,7 +58,7 @@ Local block-scan coverage, max 32 instructions per candidate start:
 
 The scan shows branch boundaries now dominate; unsupported and prefix length
 decoding are no longer the blocker. The next decoded-block step should begin
-cache entries that execute only the classified straight-line forms.
+executing cache entries that contain only the classified straight-line forms.
 
 ## Goal C — ARMv7 translation backend
 

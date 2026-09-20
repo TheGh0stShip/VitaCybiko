@@ -1,4 +1,5 @@
 #include "core/h8s_block.h"
+#include <string.h>
 
 static uint16_t read_be16(const uint8_t *p)
 {
@@ -202,4 +203,49 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
 
     *out = block;
     return true;
+}
+
+static unsigned cache_index(uint32_t start)
+{
+    return (start >> 1) & (H8S_BLOCK_CACHE_ENTRIES - 1);
+}
+
+void h8s_block_cache_init(h8s_block_cache_t *cache, unsigned max_instructions)
+{
+    if (!cache) return;
+    memset(cache, 0, sizeof(*cache));
+    cache->max_instructions = max_instructions ? max_instructions : 32;
+}
+
+void h8s_block_cache_clear(h8s_block_cache_t *cache)
+{
+    if (!cache) return;
+    unsigned max_instructions = cache->max_instructions;
+    memset(cache, 0, sizeof(*cache));
+    cache->max_instructions = max_instructions ? max_instructions : 32;
+}
+
+const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
+                                       const uint8_t *rom, size_t rom_size,
+                                       uint32_t start)
+{
+    if (!cache || !rom) return NULL;
+
+    unsigned index = cache_index(start);
+    h8s_block_cache_entry_t *entry = &cache->entries[index];
+    if (entry->valid && entry->tag == start) {
+        cache->hits++;
+        return &entry->block;
+    }
+
+    h8s_block_t block;
+    if (!h8s_analyze_rom_block(rom, rom_size, start, cache->max_instructions, &block))
+        return NULL;
+
+    if (entry->valid) cache->evictions++;
+    entry->valid = true;
+    entry->tag = start;
+    entry->block = block;
+    cache->misses++;
+    return &entry->block;
 }
