@@ -92,6 +92,12 @@ Rejected runtime experiment on 2026-09-20:
   after guard tightening, so it was removed. The next tier must cover the hot
   prefix/register/branch/memory groups as cached blocks rather than probing
   one narrow immediate class per instruction.
+- Forcing `always_inline` on the hottest decode wrappers
+  (`decode01`, `decode0f`, ADDS/SUBS, shifts/rotates, and immediate helpers)
+  passed all 17 host tests but slowed the 600-frame Xtreme smoke to 18.92 s,
+  so it was removed. The compiler's existing size/speed tradeoff is better
+  than broad manual inlining here; the next optimization should reduce dispatch
+  count with cached blocks instead of inflating the interpreter.
 
 ## Goal C — ARMv7 translation backend
 
