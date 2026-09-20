@@ -64,6 +64,7 @@ typedef struct {
 
 #define H8S_BLOCK_CACHE_ENTRIES 256
 #define H8S_BRANCH_EDGE_CACHE_ENTRIES 512
+#define H8S_MUTABLE_BLOCK_CACHE_ENTRIES 128
 
 typedef struct {
     bool valid;
@@ -80,6 +81,25 @@ typedef struct {
     unsigned evictions;
     uint32_t generation;
 } h8s_block_cache_t;
+
+typedef struct {
+    bool valid;
+    uint32_t tag;
+    uint32_t source_base;
+    uint32_t first_page;
+    uint32_t last_page;
+    uint32_t first_generation;
+    uint32_t last_generation;
+    h8s_block_t block;
+} h8s_mutable_block_cache_entry_t;
+
+typedef struct {
+    h8s_mutable_block_cache_entry_t entries[H8S_MUTABLE_BLOCK_CACHE_ENTRIES];
+    unsigned max_instructions;
+    unsigned hits;
+    unsigned misses;
+    unsigned evictions;
+} h8s_mutable_block_cache_t;
 
 typedef struct {
     bool valid;
@@ -104,6 +124,15 @@ void h8s_block_cache_clear(h8s_block_cache_t *cache);
 const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
                                        const uint8_t *rom, size_t rom_size,
                                        uint32_t start);
+void h8s_mutable_block_cache_init(h8s_mutable_block_cache_t *cache,
+                                  unsigned max_instructions);
+void h8s_mutable_block_cache_clear(h8s_mutable_block_cache_t *cache);
+const h8s_block_t *h8s_mutable_block_cache_get(h8s_mutable_block_cache_t *cache,
+                                               address_bus_t *bus,
+                                               const uint8_t *data,
+                                               size_t data_size,
+                                               uint32_t source_base,
+                                               uint32_t start_pc);
 /* Single-word helper for non-prefixed opcodes. Use h8s_semantic_block_supported
  * for decoded blocks because prefixed instructions need their retained second
  * word/immediate to determine semantic coverage. */

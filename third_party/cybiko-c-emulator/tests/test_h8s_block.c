@@ -937,6 +937,76 @@ static void test_cache_caps_instruction_limit(void)
     TEST_CHECK(block->decoded[H8S_BLOCK_MAX_INSTRUCTIONS - 1].bytes == 2);
 }
 
+static void test_mutable_cache_hits_until_watched_code_write(void)
+{
+    address_bus_t bus;
+    bus_init(&bus);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    uint32_t pc = bus.machine->ram_base + 0x200;
+    bus_write16(&bus, pc, 0x0b00);     /* ADDS #1, ER0 */
+    bus_write16(&bus, pc + 2, 0x0b01); /* ADDS #2, ER1 */
+    bus_write16(&bus, pc + 4, 0x5470); /* RTS boundary */
+
+    h8s_mutable_block_cache_t cache;
+    h8s_mutable_block_cache_init(&cache, 16);
+    const h8s_block_t *first =
+        h8s_mutable_block_cache_get(&cache, &bus, bus.external_ram.data,
+                                    bus.external_ram.size, bus.machine->ram_base, pc);
+    const h8s_block_t *second =
+        h8s_mutable_block_cache_get(&cache, &bus, bus.external_ram.data,
+                                    bus.external_ram.size, bus.machine->ram_base, pc);
+    TEST_ASSERT(first != NULL);
+    TEST_ASSERT(second != NULL);
+    TEST_CHECK(first == second);
+    TEST_CHECK(cache.misses == 1);
+    TEST_CHECK(cache.hits == 1);
+    TEST_CHECK(first->instructions == 2);
+
+    bus_write8(&bus, pc + 1, 0x90); /* ADDS #4, ER0; same length, changed code. */
+    const h8s_block_t *third =
+        h8s_mutable_block_cache_get(&cache, &bus, bus.external_ram.data,
+                                    bus.external_ram.size, bus.machine->ram_base, pc);
+    TEST_ASSERT(third != NULL);
+    TEST_CHECK(cache.misses == 2);
+    TEST_CHECK(cache.hits == 1);
+    TEST_CHECK(third->decoded[0].op == 0x0b90);
+
+    bus_free(&bus);
+}
+
+static void test_mutable_cache_tracks_cross_page_source_range(void)
+{
+    address_bus_t bus;
+    bus_init(&bus);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    bus_build_memory_map(&bus);
+
+    uint32_t pc = bus.machine->ram_base + 0x0ffe;
+    bus_write16(&bus, pc, 0x0b00);
+    bus_write16(&bus, pc + 2, 0x0b01);
+    bus_write16(&bus, pc + 4, 0x5470);
+
+    h8s_mutable_block_cache_t cache;
+    h8s_mutable_block_cache_init(&cache, 16);
+    const h8s_block_t *first =
+        h8s_mutable_block_cache_get(&cache, &bus, bus.external_ram.data,
+                                    bus.external_ram.size, bus.machine->ram_base, pc);
+    TEST_ASSERT(first != NULL);
+    TEST_CHECK(first->instructions == 2);
+
+    bus_write8(&bus, pc + 2, 0x0a);
+    const h8s_block_t *second =
+        h8s_mutable_block_cache_get(&cache, &bus, bus.external_ram.data,
+                                    bus.external_ram.size, bus.machine->ram_base, pc);
+    TEST_ASSERT(second != NULL);
+    TEST_CHECK(cache.misses == 2);
+    TEST_CHECK(second->decoded[1].op == 0x0a01);
+
+    bus_free(&bus);
+}
+
 static void test_semantic_block_executes_register_ops(void)
 {
     const uint8_t rom[] = {
@@ -1590,6 +1660,8 @@ TEST_LIST = {
     { "cache_clear_preserves_limit", test_cache_clear_preserves_limit },
     { "cache_rejects_invalid_start", test_cache_rejects_invalid_start },
     { "cache_caps_instruction_limit", test_cache_caps_instruction_limit },
+    { "mutable_cache_hits_until_watched_code_write", test_mutable_cache_hits_until_watched_code_write },
+    { "mutable_cache_tracks_cross_page_source_range", test_mutable_cache_tracks_cross_page_source_range },
     { "semantic_block_executes_register_ops", test_semantic_block_executes_register_ops },
     { "semantic_block_rejects_unsupported_tier1", test_semantic_block_rejects_unsupported_tier1 },
     { "semantic_block_executes_byte_immediates", test_semantic_block_executes_byte_immediates },

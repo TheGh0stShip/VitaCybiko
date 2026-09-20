@@ -650,6 +650,84 @@ const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
     return &entry->block;
 }
 
+void h8s_mutable_block_cache_init(h8s_mutable_block_cache_t *cache,
+                                  unsigned max_instructions)
+{
+    if (!cache) return;
+    memset(cache, 0, sizeof(*cache));
+    cache->max_instructions = max_instructions ? max_instructions : 32;
+    if (cache->max_instructions > H8S_BLOCK_MAX_INSTRUCTIONS)
+        cache->max_instructions = H8S_BLOCK_MAX_INSTRUCTIONS;
+}
+
+void h8s_mutable_block_cache_clear(h8s_mutable_block_cache_t *cache)
+{
+    if (!cache) return;
+    unsigned max_instructions = cache->max_instructions;
+    memset(cache, 0, sizeof(*cache));
+    cache->max_instructions = max_instructions ? max_instructions : 32;
+    if (cache->max_instructions > H8S_BLOCK_MAX_INSTRUCTIONS)
+        cache->max_instructions = H8S_BLOCK_MAX_INSTRUCTIONS;
+}
+
+static bool mutable_entry_generation_valid(const h8s_mutable_block_cache_entry_t *entry,
+                                           const address_bus_t *bus)
+{
+    if (!entry->valid || !bus) return false;
+    if (bus_code_page_generation(bus, entry->first_page << 12) != entry->first_generation)
+        return false;
+    if (entry->last_page != entry->first_page &&
+        bus_code_page_generation(bus, entry->last_page << 12) != entry->last_generation)
+        return false;
+    return true;
+}
+
+const h8s_block_t *h8s_mutable_block_cache_get(h8s_mutable_block_cache_t *cache,
+                                               address_bus_t *bus,
+                                               const uint8_t *data,
+                                               size_t data_size,
+                                               uint32_t source_base,
+                                               uint32_t start_pc)
+{
+    if (!cache || !bus || !data) return NULL;
+    source_base &= 0xffffff;
+    start_pc &= 0xffffff;
+    if (start_pc < source_base) return NULL;
+    uint32_t offset = start_pc - source_base;
+    if (offset >= data_size) return NULL;
+
+    unsigned index = cache_index(start_pc) & (H8S_MUTABLE_BLOCK_CACHE_ENTRIES - 1);
+    h8s_mutable_block_cache_entry_t *entry = &cache->entries[index];
+    if (entry->valid && entry->tag == start_pc && entry->source_base == source_base &&
+        mutable_entry_generation_valid(entry, bus)) {
+        cache->hits++;
+        return &entry->block;
+    }
+
+    h8s_block_t block;
+    if (!h8s_analyze_rom_block(data, data_size, offset, cache->max_instructions, &block))
+        return NULL;
+
+    uint32_t bytes = block.bytes ? block.bytes : block.branch_bytes;
+    if (bytes == 0) bytes = 2;
+    bus_watch_code_range(bus, start_pc, bytes);
+    uint32_t first_page = start_pc >> 12;
+    uint32_t last_page = ((start_pc + bytes - 1) & 0xffffff) >> 12;
+    if (last_page < first_page) last_page = 4095u;
+
+    if (entry->valid) cache->evictions++;
+    entry->valid = true;
+    entry->tag = start_pc;
+    entry->source_base = source_base;
+    entry->first_page = first_page;
+    entry->last_page = last_page;
+    entry->first_generation = bus_code_page_generation(bus, start_pc);
+    entry->last_generation = bus_code_page_generation(bus, last_page << 12);
+    entry->block = block;
+    cache->misses++;
+    return &entry->block;
+}
+
 static void block_set_nz_l(h8s_block_cpu_state_t *state, uint32_t value)
 {
     state->ccr = (uint8_t)((state->ccr & (uint8_t)~(BLOCK_CCR_N | BLOCK_CCR_Z)) |

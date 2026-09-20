@@ -1007,6 +1007,28 @@ blindly for this; Xtreme's RAM-resident CyOS/app code needs invalidation and
 memory-form guards, while Classic still benefits from the existing immutable
 ROM/flash paths.
 
+Accepted follow-up foundation: `h8s_mutable_block_cache_t` now provides the
+separate decoded-block cache needed for mutable RAM/on-chip code. It is keyed
+by absolute PC and source base, watches the decoded source range, stores the
+first/last source-page generations, hits while those generations match, and
+re-decodes after a watched source-page write. Focused tests cover same-page
+mutation and a block spanning a 4 KiB page boundary. This is deliberately not
+runtime-wired yet; it exists so the next Xtreme experiment can stop re-decoding
+live RAM every semantic probe while still rejecting stale self-modified code.
+
+Validation for this checkpoint:
+
+- focused `test_h8s_block` passed with the mutable cache tests;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 1.29 s, Classic V2 0.51 s, Xtreme
+  1.52 s for 600 frames.
+
+Next concrete Xtreme step: add a guarded runtime experiment that uses the
+mutable cache only for RAM blocks that are already semantic-supported and whose
+decoded source range stays in plain memory. It must preserve the existing
+immutable ROM path, reject MMIO/memory-form hazards, and report accepted
+mutable blocks separately from immutable semantic fast blocks.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
