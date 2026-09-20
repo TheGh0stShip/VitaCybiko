@@ -420,6 +420,7 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     TEST_CHECK(cpu.cycle_count == 0);
     TEST_CHECK(cpu.semantic_fast_rejects == 1);
     TEST_CHECK(cpu.semantic_fast_reject_window == 1);
+    TEST_CHECK(cpu.semantic_reject_backoff == H8S_SEMANTIC_REJECT_BACKOFF);
 
     memory_init(&bus.boot_rom, 32768, true);
     memory_write16(&bus.boot_rom, 0x100, 0xF800);
@@ -530,6 +531,7 @@ static void test_semantic_reject_cache_does_not_cache_conditional_target_state(v
     TEST_CHECK(cpu.semantic_fast_rejects == 1);
     TEST_CHECK(cpu.semantic_fast_cached_rejects == 0);
     TEST_CHECK(cpu.semantic_fast_reject_target == 1);
+    TEST_CHECK(cpu.semantic_reject_backoff == H8S_SEMANTIC_REJECT_BACKOFF);
 
     cpu.pc = 0xFFFA;
     cpu.ccr = CCR_I | CCR_Z; /* Z set: BNE falls through inside the window. */
@@ -554,6 +556,8 @@ static void test_semantic_reject_cache_counts_state_independent_hits(void) {
     TEST_CHECK(cpu.semantic_fast_rejects == 1);
     TEST_CHECK(cpu.semantic_fast_cached_rejects == 0);
     TEST_CHECK(cpu.semantic_fast_reject_unsupported_exit == 1);
+    TEST_CHECK(cpu.semantic_reject_backoff == H8S_SEMANTIC_REJECT_BACKOFF);
+    cpu.semantic_reject_backoff = 0; /* Exercise the cached-reject counter directly. */
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
     TEST_CHECK(cpu.semantic_fast_rejects == 2);
     TEST_CHECK(cpu.semantic_fast_cached_rejects == 1);
@@ -576,6 +580,7 @@ static void test_semantic_fast_reject_reason_counters(void) {
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
     TEST_CHECK(cpu.semantic_fast_rejects == 1);
     TEST_CHECK(cpu.semantic_fast_reject_unsupported_block == 1);
+    TEST_CHECK(cpu.semantic_reject_backoff == H8S_SEMANTIC_REJECT_BACKOFF);
 
     h8s_cpu_reset(&cpu);
     memory_init(&bus.boot_rom, 32768, true);

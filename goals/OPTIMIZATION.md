@@ -657,6 +657,29 @@ transitions cheaper. Classic V2 still shows enough unsupported block/exit
 rejects that a branch-aware, memory-aware cached-interpreter tier can pay off
 there, but it must be measured separately from the Xtreme path.
 
+The first reject-reason-driven optimization applies the existing fixed
+semantic-probe backoff immediately after state-independent misses instead of
+waiting for a second cached reject. The change is semantics-neutral because the
+semantic ROM fast path is optional; skipped probes fall back to the normal
+interpreter. Focused CPU tests now assert first-miss backoff for immutable
+window, unsupported block, unsupported exit, and target-window rejects.
+
+Gate after this change:
+
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 0.96 s, Classic V2 0.39 s, Xtreme
+  5.20 s on the wrapper run;
+- direct repeat smokes: Classic V2 0.468719/0.364147/0.362801 s; Xtreme
+  4.991744/4.673404/4.944293 s.
+
+The reason counters show the intended effect. Classic V2 total fast rejects
+fell from 322,589 to about 102,150, with window rejects down from 107,933 to
+about 445 and unsupported block/exit down from 97,699/15,222 to about
+11,722/1,333. Xtreme total fast rejects fell from 121,315 to 87,966, with
+window rejects down from 32,149 to 133. Cached rejects remain the dominant
+Xtreme reason, so the next structural target is still a broader
+dispatcher/translation tier rather than another scalar timer tweak.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
