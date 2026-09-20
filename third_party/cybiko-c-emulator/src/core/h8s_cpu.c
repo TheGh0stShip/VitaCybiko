@@ -1974,6 +1974,15 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
     int done = 0;
     while (done < limit) {
         cpu->bus->speaker->frame_cycle = frame_cycle + done;
+        int fast_cycles = 0;
+        if (h8s_cpu_try_execute_semantic_rom_block(cpu, limit - done, &fast_cycles)) {
+            *timer_debt += fast_cycles;
+            *completion_debt += fast_cycles;
+            done += fast_cycles;
+            if (CPU_UNLIKELY(*io_access || cpu->halted)) break;
+            continue;
+        }
+
         ++*timer_debt;
         if (done + 1 == limit && cpu->bus->sync_peripherals)
             cpu->bus->sync_peripherals(cpu->bus->sync_ctx);

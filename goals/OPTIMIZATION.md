@@ -133,8 +133,11 @@ Current block-discovery gate:
 - A guarded CPU-level semantic ROM block helper now executes a narrow Bcc-only
   cached block from immutable boot/flash when there is enough cycle budget and
   no pending unmasked interrupt. It updates registers, CCR, PC, and cycle count
-  as one bounded operation, but remains isolated from `h8s_cpu_run` until the
-  frame-loop equivalence gate is added.
+  as one bounded operation.
+- `h8s_cpu_run` now attempts that guarded Bcc-only semantic ROM block fast path
+  before falling back to the interpreter. Timer/completion debts are charged for
+  the whole accepted block, and the old one-instruction path remains unchanged
+  whenever any guard rejects the cached block.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -229,6 +232,10 @@ Branch edge-cache gate:
   experiment for the decoded block tier. Unit tests cover successful Bcc
   execution from boot ROM plus rejection of mutable RAM, insufficient cycle
   budget, and pending unmasked IRQs.
+- The first frame-runner integration test compares `h8s_cpu_run` using the
+  semantic ROM fast path against repeated `h8s_cpu_step` for the same ROM block,
+  including PC, registers, CCR, cycle count, I/O flag, and timer/completion
+  debt.
 
 Current Classic V2 static chain-edge scan:
 

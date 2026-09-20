@@ -432,6 +432,45 @@ static void test_semantic_rom_block_fast_path_rejects_guards(void) {
     teardown();
 }
 
+static void test_cpu_run_semantic_fast_path_matches_steps(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0xF800); /* MOV.B #0,R0L -> Z */
+    memory_write16(&bus.boot_rom, 0x102, 0x4604); /* BNE 0x108; should fall through. */
+    memory_write16(&bus.boot_rom, 0x104, 0x0B01); /* ADDS #2, ER1 */
+    memory_write16(&bus.boot_rom, 0x106, 0x5470); /* RTS boundary */
+    memory_write16(&bus.boot_rom, 0x108, 0x0B02);
+    bus_build_memory_map(&bus);
+
+    h8s_cpu_t stepped;
+    h8s_cpu_init(&stepped, &bus);
+    stepped.pc = 0x8100;
+    stepped.ccr = CCR_I;
+    stepped.er[0] = 0xffffffffu;
+    stepped.er[1] = 0x100;
+    h8s_cpu_step(&stepped);
+    h8s_cpu_step(&stepped);
+
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+    cpu.er[0] = 0xffffffffu;
+    cpu.er[1] = 0x100;
+    int timer_debt = 0, completion_debt = 0;
+    bool io_access = false;
+    int done = h8s_cpu_run(&cpu, 2, 123, &timer_debt, &completion_debt, &io_access);
+
+    TEST_CHECK(done == 2);
+    TEST_CHECK(timer_debt == 2);
+    TEST_CHECK(completion_debt == 2);
+    TEST_CHECK(!io_access);
+    TEST_CHECK(cpu.pc == stepped.pc);
+    TEST_CHECK(cpu.ccr == stepped.ccr);
+    TEST_CHECK(cpu.cycle_count == stepped.cycle_count);
+    for (unsigned i = 0; i < 8; ++i)
+        TEST_CHECK(cpu.er[i] == stepped.er[i]);
+    teardown();
+}
+
 static void test_long_displacement_store(void) {
     setup();
     cpu.er[1] = CODE_BASE + 0x100;
@@ -680,6 +719,7 @@ TEST_LIST = {
     {"immutable_fetch_window_rejects_ram_and_io", test_immutable_fetch_window_rejects_ram_and_io},
     {"semantic_rom_block_fast_path_executes_bcc", test_semantic_rom_block_fast_path_executes_bcc},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
+    {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},
     {"long_displacement_store", test_long_displacement_store},
     {"interrupt_frame", test_interrupt_frame},
     {"trap_and_task_frame", test_trap_and_task_frame},
