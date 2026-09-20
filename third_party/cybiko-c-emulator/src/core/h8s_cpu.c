@@ -5,6 +5,7 @@
 #include "core/h8s_cpu.h"
 #include "core/address_bus.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -15,6 +16,31 @@
 #define CPU_INLINE static inline
 #define CPU_LIKELY(x)   (x)
 #define CPU_UNLIKELY(x) (x)
+#endif
+
+#ifdef CYBIKO_OPCODE_PROFILE
+static uint64_t opcode_profile_hi[256];
+static bool opcode_profile_registered;
+
+static void opcode_profile_dump(void) {
+    for (unsigned i = 0; i < 256; ++i) {
+        if (opcode_profile_hi[i])
+            fprintf(stderr, "opcode_hi_%02x=%llu\n", i,
+                    (unsigned long long)opcode_profile_hi[i]);
+    }
+}
+
+CPU_INLINE void opcode_profile_record(uint16_t op) {
+    if (!opcode_profile_registered) {
+        atexit(opcode_profile_dump);
+        opcode_profile_registered = true;
+    }
+    opcode_profile_hi[op >> 8]++;
+}
+#else
+CPU_INLINE void opcode_profile_record(uint16_t op) {
+    (void)op;
+}
 #endif
 
 /* ---- CCR bit positions (for Java-style getFlag/setFlag using bit index) ---- */
@@ -1792,6 +1818,7 @@ CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
 
     cpu->last_start_pc = cpu->pc;
     uint16_t op = fetch16(cpu);
+    opcode_profile_record(op);
     decode(cpu, op);
     cpu->cycle_count++;
 }

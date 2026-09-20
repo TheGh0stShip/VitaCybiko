@@ -66,6 +66,33 @@ This is deliberately tracked as an optimization goal, not as a runtime speed
 claim: the Vita frontend still runs the interpreter until the semantic
 execution tier is wired into `h8s_cpu_run`.
 
+Executed opcode profile gate:
+
+- `CYBIKO_OPCODE_PROFILE=ON` now builds a host-only profiler that dumps H8S
+  opcode high-byte counts at process exit; normal release/Vita builds leave it
+  disabled.
+- 600-frame smoke profiles show that byte-immediate opcodes are not the right
+  first runtime tier. The hottest groups are prefix `0x01`, `0x0f` MOV.L
+  register, branches (`0x40`-`0x4f`), shifts/rotates (`0x10`/`0x11`), ADDS/SUBS
+  (`0x0b`/`0x1b`), memory moves (`0x68`/`0x6f`), and immediate long forms
+  (`0x7a`).
+
+Top executed high-byte opcodes over 600 smoke frames:
+
+| Image | #1 | #2 | #3 | #4 | #5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Classic V1 | 01 14.14% | 11 9.09% | 0f 8.16% | 0b 4.95% | 46 4.38% |
+| Classic V2 | 01 8.76% | 0f 8.55% | 47 5.84% | 11 5.53% | 0b 5.22% |
+| Xtreme | 01 9.69% | 0f 9.63% | 47 5.95% | 0b 5.59% | 11 4.93% |
+
+Rejected runtime experiment on 2026-09-20:
+
+- A direct `h8s_cpu_run` fast path for immutable-ROM byte-immediate opcodes
+  passed all 17 host tests but slowed the 600-frame Xtreme smoke to 16.17 s
+  after guard tightening, so it was removed. The next tier must cover the hot
+  prefix/register/branch/memory groups as cached blocks rather than probing
+  one narrow immediate class per instruction.
+
 ## Goal C — ARMv7 translation backend
 
 Status: research/design only.
@@ -119,5 +146,8 @@ starvation with frame dropping.
 
 - [MAME CPU core concepts](https://wiki.mamedev.org/index.php/Core_Concepts)
 - [MAME H8 core](https://github.com/mamedev/mame/blob/master/src/devices/cpu/h8/h8.h)
+- [QEMU TCG translation blocks](https://www.qemu.org/docs/master/devel/tcg.html)
+- [Cached interpreter overview](https://emudev.org/2021/01/31/cached-interpreter.html)
+- [melonDS JIT/cached-interpreter notes](https://melonds.kuribo64.net/comments.php?id=138)
 - [ARM cache-coherency guidance](https://developer.arm.com/community/arm-community-blogs/b/architectures-and-processors-blog/posts/caches-and-self-modifying-code)
 - [Mupen64Plus ARM dynarec notes](https://github.com/mupen64plus/mupen64plus-core/blob/master/doc/new_dynarec.mediawiki)
