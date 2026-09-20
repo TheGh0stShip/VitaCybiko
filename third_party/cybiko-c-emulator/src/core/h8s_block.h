@@ -113,5 +113,10 @@ void h8s_branch_edge_cache_clear(h8s_branch_edge_cache_t *cache);
 bool h8s_branch_edge_cache_get(h8s_branch_edge_cache_t *cache,
                                const h8s_block_t *block, uint8_t ccr,
                                uint32_t *next_pc);
+const h8s_block_t *h8s_block_cache_get_chain_target(h8s_block_cache_t *block_cache,
+                                                    h8s_branch_edge_cache_t *edge_cache,
+                                                    const uint8_t *rom, size_t rom_size,
+                                                    const h8s_block_t *block,
+                                                    uint8_t ccr, uint32_t *next_pc);
 
 #endif

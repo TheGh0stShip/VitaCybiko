@@ -274,6 +274,29 @@ bool h8s_branch_edge_cache_get(h8s_branch_edge_cache_t *cache,
     return true;
 }
 
+const h8s_block_t *h8s_block_cache_get_chain_target(h8s_block_cache_t *block_cache,
+                                                    h8s_branch_edge_cache_t *edge_cache,
+                                                    const uint8_t *rom, size_t rom_size,
+                                                    const h8s_block_t *block,
+                                                    uint8_t ccr, uint32_t *next_pc)
+{
+    if (!block_cache || !edge_cache || !rom || !block) return NULL;
+
+    uint32_t resolved = 0;
+    if (!h8s_branch_edge_cache_get(edge_cache, block, ccr, &resolved))
+        return NULL;
+
+    if (next_pc) *next_pc = resolved;
+    if (resolved >= rom_size || (resolved & 1u) != 0)
+        return NULL;
+
+    const h8s_block_t *target =
+        h8s_block_cache_get(block_cache, rom, rom_size, resolved);
+    if (!h8s_semantic_block_supported(target))
+        return NULL;
+    return target;
+}
+
 static bool is_shift_rotate_form(uint8_t lo)
 {
     switch ((lo >> 4) & 0xf) {

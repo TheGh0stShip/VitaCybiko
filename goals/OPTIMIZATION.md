@@ -116,6 +116,11 @@ Current block-discovery gate:
   decision, accounts hits/misses/evictions, and rejects dynamic exits. This is
   still not wired into runtime dispatch; it is the next safety component for a
   future branch-aware cached-block tier.
+- A chain-target helper now combines static branch-edge resolution with the
+  decoded block cache and semantic-support gate. It only returns a fast-path
+  target when the resolved PC is ROM-valid, even-aligned, analyzable, cached,
+  and semantic-supported; all other exits fall back to the safe interpreter
+  path.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -193,6 +198,10 @@ Branch edge-cache gate:
   create avoidable misses.
 - Unit tests cover miss-to-hit reuse, CCR-key reuse/difference, generation
   clear, collision eviction, and rejection of dynamic branch exits.
+- `h8s_block_cache_get_chain_target` is the first explicit branch-aware
+  dispatcher primitive. Unit tests cover returning a cached semantic target,
+  edge-cache reuse, block-cache reuse, and rejecting unsupported fallback
+  targets without executing them.
 
 Current Classic V2 static chain-edge scan:
 

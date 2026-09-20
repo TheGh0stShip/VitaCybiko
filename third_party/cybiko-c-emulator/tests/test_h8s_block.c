@@ -439,6 +439,71 @@ static void test_branch_edge_cache_rejects_dynamic_exits(void)
     TEST_CHECK(cache.hits == 0 && cache.misses == 0 && cache.evictions == 0);
 }
 
+static void test_chain_target_returns_semantic_cached_block(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x00,       /* 0: ADDS #1, ER0 */
+        0x46, 0x04,       /* 2: BNE 8 */
+        0x0f, 0x00,       /* 4: unsupported fallback block */
+        0x54, 0x70,       /* 6: RTS */
+        0x0b, 0x01,       /* 8: ADDS #2, ER1 */
+        0x0b, 0x02,       /* 10: ADDS #4, ER2 */
+        0x54, 0x70        /* 12: RTS */
+    };
+    h8s_block_cache_t block_cache;
+    h8s_branch_edge_cache_t edge_cache;
+    uint32_t next = 0;
+
+    h8s_block_cache_init(&block_cache, 16);
+    h8s_branch_edge_cache_init(&edge_cache);
+    const h8s_block_t *entry = h8s_block_cache_get(&block_cache, rom, sizeof(rom), 0);
+    TEST_ASSERT(entry != NULL);
+    const h8s_block_t *target =
+        h8s_block_cache_get_chain_target(&block_cache, &edge_cache, rom, sizeof(rom),
+                                         entry, 0x00, &next);
+
+    TEST_ASSERT(target != NULL);
+    TEST_CHECK(next == 8);
+    TEST_CHECK(target->start == 8);
+    TEST_CHECK(target->instructions == 2);
+    TEST_CHECK(h8s_semantic_block_supported(target));
+    TEST_CHECK(edge_cache.misses == 1);
+    TEST_CHECK(block_cache.misses == 2);
+
+    const h8s_block_t *again =
+        h8s_block_cache_get_chain_target(&block_cache, &edge_cache, rom, sizeof(rom),
+                                         entry, 0x00, &next);
+    TEST_CHECK(again == target);
+    TEST_CHECK(edge_cache.hits == 1);
+    TEST_CHECK(block_cache.hits >= 1);
+}
+
+static void test_chain_target_rejects_fallbacks(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x00,       /* 0: ADDS #1, ER0 */
+        0x46, 0x00,       /* 2: BNE 4, BNE false also falls through to 4 */
+        0x0f, 0x00,       /* 4: unsupported semantic target */
+        0x54, 0x70        /* 6: RTS */
+    };
+    h8s_block_cache_t block_cache;
+    h8s_branch_edge_cache_t edge_cache;
+    uint32_t next = 0x123456;
+
+    h8s_block_cache_init(&block_cache, 16);
+    h8s_branch_edge_cache_init(&edge_cache);
+    const h8s_block_t *entry = h8s_block_cache_get(&block_cache, rom, sizeof(rom), 0);
+    TEST_ASSERT(entry != NULL);
+    const h8s_block_t *target =
+        h8s_block_cache_get_chain_target(&block_cache, &edge_cache, rom, sizeof(rom),
+                                         entry, 0x00, &next);
+
+    TEST_CHECK(target == NULL);
+    TEST_CHECK(next == 4);
+    TEST_CHECK(edge_cache.misses == 1);
+    TEST_CHECK(block_cache.misses == 2);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1252,6 +1317,8 @@ TEST_LIST = {
     { "branch_edge_cache_hit_miss_and_ccr_keys", test_branch_edge_cache_hit_miss_and_ccr_keys },
     { "branch_edge_cache_clear_and_collision", test_branch_edge_cache_clear_and_collision },
     { "branch_edge_cache_rejects_dynamic_exits", test_branch_edge_cache_rejects_dynamic_exits },
+    { "chain_target_returns_semantic_cached_block", test_chain_target_returns_semantic_cached_block },
+    { "chain_target_rejects_fallbacks", test_chain_target_rejects_fallbacks },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },
