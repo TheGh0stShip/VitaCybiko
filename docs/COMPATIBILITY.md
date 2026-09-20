@@ -33,18 +33,20 @@ format from the Xtreme importer.
 
 ## Xtreme software tools
 
-The 2026-09-20 physical-Vita 01.14 log contains 81 one-second rows for the
-Xtreme profile. It records 9.86 guest frames/sec across the captured run, with
+The latest physical-Vita 01.14 log contains 77 one-second rows for the
+Xtreme profile. It records 5.88 guest frames/sec across the captured run, with
 zero SDL audio underrun counters after the continuity change. This does not
 mean audio is perceptually correct: repeated last-frame audio is a bounded
 gap-avoidance measure while the guest falls behind. The Xtreme CPU path remains
 the highest-priority performance backlog item.
 
-The same current capture contains 122 Classic V1 rows and 201 Classic V2 rows.
-Their aggregate guest rates are 40.78 and 40.73 frames/sec, respectively,
-versus 9.86 for Xtreme. This confirms the severe slowdown is model-specific
-rather than a universal audio-device failure; all three logs report zero
-producer-observed audio underruns after the continuity work.
+The same current capture contains 92 Classic V1 rows and 127 Classic V2 rows.
+Their aggregate guest rates are 42.00 and 18.06 frames/sec, respectively,
+versus 5.88 for Xtreme. This confirms the severe slowdown is workload/model
+dependent rather than a universal audio-device failure; all three logs report
+zero producer-observed audio underruns after the continuity work. Classic V2's
+newly observed 18 FPS result also shows that the interpreter/presentation
+budget can regress outside Xtreme and must be measured per workload.
 
 `tools/extract_cd_pack.py` recovers a user-supplied original CD CAP pack without
 running its Windows installer. The inspected pack contains 13 applications and
