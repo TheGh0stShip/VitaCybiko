@@ -388,7 +388,8 @@ static void sync_peripherals(void *ctx)
     int timers = emu->pending_timer_cycles;
     int completions = emu->pending_completion_cycles;
     emu->pending_timer_cycles = emu->pending_completion_cycles = 0;
-    emu->peripheral_access = true;
+    emu->peripheral_access = emu->bus.scheduler_dirty;
+    emu->bus.scheduler_dirty = false;
     if (timers) {
         timer8_advance(&emu->timer8[0], timers);
         timer8_advance(&emu->timer8[1], timers);

@@ -1584,6 +1584,25 @@ benchmark design; the next serious target should reduce the I/O-broken runner
 churn or move to a fused cached-interpreter/translation block that can absorb
 register ops, fetch, and branch exits together.
 
+Accepted scheduler-dirty I/O batching: Xtreme profiling showed about 1.5M
+`h8s_cpu_run` calls per 600-frame smoke, with almost every batch broken by an
+MMIO synchronization. The bus still synchronizes deferred timer/completion
+cycles before every MMIO access, but read-only MMIO no longer forces the CPU
+runner to abandon the current event-bounded chunk. On-chip MMIO writes mark the
+scheduler dirty, causing a batch exit after the instruction so timer, DMA, ADC
+and serial deadline changes are still recomputed before further execution.
+
+Validation:
+
+- focused H8S CPU tests now cover both sides: read-only MMIO continues through
+  the batch, while an on-chip MMIO write marks `scheduler_dirty` and exits;
+- scheduler equivalence tests passed, including local firmware equivalence;
+- three-model 600-frame smoke passed with Classic V1 1.06s, Classic V2 0.42s,
+  and Xtreme 1.44s in the direct release-host smoke;
+- the opcode/scheduler profile build confirmed the intended mechanism on
+  Xtreme: scheduler run calls dropped from about 1.5M to 18,725 and I/O breaks
+  to 17,562 per 600 frames, while active LCD/audio smoke output remained valid.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

@@ -769,6 +769,52 @@ static void test_cpu_run_fast_path_preserves_sync_boundary(void) {
     teardown();
 }
 
+static void test_cpu_run_continues_after_read_only_mmio_sync(void) {
+    setup();
+    int sync_count = 0;
+    bus.sync_peripherals = count_sync_callback;
+    bus.sync_ctx = &sync_count;
+    write_code16(0, 0x6810); /* MOV.B @ER1,R0H; port input read */
+    write_code16(2, 0x0000); /* NOP */
+    cpu.pc = CODE_BASE;
+    cpu.ccr = CCR_I;
+    cpu.er[1] = 0xFFFF50;
+
+    int timer_debt = 0, completion_debt = 0;
+    bool io_access = false;
+    int done = h8s_cpu_run(&cpu, 2, 10, &timer_debt, &completion_debt, &io_access);
+
+    TEST_CHECK(done == 2);
+    TEST_CHECK(!io_access);
+    TEST_CHECK(sync_count == 2);
+    TEST_CHECK(cpu.pc == CODE_BASE + 4);
+    teardown();
+}
+
+static void test_cpu_run_breaks_after_scheduler_dirty_mmio_write(void) {
+    setup();
+    int sync_count = 0;
+    bus.sync_peripherals = count_sync_callback;
+    bus.sync_ctx = &sync_count;
+    write_code16(0, 0x6890); /* MOV.B R0H,@ER1; on-chip I/O write */
+    write_code16(2, 0x0000); /* Must not execute in the same stale chunk. */
+    cpu.pc = CODE_BASE;
+    cpu.ccr = CCR_I;
+    cpu.er[0] = 0x1200;
+    cpu.er[1] = 0xFFFF38; /* System-control stub; still scheduler-dirty. */
+
+    int timer_debt = 0, completion_debt = 0;
+    bool io_access = false;
+    int done = h8s_cpu_run(&cpu, 2, 10, &timer_debt, &completion_debt, &io_access);
+
+    TEST_CHECK(done == 1);
+    TEST_CHECK(io_access);
+    TEST_CHECK(bus.scheduler_dirty);
+    TEST_CHECK(sync_count == 1);
+    TEST_CHECK(cpu.pc == CODE_BASE + 2);
+    teardown();
+}
+
 static void test_semantic_reject_cache_does_not_cache_conditional_target_state(void) {
     setup();
     memory_init(&bus.boot_rom, 32768, true);
@@ -1147,6 +1193,8 @@ TEST_LIST = {
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},
     {"cpu_run_fast_path_preserves_sync_boundary", test_cpu_run_fast_path_preserves_sync_boundary},
+    {"cpu_run_continues_after_read_only_mmio_sync", test_cpu_run_continues_after_read_only_mmio_sync},
+    {"cpu_run_breaks_after_scheduler_dirty_mmio_write", test_cpu_run_breaks_after_scheduler_dirty_mmio_write},
     {"semantic_reject_cache_does_not_cache_conditional_target_state", test_semantic_reject_cache_does_not_cache_conditional_target_state},
     {"semantic_reject_cache_counts_state_independent_hits", test_semantic_reject_cache_counts_state_independent_hits},
     {"semantic_fast_reject_reason_counters", test_semantic_fast_reject_reason_counters},

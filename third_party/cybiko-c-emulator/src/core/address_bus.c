@@ -65,6 +65,11 @@ static void sync_peripherals_for_io(address_bus_t *bus)
         bus->sync_peripherals(bus->sync_ctx);
 }
 
+static void mark_scheduler_dirty(address_bus_t *bus)
+{
+    bus->scheduler_dirty = true;
+}
+
 /* --- Address decoding --- */
 
 static bus_region_t decode_region(address_bus_t *bus, uint32_t address)
@@ -673,7 +678,10 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
         bus_note_code_write(bus, address, 1);
         return;
     }
-    if (address >= 0xFFFC00) sync_peripherals_for_io(bus);
+    if (address >= 0xFFFC00) {
+        sync_peripherals_for_io(bus);
+        mark_scheduler_dirty(bus);
+    }
     /* Timer16 routing (check first, non-contiguous addresses) */
     if (route_timer16_write8(bus, address, value)) return;
 
@@ -870,7 +878,10 @@ static void write_on_chip16(address_bus_t *bus, uint32_t address, uint16_t value
         bus_note_code_write(bus, address, 2);
         return;
     }
-    if (address >= 0xFFFC00) sync_peripherals_for_io(bus);
+    if (address >= 0xFFFC00) {
+        sync_peripherals_for_io(bus);
+        mark_scheduler_dirty(bus);
+    }
     /* Timer16 routing first */
     if (route_timer16_write16(bus, address, value)) return;
 

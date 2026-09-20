@@ -2936,6 +2936,8 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
                 execute_step(cpu);
                 ++*completion_debt;
                 ++done;
+                if (cpu->bus->scheduler_dirty)
+                    *io_access = true;
                 if (CPU_UNLIKELY(*io_access || cpu->halted)) break;
             }
             if (CPU_UNLIKELY(*io_access || cpu->halted) || done >= limit)
@@ -2962,6 +2964,8 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
         execute_step(cpu);
         ++*completion_debt;
         ++done;
+        if (cpu->bus->scheduler_dirty)
+            *io_access = true;
         if (CPU_UNLIKELY(*io_access || cpu->halted)) break;
     }
     return done;
