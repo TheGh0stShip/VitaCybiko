@@ -396,7 +396,7 @@ static void decode_mulxs(h8s_cpu_t *cpu, int hi2, uint16_t op2) {
     int rs = (op2 >> 4) & 0xF;
     int rd = op2 & 0xF;
     if (hi2 == 0x50) {
-        int result = (int8_t)get_reg_b(cpu, rs) * (int8_t)get_reg_b(cpu, rd);
+        int result = (int8_t)get_reg_b(cpu, rs) * (int8_t)get_r(cpu, rd);
         set_r(cpu, rd, (uint16_t)(result & 0xFFFF));
         set_flag(cpu, BIT_N, (result & 0x8000) != 0);
         set_flag(cpu, BIT_Z, (result & 0xFFFF) == 0);
@@ -411,28 +411,38 @@ static void decode_mulxs(h8s_cpu_t *cpu, int hi2, uint16_t op2) {
 /* ---- DIVXS ---- */
 static void decode_divxs(h8s_cpu_t *cpu, int hi2, uint16_t op2) {
     int rs = (op2 >> 4) & 0xF;
-    int rd = op2 & 0x7;
+    int rd = op2 & 0xF;
     if (hi2 == 0x51) {
         int16_t dividend = (int16_t)get_r(cpu, rd);
         int8_t divisor = (int8_t)get_reg_b(cpu, rs);
-        if (divisor == 0) { set_flag(cpu, BIT_Z, true); }
+        set_flag(cpu, BIT_N, false);
+        set_flag(cpu, BIT_Z, divisor == 0);
+        if (divisor == 0) { /* Result registers are unchanged. */ }
         else {
             int quotient = dividend / divisor;
             int remainder = dividend % divisor;
             set_r(cpu, rd, (uint16_t)(((remainder & 0xFF) << 8) | (quotient & 0xFF)));
             set_flag(cpu, BIT_N, quotient < 0);
-            set_flag(cpu, BIT_Z, quotient == 0);
         }
     } else {
+        rd &= 7;
         int32_t dividend = (int32_t)cpu->er[rd];
         int16_t divisor = (int16_t)get_r(cpu, rs);
-        if (divisor == 0) { set_flag(cpu, BIT_Z, true); }
+        set_flag(cpu, BIT_N, false);
+        set_flag(cpu, BIT_Z, divisor == 0);
+        if (divisor == 0) { /* Result registers are unchanged. */ }
+        else if (dividend == INT32_MIN && divisor == -1) {
+            /* Truncated quotient and remainder are both zero. Handle this
+             * overflow explicitly, avoiding host UB and a costly 64-bit
+             * software divide on Vita for every ordinary DIVXS.W. */
+            cpu->er[rd] = 0;
+        }
         else {
             int32_t quotient = dividend / divisor;
             int32_t remainder = dividend % divisor;
-            cpu->er[rd] = (uint32_t)(((remainder & 0xFFFF) << 16) | (quotient & 0xFFFF));
+            cpu->er[rd] = ((uint32_t)(remainder & 0xFFFF) << 16) |
+                         (uint32_t)(quotient & 0xFFFF);
             set_flag(cpu, BIT_N, quotient < 0);
-            set_flag(cpu, BIT_Z, quotient == 0);
         }
     }
 }
@@ -440,6 +450,7 @@ static void decode_divxs(h8s_cpu_t *cpu, int hi2, uint16_t op2) {
 /* ---- decode0141: EXR operations ---- */
 static void decode0141(h8s_cpu_t *cpu, uint16_t op2) {
     int hi2 = (op2 >> 8) & 0xFF;
+    if (hi2 >= 4 && hi2 <= 7) cpu->irq_deferred = true;
     switch (hi2) {
         case 0x04: cpu->exr |= (op2 & 0xFF); break;
         case 0x05: cpu->exr ^= (op2 & 0xFF); break;
@@ -452,6 +463,7 @@ static void decode0141(h8s_cpu_t *cpu, uint16_t op2) {
 /* ---- decode0140: LDC/STC CCR word-width ---- */
 static void decode0140(h8s_cpu_t *cpu, uint16_t op2) {
     int hi2 = (op2 >> 8) & 0xFF;
+    if (!(op2 & 0x80)) cpu->irq_deferred = true;
     switch (hi2) {
         case 0x69: {
             int r = (op2 >> 4) & 0x7;
@@ -1098,11 +1110,11 @@ static void decode0(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
         case 0x00: break; /* NOP */
         case 0x01: decode01(cpu, lo); break;
         case 0x02: { int rd = lo & 0xF; set_reg_b(cpu, rd, cpu->ccr); break; }
-        case 0x03: { int rs = lo & 0xF; cpu->ccr = get_reg_b(cpu, rs); break; }
-        case 0x04: cpu->ccr |= (uint8_t)lo; break;
-        case 0x05: cpu->ccr ^= (uint8_t)lo; break;
-        case 0x06: cpu->ccr &= (uint8_t)lo; break;
-        case 0x07: cpu->ccr = (uint8_t)lo; break;
+        case 0x03: { int rs = lo & 0xF; cpu->ccr = get_reg_b(cpu, rs); cpu->irq_deferred = true; break; }
+        case 0x04: cpu->ccr |= (uint8_t)lo; cpu->irq_deferred = true; break;
+        case 0x05: cpu->ccr ^= (uint8_t)lo; cpu->irq_deferred = true; break;
+        case 0x06: cpu->ccr &= (uint8_t)lo; cpu->irq_deferred = true; break;
+        case 0x07: cpu->ccr = (uint8_t)lo; cpu->irq_deferred = true; break;
         case 0x08: { /* ADD.B Rs, Rd */
             int rs = (lo >> 4) & 0xF; int rd = lo & 0xF;
             int s = get_reg_b(cpu, rs); int d = get_reg_b(cpu, rd);
@@ -1694,6 +1706,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->exr = 0;
     cpu->halted = false;
     cpu->cycle_count = 0;
+    cpu->irq_deferred = false;
     cpu->pending_irq_count = 0;
     cpu->fetch_data = NULL;
     cpu->fetch_base = cpu->fetch_end = 0;
@@ -1701,7 +1714,11 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
 }
 
 void h8s_cpu_step(h8s_cpu_t *cpu) {
-    if (process_interrupts(cpu)) { cpu->cycle_count++; return; }
+    /* CCR-control instructions inhibit interrupt acceptance through the next
+     * instruction. CyOS uses ANDC followed by a stack-pointer load during a
+     * task switch; taking an IRQ between them corrupts the task context. */
+    if (cpu->irq_deferred) cpu->irq_deferred = false;
+    else if (process_interrupts(cpu)) { cpu->cycle_count++; return; }
 
     if (cpu->halted) {
         if (cpu->pending_irq_count > 0) {

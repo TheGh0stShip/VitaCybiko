@@ -1,5 +1,10 @@
 # VitaCybiko 01.11 — battery sampling and Classic frame scheduling
 
+**Subsequent hardware feedback:** this release still displays a flashing 25%/C
+battery and has choppy audio/animation. The battery-level interpretation below
+was incomplete; see [the follow-up investigation](INVESTIGATION-01.12.md).
+It should not be described as resolving those issues.
+
 This candidate addresses the battery faults and the presentation stalls reported
 on physical Vita with 01.10. Physical-Vita smoothness is not yet verified.
 

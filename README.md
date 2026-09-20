@@ -71,7 +71,7 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 
 - Classic V2 setup, desktop, Pinball gameplay/exit, Calculator arithmetic and Text Editor save/reopen were observed in Vita3K. Clock continuity survives restart. Not every bundled app has been tested.
 - Classic V1 reaches the stock desktop in Vita3K. Xtreme reaches the first-run setup dialog in Vita3K. App compatibility and performance are not yet validated for those two profiles.
-- Package `01.11` adds ADC/battery fixes, Classic peripheral event batching, budgeted frame catch-up, and per-model performance logs. See [01.11 verification and limits](docs/RELEASE-01.11.md). Physical Vita transition smoothness remains unverified; this is not a 60 FPS guarantee. Earlier physical-Vita testing reported severe slowdown.
+- Package `01.12` corrects IRQ timing during CyOS task switches, enables full Classic battery readings, removes audio gap injection, optimizes timer synchronization, and moves periodic saves off the frame loop. See [01.12 verification and limits](docs/RELEASE-01.12.md). Physical Vita smoothness remains unverified; frame interpolation is not implemented. Earlier physical-Vita testing reported severe slowdown.
 - The exact original retail Classic launch bundle remains unverified.
 - Wireless chat/multiplayer, CyWIG, original PC synchronization and USB/MP3 accessories are not implemented end-to-end.
 - CPU timing is approximate; some instructions/peripheral modes remain incomplete. Classic external app installation is not implemented.

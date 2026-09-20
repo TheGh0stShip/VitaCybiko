@@ -198,7 +198,31 @@ static void test_advance_matches_single_ticks(void) {
         TEST_CHECK(cpu_advanced.pending_irqs[i] == cpu_stepped.pending_irqs[i]);
 }
 
+static void test_deadline_matches_counter_scan(void) {
+    timer8_t t;
+    cpu_init_stub();
+    timer8_init(&t, 0, &cpu);
+    timer8_write(&t, 0, 3); /* /8192: includes nonzero prescaler debt. */
+    for (int count = 0; count < 256; ++count) {
+        for (int a = 0; a < 256; ++a) {
+            t.tcnt = (uint8_t)count;
+            t.tcora = (uint8_t)a;
+            t.tcorb = (uint8_t)(a * 73 + count * 17);
+            t.prescale_counter = (a * 31 + count) % 8192;
+            uint8_t scan = t.tcnt;
+            int ticks = 0;
+            do {
+                ++ticks;
+                ++scan;
+            } while (scan && scan != t.tcora && scan != t.tcorb);
+            TEST_CHECK(timer8_cycles_until_event(&t) ==
+                       ticks * 8192 - t.prescale_counter);
+        }
+    }
+}
+
 TEST_LIST = {
+    { "deadline_matches_counter_scan", test_deadline_matches_counter_scan },
     { "init_defaults",                  test_init_defaults },
     { "init_channel_vectors",           test_init_channel_vectors },
     { "not_running_cks_zero",           test_not_running_cks_zero },

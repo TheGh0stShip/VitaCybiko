@@ -22,6 +22,7 @@ typedef struct h8s_cpu {
     uint8_t  ccr;
     uint8_t  exr;
     bool     halted;
+    bool     irq_deferred;
 
     int      pending_irqs[MAX_PENDING_IRQS];
     int      pending_irq_count;

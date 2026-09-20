@@ -222,14 +222,15 @@ static uint16_t adc_channel_value(const address_bus_t *bus, int channel)
         return 0x0330;
     }
 
-    /* Classic requires BOTH a positive charging differential and a healthy
-     * displayed level: ch1-ch2 > 15; level = 2*ch2-ch1-341. The former
-     * 768/256 pair passed the differential but produced level -597 (low).
-     * 768/584 gives differential 184 and level 59, a healthy reading without
-     * exceeding the firmware's battery scale.
+    /* Classic V1 CyOS battery state machine (0x21DD5A) uses raw voltage
+     * 2*ch2_avg-ch1_avg. With ch1-ch2 > 15 it subtracts 349 (not 341),
+     * clamps the displayed level to [31,78], and stops charging only when
+     * raw voltage > 450. 768/610 gives raw=452 and a full, noncharging state.
+     * This state needs correct CCR interrupt deferral in the CPU: taking an
+     * interrupt during CyOS's task-stack switch caused the former input stall.
      * Samples are 10-bit; the register exposes them left-aligned in 15:6. */
     if (channel == 1) return 0x0300;
-    if (channel == 2) return 0x0248;
+    if (channel == 2) return 0x0262;
     return 0x0300;
 }
 

@@ -328,9 +328,18 @@ static void test_instruction_mapping_cache(void) {
     h8s_cpu_step(&cpu);
     TEST_CHECK((cpu.er[0] & 255) == 0x56);
     TEST_CHECK(cpu.pc == 0x8102);
+    /* Alternating regions must not retain stale instruction bytes. */
     cpu.pc = CODE_BASE;
     h8s_cpu_step(&cpu);
     TEST_CHECK((cpu.er[0] & 255) == 0x34);
+    memory_write16(&bus.boot_rom, 0x100, 0xF878);
+    cpu.pc = 0x8100;
+    h8s_cpu_step(&cpu);
+    TEST_CHECK((cpu.er[0] & 255) == 0x78);
+    memory_write16(&bus.boot_rom, 0x0fff, 0xF89A);
+    cpu.pc = 0x8fff; /* Word spans a 4 KiB page boundary. */
+    h8s_cpu_step(&cpu);
+    TEST_CHECK((cpu.er[0] & 255) == 0x9a);
     h8s_cpu_reset(&cpu);
     TEST_CHECK(cpu.fetch_data == NULL);
     teardown();
@@ -405,7 +414,93 @@ static void test_trap_and_task_frame(void) {
     teardown();
 }
 
+static void test_signed_multiply_word_destination(void) {
+    setup();
+    for (int rs = 0; rs < 16; ++rs) {
+        for (int rd = 0; rd < 16; ++rd) {
+            for (int i = 0; i < 8; ++i) cpu.er[i] = 0x81fd03feu + i * 0x03050307u;
+            uint32_t before = cpu.er[rd & 7];
+            int8_t source = (int8_t)(cpu.er[rs & 7] >> (rs < 8 ? 8 : 0));
+            int8_t dest = (int8_t)(before >> (rd < 8 ? 0 : 16));
+            uint16_t product = (uint16_t)((int)source * dest);
+            uint32_t expected = rd < 8 ? (before & 0xffff0000u) | product :
+                                        (before & 0xffffu) | ((uint32_t)product << 16);
+            write_code16(0, 0x01c0);
+            write_code16(2, 0x5000 | (rs << 4) | rd);
+            cpu.pc = CODE_BASE;
+            cpu.ccr = CCR_I | CCR_C | CCR_V | CCR_H;
+            h8s_cpu_step(&cpu);
+            TEST_CHECK_(cpu.er[rd & 7] == expected, "MULXS.B rs=%d rd=%d", rs, rd);
+            TEST_CHECK(!!(cpu.ccr & CCR_N) == !!(product & 0x8000));
+            TEST_CHECK(!!(cpu.ccr & CCR_Z) == (product == 0));
+            TEST_CHECK((cpu.ccr & (CCR_C | CCR_V | CCR_H)) == (CCR_C | CCR_V | CCR_H));
+        }
+    }
+    teardown();
+}
+
+static void test_signed_divide_registers_and_flags(void) {
+    setup();
+    /* DIVXS.B R0L,E1: destination includes the upper word register bank. */
+    write_code16(0, 0x01d0);
+    write_code16(2, 0x5189);
+    cpu.er[0] = 3;
+    cpu.er[1] = 0xffecabcd; /* -20 / 3 = -6, remainder -2 */
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.er[1] == 0xfefaabcd);
+    TEST_CHECK(cpu.ccr & CCR_N);
+    TEST_CHECK(!(cpu.ccr & CCR_Z));
+    cpu.pc = CODE_BASE;
+    cpu.er[1] = 0x0001abcd; /* Zero quotient does not set Z; zero divisor does. */
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.er[1] == 0x0100abcd);
+    TEST_CHECK(!(cpu.ccr & (CCR_N | CCR_Z)));
+    cpu.pc = CODE_BASE;
+    cpu.er[0] = 0;
+    cpu.ccr |= CCR_N;
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.er[1] == 0x0100abcd);
+    TEST_CHECK(cpu.ccr & CCR_Z);
+    TEST_CHECK(!(cpu.ccr & CCR_N));
+    /* The largest signed quotient must not cause host division overflow. */
+    write_code16(2, 0x5301); /* DIVXS.W R0,ER1 */
+    cpu.pc = CODE_BASE;
+    cpu.er[0] = 0xffff;
+    cpu.er[1] = 0x80000000;
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.er[1] == 0);
+    TEST_CHECK(!(cpu.ccr & CCR_Z));
+    teardown();
+}
+
+static void test_ccr_interrupt_deferral(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write32(&bus.boot_rom, 18 * 4, CODE_BASE + 0x40);
+    write_code16(0, 0x067f); /* ANDC #0x7f,CCR */
+    write_code16(2, 0x0f97); /* MOV.L ER1,ER7: CyOS task-switch pattern */
+    write_code16(4, 0x0000);
+    cpu.er[7] = CODE_BASE + 0x100;
+    cpu.er[1] = CODE_BASE + 0x200;
+    h8s_cpu_request_interrupt(&cpu, 18);
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.pc == CODE_BASE + 2);
+    TEST_CHECK(cpu.irq_deferred);
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.pc == CODE_BASE + 4);
+    TEST_CHECK(cpu.er[7] == CODE_BASE + 0x200);
+    TEST_CHECK(cpu.pending_irq_count == 1);
+    h8s_cpu_step(&cpu);
+    TEST_CHECK(cpu.pc == CODE_BASE + 0x40);
+    TEST_CHECK(cpu.er[7] == CODE_BASE + 0x1fc);
+    TEST_CHECK((bus_read32(&bus, cpu.er[7]) & 0xffffff) == CODE_BASE + 4);
+    teardown();
+}
+
 TEST_LIST = {
+    {"ccr_interrupt_deferral", test_ccr_interrupt_deferral},
+    {"signed_multiply_word_destination", test_signed_multiply_word_destination},
+    {"signed_divide_registers_and_flags", test_signed_divide_registers_and_flags},
     {"instruction_mapping_cache", test_instruction_mapping_cache},
     {"long_displacement_store", test_long_displacement_store},
     {"interrupt_frame", test_interrupt_frame},

@@ -308,6 +308,11 @@ static void timer16_advance_no_event(timer16_t *t, int cycles) {
 }
 
 void timer16_advance(timer16_t *t, int cycles) {
+    if (cycles > 0 && t->cached_divisor != 0 &&
+        cycles < t->cached_divisor - t->prescale_counter) {
+        t->prescale_counter += cycles;
+        return;
+    }
     while (cycles > 0 && t->cached_divisor != 0) {
         int remaining = timer16_cycles_until_event(t);
         if (remaining <= 0) return;

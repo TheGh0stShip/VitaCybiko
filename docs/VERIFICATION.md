@@ -1,5 +1,29 @@
 # Verification — 2026-09-19
 
+## 01.12 candidate
+
+See [01.12 changes and remaining limits](RELEASE-01.12.md).
+
+- Core suite 13/13; host SDL frontend suite 14/14.
+- 600-frame real-firmware scheduler equivalence checks passed for Classic V1,
+  Classic V2 and Xtreme, including the new interrupt-deferral state.
+- Current physical-Vita V1 save copied read-only: full-charge desktop navigation
+  regression passed. The older snapshot also shows 100% and navigates from
+  You & Me to E-Mail after 3,600 frames plus a Right press.
+- Async checkpoint tests cover all profiles, independence from destroyed
+  emulator state/changed model paths, CRC consistency, and write failure.
+- Vita build completed and package metadata reports 01.12.
+
+```text
+2a4d00790084d5203212ff9241c8039c96c7ba64eb8b9a55dbc7624e1deabe7c  VitaCybiko.vpk
+cf6b2ed2085fc6c2604db542fbada30113c1a73ecf9c2e65a0b94784566faf6c  eboot.bin
+```
+
+The first FTP deployment attempt failed before login with “No route to host”.
+No 01.12 files were transferred in that attempt; physical-Vita validation of
+this version remains pending. The 01.11 performance log was retrieved earlier
+and is analyzed in [the investigation](INVESTIGATION-01.12.md).
+
 ## 01.11 candidate
 
 01.10 was reported by the physical-Vita tester to still have low battery and

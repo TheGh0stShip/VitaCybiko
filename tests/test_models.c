@@ -117,7 +117,7 @@ static void test_model_address_maps(void)
     }
 }
 
-static void test_battery_adc_stays_charged(void)
+static void test_battery_adc_registers_and_conversion(void)
 {
     for (int model = 0; model < CYBIKO_MODEL_COUNT; ++model) {
         address_bus_t bus;
@@ -133,21 +133,23 @@ static void test_battery_adc_stays_charged(void)
             TEST_CHECK(bus_read8(&bus, 0xFFFF93) == 0x00);
         } else {
             TEST_CHECK(ch1 == 0xC000);
-            TEST_CHECK(ch2 == 0x9200);
+            TEST_CHECK(ch2 == 0x9880);
             TEST_CHECK(bus_read8(&bus, 0xFFFF92) == 0xC0);
             TEST_CHECK(bus_read8(&bus, 0xFFFF93) == 0x00);
-            TEST_CHECK(bus_read8(&bus, 0xFFFF94) == 0x92);
-            TEST_CHECK(bus_read8(&bus, 0xFFFF95) == 0x00);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF94) == 0x98);
+            TEST_CHECK(bus_read8(&bus, 0xFFFF95) == 0x80);
             TEST_CHECK(ch1 > ch2 + 0x00F0);
             /* Reproduce CyOS's filtered level, not just its charging check. */
-            int avg1 = 0, avg2 = 0;
+            /* Initial valid conversion seeds the filter; subsequent updates
+             * round using +3 before arithmetic shift, as the firmware does. */
+            int avg1 = ch1 >> 6, avg2 = ch2 >> 6;
             for (int sample = 0; sample < 32; ++sample) {
-                avg1 = (7 * avg1 + (ch1 >> 6)) / 8;
-                avg2 = (7 * avg2 + (ch2 >> 6)) / 8;
+                avg1 = (7 * avg1 + (ch1 >> 6) + 3) / 8;
+                avg2 = (7 * avg2 + (ch2 >> 6) + 3) / 8;
             }
             TEST_CHECK(avg1 - avg2 > 15);
-            TEST_CHECK(2 * avg2 - avg1 - 341 > 31);
-            TEST_CHECK(2 * avg2 - avg1 - 341 < 64);
+            TEST_CHECK(2 * avg2 - avg1 > 450); /* charge-complete threshold */
+            TEST_CHECK(2 * avg2 - avg1 - 349 >= 78); /* clamped full display */
         }
         /* Access width must not change the hardware register's contents. */
         for (uint32_t address = 0xFFFF90; address <= 0xFFFF96; address += 2) {
@@ -289,7 +291,7 @@ TEST_LIST = {
     {"classic_v2_escape_isolation", test_classic_v2_escape_isolation},
     {"serial_transmit_interrupts", test_serial_transmit_interrupts},
     {"classic_spi_bus_and_dtc", test_classic_spi_bus_and_dtc},
-    {"battery_adc_stays_charged", test_battery_adc_stays_charged},
+    {"battery_adc_registers_and_conversion", test_battery_adc_registers_and_conversion},
     {"profiles_and_storage", test_profiles_and_storage},
     {"dataflash_protocol", test_dataflash_protocol},
     {"model_address_maps", test_model_address_maps},

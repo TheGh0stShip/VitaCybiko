@@ -131,16 +131,15 @@ int timer8_cycles_until_counter_tick(const timer8_t *t) {
 
 static int timer8_counter_ticks_until_event(const timer8_t *t) {
     if (t->cached_divisor == 0) return 0;
-    uint8_t count = t->tcnt;
-    for (int ticks = 1; ticks <= 256; ++ticks) {
-        uint8_t previous = count;
-        count = (uint8_t)(count + 1);
-        if (count == t->tcora || count == t->tcorb ||
-            (previous == 0xFF && count == 0)) {
-            return ticks;
-        }
-    }
-    return 256;
+    /* The next event is the nearest comparator or natural wrap. Previously
+     * every deadline query simulated up to 256 counter increments, including
+     * millions of queries made before the counter had advanced at all. */
+    int ticks = 256 - t->tcnt;
+    int a = (uint8_t)(t->tcora - t->tcnt);
+    int b = (uint8_t)(t->tcorb - t->tcnt);
+    if (a && a < ticks) ticks = a;
+    if (b && b < ticks) ticks = b;
+    return ticks;
 }
 
 int timer8_cycles_until_event(const timer8_t *t) {
@@ -158,6 +157,13 @@ static void timer8_advance_no_event(timer8_t *t, int cycles) {
 }
 
 void timer8_advance(timer8_t *t, int cycles) {
+    /* I/O synchronization usually arrives before even one prescaler tick.
+     * Do not rescan deadlines or invoke integer division for that case. */
+    if (cycles > 0 && t->cached_divisor != 0 &&
+        cycles < t->cached_divisor - t->prescale_counter) {
+        t->prescale_counter += cycles;
+        return;
+    }
     while (cycles > 0 && t->cached_divisor != 0) {
         int remaining = timer8_cycles_until_event(t);
         if (remaining <= 0) return;

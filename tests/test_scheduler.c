@@ -11,6 +11,7 @@ static void compare_state(cybiko_emu_t *a, cybiko_emu_t *b)
     TEST_CHECK(a->cpu.ccr == b->cpu.ccr);
     TEST_CHECK(a->cpu.halted == b->cpu.halted);
     TEST_CHECK(a->cpu.cycle_count == b->cpu.cycle_count);
+    TEST_CHECK(a->cpu.irq_deferred == b->cpu.irq_deferred);
     TEST_CHECK(!memcmp(a->cpu.er, b->cpu.er, sizeof(a->cpu.er)));
     TEST_CHECK(a->cpu.pending_irq_count == b->cpu.pending_irq_count);
     TEST_CHECK(!memcmp(a->cpu.pending_irqs, b->cpu.pending_irqs,
@@ -155,7 +156,49 @@ static void test_firmware_scheduler_optional(void)
     cybiko_destroy(b);
 }
 
+/* Optional saved-desktop fixture: the full-charge regression previously
+ * reached the desktop but left every navigation input ineffective. */
+static void test_classic_full_charge_navigation_optional(void)
+{
+    const char *root = getenv("CYBIKO_BATTERY_DESKTOP_FIXTURE");
+    const char *boot = getenv("CYBIKO_SCHEDULER_BOOT");
+    if (!root) return;
+    TEST_ASSERT(boot != NULL);
+    cybiko_hal_t hal = {0};
+    cybiko_emu_t *emu = cybiko_create_model(&hal, CYBIKO_CLASSIC_V1);
+    TEST_ASSERT(emu != NULL);
+    load_exact(boot, emu->bus.boot_rom.data, emu->bus.boot_rom.size);
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/save.flash", root);
+    load_exact(path, emu->bus.dataflash->data, DATAFLASH_SIZE);
+    snprintf(path, sizeof(path), "%s/ram.raw", root);
+    load_exact(path, emu->bus.external_ram.data, emu->bus.external_ram.size);
+    snprintf(path, sizeof(path), "%s/clock.raw", root);
+    load_exact(path, emu->rtc.data, 16);
+    cybiko_reset(emu);
+    uint8_t before[HD66421_WIDTH * HD66421_HEIGHT];
+    for (int frame = 0; frame < 780; ++frame) {
+        emu->rtc.last_tick_ns = UINT64_MAX;
+        emu->keyboard.columns[4] = frame >= 600 && frame < 660 ? 1 : 0;
+        cybiko_run_frame(emu);
+        if (frame == 599) memcpy(before, hd66421_render(&emu->lcd), sizeof(before));
+    }
+    uint32_t battery = bus_read32(&emu->bus, 0x227fd0);
+    TEST_ASSERT(battery >= 0x200000 && battery < 0x27ffe0);
+    TEST_CHECK(bus_read16(&emu->bus, battery + 0x14) == 78);
+    TEST_CHECK(bus_read8(&emu->bus, battery + 0x16) == 0);
+    const uint8_t *after = hd66421_render(&emu->lcd);
+    int changed = 0;
+    /* Ignore the clock/battery bar: verify the actual desktop content moved. */
+    for (int y = 15; y < 85; ++y)
+        for (int x = 0; x < 160; ++x)
+            changed += before[y * 160 + x] != after[y * 160 + x];
+    TEST_CHECK(changed > 100);
+    cybiko_destroy(emu);
+}
+
 TEST_LIST = {
+    {"classic_full_charge_navigation", test_classic_full_charge_navigation_optional},
     {"local_firmware_scheduler_equivalence", test_firmware_scheduler_optional},
     {"event_scheduler_matches_cycle_reference", test_event_scheduler_matches_reference},
     {NULL, NULL}

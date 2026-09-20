@@ -238,7 +238,8 @@ static void test_focus_loss_and_mouse_buttons(void)
     process_sdl_events(ctx, &running);
     TEST_CHECK(!ctx->focus_lost);
     if (ctx->audio_dev)
-        TEST_CHECK(SDL_GetAudioDeviceStatus(ctx->audio_dev) == SDL_AUDIO_PLAYING);
+        TEST_CHECK(SDL_GetAudioDeviceStatus(ctx->audio_dev) == SDL_AUDIO_PAUSED);
+    TEST_CHECK(!ctx->audio_started);
 
     SDL_Rect rect;
     virtual_key_rect_layout(false, 3, 9, &rect); /* Enter */
@@ -279,20 +280,37 @@ static void test_audio_queue_bounds_latency(void)
         TEST_ASSERT(ctx->audio_frame_bytes > 0);
         TEST_ASSERT(ctx->audio_max_queue_bytes <= sizeof(stale));
 
-        SDL_ClearQueuedAudio(ctx->audio_dev);
+        reset_audio(ctx);
         hal_audio_output(ctx, frame, (int)sizeof(frame));
         TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) ==
-                   ctx->audio_frame_bytes * (AUDIO_TARGET_QUEUE_FRAMES + 1u));
+                   ctx->audio_frame_bytes);
+        TEST_CHECK(!ctx->audio_started);
+        TEST_CHECK(SDL_GetAudioDeviceStatus(ctx->audio_dev) == SDL_AUDIO_PAUSED);
+        /* Keep the dummy device paused to test exact byte counts, separately
+         * from the start/resume threshold. */
+        ctx->audio_started = true;
         hal_audio_output(ctx, frame, (int)sizeof(frame));
         TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) ==
-                   ctx->audio_frame_bytes * (AUDIO_TARGET_QUEUE_FRAMES + 2u));
+                   ctx->audio_frame_bytes * 2u);
 
         SDL_ClearQueuedAudio(ctx->audio_dev);
         TEST_ASSERT(SDL_QueueAudio(ctx->audio_dev, stale,
                                    ctx->audio_max_queue_bytes) == 0);
         hal_audio_output(ctx, frame, (int)sizeof(frame));
         TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) ==
-                   ctx->audio_frame_bytes * (AUDIO_TARGET_QUEUE_FRAMES + 1u));
+                   ctx->audio_max_queue_bytes);
+        TEST_CHECK(ctx->audio_dropped_frames == 1);
+
+        /* An underrun must queue only the supplied sound, never extra silence. */
+        SDL_ClearQueuedAudio(ctx->audio_dev);
+        hal_audio_output(ctx, frame, (int)sizeof(frame));
+        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) == ctx->audio_frame_bytes);
+        TEST_CHECK(ctx->audio_underruns == 1);
+        reset_audio(ctx);
+        hal_audio_output(ctx, frame, (int)sizeof(frame));
+        hal_audio_output(ctx, frame, (int)sizeof(frame));
+        TEST_CHECK(ctx->audio_started);
+        TEST_CHECK(SDL_GetAudioDeviceStatus(ctx->audio_dev) == SDL_AUDIO_PLAYING);
     }
     cleanup(ctx);
 }
@@ -702,7 +720,79 @@ static void test_lcd_upload_preserves_colors_and_skips_duplicates(void)
     free(ctx);
 }
 
+static void test_async_save_snapshot(void)
+{
+    TEST_ASSERT(SDL_Init(SDL_INIT_TIMER) == 0);
+    char original_root[MAX_PATH_CHARS], original_save[MAX_PATH_CHARS];
+    snprintf(original_root, sizeof(original_root), "%s", runtime_root);
+    snprintf(original_save, sizeof(original_save), "%s", runtime_save_path);
+    for (int model = 0; model < 3; ++model) {
+        char directory[] = "/tmp/vitacybiko-async-save-XXXXXX";
+        TEST_ASSERT(mkdtemp(directory) != NULL);
+        snprintf(runtime_root, sizeof(runtime_root), "%s", directory);
+        snprintf(runtime_save_path, sizeof(runtime_save_path), "%s/save.bin", directory);
+        cybiko_hal_t hal = {0};
+        cybiko_emu_t *emu = cybiko_create_model(&hal, (cybiko_model_t)model);
+        TEST_ASSERT(emu != NULL);
+        save_snapshot_t *job = capture_save_snapshot(emu);
+        TEST_ASSERT(job != NULL);
+        uint32_t storage_crc = cybiko_crc32(job->storage, job->storage_size);
+        uint32_t ram_crc = job->ram ? cybiko_crc32(job->ram + 24, job->ram_size) : 0;
+        /* Job must not reference live emulator memory or mutable path globals. */
+        cybiko_destroy(emu);
+        snprintf(runtime_root, sizeof(runtime_root), "/missing/changed-model");
+        snprintf(runtime_save_path, sizeof(runtime_save_path), "/missing/changed-model/save.bin");
+        job->thread = SDL_CreateThread(write_save_snapshot, "snapshot-test", job);
+        TEST_ASSERT(job->thread != NULL);
+        char storage_path[MAX_PATH_CHARS], ram_path[MAX_PATH_CHARS], rtc_path[MAX_PATH_CHARS];
+        snprintf(storage_path, sizeof(storage_path), "%s", job->storage_path);
+        snprintf(ram_path, sizeof(ram_path), "%s", job->ram_path);
+        snprintf(rtc_path, sizeof(rtc_path), "%s", job->rtc_path);
+        bool ok = false; double elapsed = -1;
+        TEST_CHECK(finish_async_save(&job, true, &ok, &elapsed));
+        TEST_CHECK(ok && job == NULL && elapsed >= 0);
+        TEST_CHECK(!finish_async_save(&job, false, &ok, &elapsed));
+        size_t size = 0; uint8_t *data = load_file(storage_path, &size, false);
+        TEST_ASSERT(data != NULL);
+        TEST_CHECK(cybiko_crc32(data, size) == storage_crc);
+        free(data);
+        if (model != CYBIKO_XTREME) {
+            data = load_file(ram_path, &size, false);
+            TEST_ASSERT(data && size >= 24);
+            TEST_CHECK(!memcmp(data, "VCRM\1", 5));
+            TEST_CHECK(data[5] == model);
+            TEST_CHECK(get_u32le(data + 12) == storage_crc);
+            TEST_CHECK(get_u32le(data + 16) == ram_crc);
+            TEST_CHECK(get_u32le(data + 20) == cybiko_crc32(data, 20));
+            TEST_CHECK(cybiko_crc32(data + 24, size - 24) == ram_crc);
+            free(data);
+            TEST_CHECK(remove(ram_path) == 0);
+        }
+        data = load_file(rtc_path, &size, false);
+        TEST_ASSERT(data && size == 36);
+        TEST_CHECK(!memcmp(data, "VRTC\1\0\0\0", 8));
+        TEST_CHECK(get_u32le(data + 32) == cybiko_crc32(data, 32));
+        free(data);
+        TEST_CHECK(remove(storage_path) == 0);
+        TEST_CHECK(remove(rtc_path) == 0);
+        TEST_CHECK(rmdir(directory) == 0);
+    }
+    /* A failed worker must report failure and still be joinable/freeable. */
+    cybiko_hal_t hal = {0};
+    cybiko_emu_t *emu = cybiko_create_model(&hal, CYBIKO_CLASSIC_V1);
+    save_snapshot_t *job = start_async_save(emu);
+    TEST_ASSERT(job != NULL);
+    bool ok = true; double elapsed;
+    TEST_CHECK(finish_async_save(&job, true, &ok, &elapsed));
+    TEST_CHECK(!ok && !job);
+    cybiko_destroy(emu);
+    snprintf(runtime_root, sizeof(runtime_root), "%s", original_root);
+    snprintf(runtime_save_path, sizeof(runtime_save_path), "%s", original_save);
+    SDL_Quit();
+}
+
 TEST_LIST = {
+    {"async_save_snapshot", test_async_save_snapshot},
     {"lcd_colors_and_duplicate_uploads", test_lcd_upload_preserves_colors_and_skips_duplicates},
     {"catchup_presentation_budget", test_catchup_respects_presentation_budget},
     {"classic_ram_storage", test_classic_ram_storage},
