@@ -175,6 +175,14 @@ bool h8s_execute_mixed_plain_block_prefix(const h8s_block_t *block,
                                           address_bus_t *bus,
                                           h8s_block_cpu_state_t *state,
                                           int *cycles);
+bool h8s_find_mixed_plain_block_first_nonplain(
+                                          const h8s_block_t *block,
+                                          address_bus_t *bus,
+                                          const h8s_block_cpu_state_t *state,
+                                          uint32_t *pc,
+                                          uint16_t *op,
+                                          uint32_t *address,
+                                          bool *write);
 bool h8s_execute_semantic_block_exit(const h8s_block_t *block,
                                      h8s_branch_edge_cache_t *edge_cache,
                                      h8s_block_cpu_state_t *state,

@@ -1596,22 +1596,13 @@ static void queue_guest_audio(app_ctx_t *ctx, guest_worker_t *worker)
             ctx->audio_last_valid = true;
         }
         queue_audio_locked(ctx, worker->audio, worker->audio_count);
-        if (ctx->audio_last_valid && ctx->audio_last_count > 0 && ctx->audio_started) {
-            Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
-            queue_audio_silence_locked(ctx, queued);
-        }
     }
     SDL_UnlockMutex(ctx->audio_lock);
 }
 
 static void service_audio_continuity(app_ctx_t *ctx)
 {
-    SDL_LockMutex(ctx->audio_lock);
-    if (ctx->audio_started && ctx->audio_last_valid && ctx->audio_last_count > 0) {
-        Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
-        queue_audio_silence_locked(ctx, queued);
-    }
-    SDL_UnlockMutex(ctx->audio_lock);
+    (void)ctx;
 }
 
 static void hal_audio_output(void *ctx_ptr, const uint8_t *samples, int count)

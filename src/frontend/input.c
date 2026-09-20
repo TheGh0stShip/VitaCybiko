@@ -3,7 +3,7 @@
 
 /* Real Classic CyOS missed 3-frame Esc/F-key taps in firmware tests. Eight
  * emulated frames span its scan/debounce window even when host FPS is low. */
-enum { MIN_HOLD = 3, CLASSIC_HOLD = 8, NUMBER_HOLD = 6, FN_FIRST_DELAY = 8, FN_NEXT_DELAY = 3, FN_TAIL = 10 };
+enum { MIN_HOLD = 3, CLASSIC_HOLD = 8, NUMBER_HOLD = 12, FN_FIRST_DELAY = 8, FN_NEXT_DELAY = 3, FN_TAIL = 16 };
 
 void input_reset(input_state_t *state, cybiko_model_t model)
 {

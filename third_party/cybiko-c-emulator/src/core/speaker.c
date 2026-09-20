@@ -14,6 +14,7 @@ void speaker_init(speaker_t *spk, int clock_hz) {
     memset(spk, 0, sizeof(*spk));
     spk->cycles_per_sample = (double)clock_hz / SPEAKER_SAMPLE_RATE;
     spk->cycle_fraction = 0.0;
+    spk->filtered_level = 0.0;
     spk->current_level = 0;
     spk->frame_start_level = 0;
     spk->buffer_pos = 0;
@@ -49,6 +50,7 @@ int speaker_generate_samples(speaker_t *spk, int cpu_cycles, uint8_t *out, int o
 
     if (spk->transition_count == 0) {
         /* No transitions this frame - output silence (constant level = no sound) */
+        spk->filtered_level = 0.0;
         for (int i = 0; i < samples_to_write; i++) {
             out[i] = 128;
         }
@@ -68,7 +70,12 @@ int speaker_generate_samples(speaker_t *spk, int cpu_cycles, uint8_t *out, int o
                 trans_idx++;
             }
 
-            out[i] = (level == 0) ? 96 : 160;
+            double target = level == 0 ? -1.0 : 1.0;
+            spk->filtered_level += (target - spk->filtered_level) * 0.35;
+            int sample = 128 + (int)(spk->filtered_level * 32.0);
+            if (sample < 0) sample = 0;
+            if (sample > 255) sample = 255;
+            out[i] = (uint8_t)sample;
         }
     }
 

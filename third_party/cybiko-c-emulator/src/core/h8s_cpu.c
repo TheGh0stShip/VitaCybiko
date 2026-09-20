@@ -34,6 +34,7 @@ typedef enum {
 #define BRANCH_PROFILE_TARGET_SLOTS 4096
 #define SEMANTIC_REJECT_PROFILE_SLOTS 4096
 #define WINDOW_PROFILE_SLOTS 4096
+#define MUTABLE_NONPLAIN_PROFILE_SLOTS 4096
 static uint64_t opcode_profile_hi[256];
 static uint64_t opcode_profile_exact[65536];
 static uint64_t prefix0100_profile_op2[65536];
@@ -51,6 +52,11 @@ static uint32_t window_profile_tag[WINDOW_PROFILE_SLOTS];
 static uint16_t window_profile_op0[WINDOW_PROFILE_SLOTS];
 static uint16_t window_profile_op1[WINDOW_PROFILE_SLOTS];
 static uint64_t window_profile_count[WINDOW_PROFILE_SLOTS];
+static uint32_t mutable_nonplain_pc[MUTABLE_NONPLAIN_PROFILE_SLOTS];
+static uint32_t mutable_nonplain_address[MUTABLE_NONPLAIN_PROFILE_SLOTS];
+static uint16_t mutable_nonplain_op[MUTABLE_NONPLAIN_PROFILE_SLOTS];
+static uint8_t mutable_nonplain_write[MUTABLE_NONPLAIN_PROFILE_SLOTS];
+static uint64_t mutable_nonplain_count[MUTABLE_NONPLAIN_PROFILE_SLOTS];
 static bool opcode_profile_registered;
 
 static void opcode_profile_dump(void) {
@@ -187,6 +193,24 @@ static void opcode_profile_dump(void) {
                 window_profile_op0[best], window_profile_op1[best],
                 (unsigned long long)best_count);
     }
+    bool nonplain_printed[MUTABLE_NONPLAIN_PROFILE_SLOTS] = {0};
+    for (unsigned rank = 0; rank < 16; ++rank) {
+        unsigned best = 0;
+        uint64_t best_count = 0;
+        for (unsigned i = 0; i < MUTABLE_NONPLAIN_PROFILE_SLOTS; ++i) {
+            if (!nonplain_printed[i] && mutable_nonplain_count[i] > best_count) {
+                best_count = mutable_nonplain_count[i];
+                best = i;
+            }
+        }
+        if (!best_count) break;
+        nonplain_printed[best] = true;
+        fprintf(stderr, "mutable_nonplain_top%02u_pc=0x%06x op=0x%04x address=0x%06x access=%s count=%llu\n",
+                rank + 1, mutable_nonplain_pc[best], mutable_nonplain_op[best],
+                mutable_nonplain_address[best],
+                mutable_nonplain_write[best] ? "write" : "read",
+                (unsigned long long)best_count);
+    }
 }
 
 CPU_INLINE void opcode_profile_record(uint16_t op) {
@@ -304,6 +328,30 @@ CPU_INLINE void semantic_window_profile_record(h8s_cpu_t *cpu, uint32_t pc) {
         window_profile_count[index]++;
     }
 }
+
+CPU_INLINE void mutable_nonplain_profile_record(uint32_t pc, uint16_t op,
+                                                uint32_t address, bool write) {
+    if (!opcode_profile_registered) {
+        atexit(opcode_profile_dump);
+        opcode_profile_registered = true;
+    }
+    pc &= 0xffffff;
+    address &= 0xffffff;
+    unsigned index = ((pc >> 1) ^ (pc >> 12) ^ (address >> 1) ^
+                      (address >> 13) ^ op ^ (write ? 0x155u : 0x2aau)) &
+                     (MUTABLE_NONPLAIN_PROFILE_SLOTS - 1);
+    if (mutable_nonplain_count[index] == 0 ||
+        (mutable_nonplain_pc[index] == pc &&
+         mutable_nonplain_op[index] == op &&
+         mutable_nonplain_address[index] == address &&
+         mutable_nonplain_write[index] == (write ? 1u : 0u))) {
+        mutable_nonplain_pc[index] = pc;
+        mutable_nonplain_op[index] = op;
+        mutable_nonplain_address[index] = address;
+        mutable_nonplain_write[index] = write ? 1u : 0u;
+        mutable_nonplain_count[index]++;
+    }
+}
 #else
 CPU_INLINE void opcode_profile_record(uint16_t op) {
     (void)op;
@@ -323,6 +371,10 @@ CPU_INLINE void semantic_reject_profile_record(uint32_t pc, unsigned reason) {
 }
 CPU_INLINE void semantic_window_profile_record(h8s_cpu_t *cpu, uint32_t pc) {
     (void)cpu; (void)pc;
+}
+CPU_INLINE void mutable_nonplain_profile_record(uint32_t pc, uint16_t op,
+                                                uint32_t address, bool write) {
+    (void)pc; (void)op; (void)address; (void)write;
 }
 #endif
 
@@ -2402,6 +2454,18 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
         record_mutable_execute_failure(cpu, failure);
         if (failure == H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_READ ||
             failure == H8S_MIXED_FAILURE_DYNAMIC_NONPLAIN_WRITE) {
+            uint32_t failed_pc = 0, failed_address = 0;
+            uint16_t failed_op = 0;
+            bool failed_write = false;
+            if (h8s_find_mixed_plain_block_first_nonplain(block, cpu->bus,
+                                                          &state, &failed_pc,
+                                                          &failed_op,
+                                                          &failed_address,
+                                                          &failed_write)) {
+                mutable_nonplain_profile_record((base + failed_pc) & 0xffffffu,
+                                                failed_op, failed_address,
+                                                failed_write);
+            }
             int prefix_cycles = 0;
             h8s_block_cpu_state_t prefix_state = state;
             if (h8s_execute_mixed_plain_block_prefix(block, cpu->bus,

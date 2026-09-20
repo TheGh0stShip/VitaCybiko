@@ -40,9 +40,9 @@ static void test_single_transition_midway(void) {
     int n = speaker_generate_samples(&spk, 307200, out, 1024);
     TEST_CHECK(n > 0);
 
-    /* First sample should be LOW (96), last should be HIGH (160) */
-    TEST_CHECK_(out[0] == 96, "first sample: expected 96, got %d", out[0]);
-    TEST_CHECK_(out[n - 1] == 160, "last sample: expected 160, got %d", out[n - 1]);
+    /* Smoothed output should start below neutral and end above neutral. */
+    TEST_CHECK_(out[0] < 128, "first sample: expected below 128, got %d", out[0]);
+    TEST_CHECK_(out[n - 1] > 128, "last sample: expected above 128, got %d", out[n - 1]);
 }
 
 static void test_set_level_deduplicates(void) {
@@ -112,9 +112,9 @@ static void test_transition_to_low(void) {
     uint8_t out[1024];
     int n = speaker_generate_samples(&spk, 307200, out, 1024);
     TEST_CHECK(n > 0);
-    /* All samples should be LOW (96) */
-    TEST_CHECK_(out[0] == 96, "first sample: expected 96, got %d", out[0]);
-    TEST_CHECK_(out[n - 1] == 96, "last sample: expected 96, got %d", out[n - 1]);
+    /* All samples should settle below neutral. */
+    TEST_CHECK_(out[0] < 128, "first sample: expected below 128, got %d", out[0]);
+    TEST_CHECK_(out[n - 1] < 128, "last sample: expected below 128, got %d", out[n - 1]);
 }
 
 TEST_LIST = {

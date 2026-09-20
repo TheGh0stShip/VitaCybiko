@@ -322,19 +322,7 @@ static void test_audio_queue_bounds_latency(void)
         ctx->audio_last_count = (int)sizeof(frame);
         memset(ctx->audio_last_frame, 255, sizeof(ctx->audio_last_frame));
         service_audio_continuity(ctx);
-        Uint32 queued = SDL_GetQueuedAudioSize(ctx->audio_dev);
-        TEST_CHECK(queued == ctx->audio_target_queue_bytes);
-        uint8_t queued_audio[65536];
-        TEST_ASSERT(queued <= sizeof(queued_audio));
-        Uint32 got = SDL_DequeueAudio(ctx->audio_dev, queued_audio, queued);
-        TEST_CHECK(got == queued);
-        if (ctx->audio_s16_stereo) {
-            for (Uint32 i = 0; i < got; ++i)
-                TEST_CHECK(queued_audio[i] == 0);
-        } else {
-            for (Uint32 i = 0; i < got; ++i)
-                TEST_CHECK(queued_audio[i] == 128);
-        }
+        TEST_CHECK(SDL_GetQueuedAudioSize(ctx->audio_dev) == 0);
     }
     cleanup(ctx);
 }

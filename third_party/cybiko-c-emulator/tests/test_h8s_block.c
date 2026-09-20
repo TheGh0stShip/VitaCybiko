@@ -1077,6 +1077,40 @@ static void test_plain_memory_instruction_matches_multi_push(void)
     teardown_memory_equiv_cpu(&bus);
 }
 
+static void test_mixed_plain_prefix_executes_lcd_byte_write(void)
+{
+    const uint8_t code[] = {
+        0x0b, 0x01, /* ADDS #1,ER1 */
+        0x68, 0x89, /* MOV.B R1L,@ER0 */
+        0x46, 0x00  /* BNE +0 */
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(code, sizeof(code), 0, 8, &block));
+    TEST_ASSERT(block.instructions == 2);
+    TEST_CHECK(h8s_mixed_plain_block_supported(&block));
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+    hd66421_t lcd;
+    hd66421_init(&lcd);
+    bus.lcd = &lcd;
+    hd66421_write8(&lcd, 0, 1); /* Select a simple register. */
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    state.er[0] = bus.machine->lcd_base + 1u;
+    state.er[1] = 0x40u;
+    int cycles = 0;
+    TEST_CHECK(h8s_execute_mixed_plain_block_prefix(&block, &bus, &state, &cycles));
+    TEST_CHECK(cycles == 2);
+    TEST_CHECK(state.pc == 4);
+    TEST_CHECK((state.er[1] & 0xffu) == 0x41u);
+    TEST_CHECK(lcd.regs[1] == 0x41u);
+    TEST_CHECK((state.ccr & 0x02u) == 0); /* MOV clears V. */
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_mixed_plain_block_exit_executes_jsr_abs24(void)
 {
     const uint8_t code[] = {
@@ -2219,6 +2253,7 @@ TEST_LIST = {
     { "plain_memory_instruction_matches_absolute_word_read", test_plain_memory_instruction_matches_absolute_word_read },
     { "plain_memory_instruction_matches_multi_pop", test_plain_memory_instruction_matches_multi_pop },
     { "plain_memory_instruction_matches_multi_push", test_plain_memory_instruction_matches_multi_push },
+    { "mixed_plain_prefix_executes_lcd_byte_write", test_mixed_plain_prefix_executes_lcd_byte_write },
     { "mixed_plain_block_exit_executes_jsr_abs24", test_mixed_plain_block_exit_executes_jsr_abs24 },
     { "mixed_plain_block_exit_executes_jmp_er", test_mixed_plain_block_exit_executes_jmp_er },
     { "mixed_plain_block_exit_executes_jsr_er", test_mixed_plain_block_exit_executes_jsr_er },

@@ -50,7 +50,7 @@ static void test_number_order_and_modifiers(void)
         TEST_CHECK(column(&state, &keyboard, 3) == 0);
         input_tick(&state);
     }
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 12; ++i) {
         TEST_CHECK(column(&state, &keyboard, 3) == 2);
         TEST_CHECK(column(&state, &keyboard, 7) == 0x8000);
         input_tick(&state);

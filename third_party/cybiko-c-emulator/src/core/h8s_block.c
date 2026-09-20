@@ -2216,6 +2216,40 @@ static bool dynamic_plain_memory_operand(const h8s_block_instruction_t *insn,
     return true;
 }
 
+static bool lcd_byte_write_operand(const h8s_block_instruction_t *insn,
+                                   const address_bus_t *bus,
+                                   const h8s_block_cpu_state_t *state,
+                                   uint32_t *address)
+{
+    if (!insn || !bus || !bus->machine || !state || !address)
+        return false;
+    uint16_t op = insn->op;
+    uint8_t hi = (uint8_t)(op >> 8);
+    uint8_t lo = (uint8_t)op;
+    if (hi != 0x68 || (lo & 0x80) == 0 || insn->bytes != 2)
+        return false;
+    uint32_t addr = state->er[(lo >> 4) & 0x7] & 0xffffffu;
+    if (addr < bus->machine->lcd_base || addr > bus->machine->lcd_end)
+        return false;
+    *address = addr;
+    return true;
+}
+
+static bool execute_lcd_byte_write_instruction(const h8s_block_instruction_t *insn,
+                                               address_bus_t *bus,
+                                               h8s_block_cpu_state_t *state)
+{
+    uint32_t address = 0;
+    if (!lcd_byte_write_operand(insn, bus, state, &address))
+        return false;
+    uint8_t value = block_get_reg_b(state, insn->op & 0xf);
+    bus_write8_slow(bus, address, value);
+    block_set_nz_b(state, value);
+    block_set_flag(state, BLOCK_CCR_V, false);
+    state->pc += insn->bytes;
+    return true;
+}
+
 static bool static_plain_memory_operand(const h8s_block_instruction_t *insn,
                                         uint32_t *address,
                                         unsigned *bytes,
@@ -2366,6 +2400,7 @@ bool h8s_execute_mixed_plain_block_exit(const h8s_block_t *block,
         };
         while (i < block->instructions &&
                !plain_memory_instruction_supported(&block->decoded[i]) &&
+               !lcd_byte_write_operand(&block->decoded[i], bus, &updated, &(uint32_t){0}) &&
                run.instructions < H8S_BLOCK_MAX_INSTRUCTIONS) {
             run.decoded[run.instructions] = block->decoded[i];
             run.bytes += block->decoded[i].bytes;
@@ -2449,7 +2484,6 @@ h8s_mixed_failure_t h8s_classify_mixed_plain_block_failure(
             ++i;
             continue;
         }
-
         h8s_block_t run = {
             .start = updated.pc,
             .bytes = 0,
@@ -2461,6 +2495,7 @@ h8s_mixed_failure_t h8s_classify_mixed_plain_block_failure(
         };
         while (i < block->instructions &&
                !plain_memory_instruction_supported(&block->decoded[i]) &&
+               !lcd_byte_write_operand(&block->decoded[i], bus, &updated, &(uint32_t){0}) &&
                run.instructions < H8S_BLOCK_MAX_INSTRUCTIONS) {
             run.decoded[run.instructions] = block->decoded[i];
             run.bytes += block->decoded[i].bytes;
@@ -2525,8 +2560,15 @@ bool h8s_execute_mixed_plain_block_prefix(const h8s_block_t *block,
                                               &address, &bytes, &write))
                 break;
             if (write) {
-                if (!bus_is_plain_write_range(bus, address, bytes))
+                if (!bus_is_plain_write_range(bus, address, bytes)) {
+                    if (execute_lcd_byte_write_instruction(&block->decoded[i], bus, &updated)) {
+                        ++done;
+                        *state = updated;
+                        *cycles = done;
+                        return true;
+                    }
                     break;
+                }
             } else if (!bus_is_plain_read_range(bus, address, bytes)) {
                 break;
             }
@@ -2535,6 +2577,12 @@ bool h8s_execute_mixed_plain_block_prefix(const h8s_block_t *block,
             ++done;
             ++i;
             continue;
+        }
+        if (execute_lcd_byte_write_instruction(&block->decoded[i], bus, &updated)) {
+            ++done;
+            *state = updated;
+            *cycles = done;
+            return true;
         }
 
         h8s_block_t run = {
@@ -2567,6 +2615,76 @@ bool h8s_execute_mixed_plain_block_prefix(const h8s_block_t *block,
     *state = updated;
     *cycles = done;
     return true;
+}
+
+bool h8s_find_mixed_plain_block_first_nonplain(
+                                          const h8s_block_t *block,
+                                          address_bus_t *bus,
+                                          const h8s_block_cpu_state_t *state,
+                                          uint32_t *pc,
+                                          uint16_t *op,
+                                          uint32_t *address,
+                                          bool *write)
+{
+    if (!block || !bus || !state || !pc || !op || !address || !write ||
+        !h8s_mixed_plain_block_supported(block))
+        return false;
+
+    h8s_block_cpu_state_t updated = *state;
+    unsigned i = 0;
+    while (i < block->instructions) {
+        if (plain_memory_instruction_supported(&block->decoded[i])) {
+            uint32_t addr = 0;
+            unsigned bytes = 0;
+            bool wr = false;
+            if (!dynamic_plain_memory_operand(&block->decoded[i], &updated,
+                                              &addr, &bytes, &wr))
+                return false;
+            if (wr) {
+                if (!bus_is_plain_write_range(bus, addr, bytes)) {
+                    *pc = updated.pc;
+                    *op = block->decoded[i].op;
+                    *address = addr;
+                    *write = true;
+                    return true;
+                }
+            } else if (!bus_is_plain_read_range(bus, addr, bytes)) {
+                *pc = updated.pc;
+                *op = block->decoded[i].op;
+                *address = addr;
+                *write = false;
+                return true;
+            }
+            if (!h8s_execute_plain_memory_instruction(&block->decoded[i], bus, &updated))
+                return false;
+            ++i;
+            continue;
+        }
+
+        h8s_block_t run = {
+            .start = updated.pc,
+            .bytes = 0,
+            .instructions = 0,
+            .stop = H8S_BLOCK_STOP_LIMIT,
+            .stop_pc = updated.pc,
+            .executable_prefix_instructions = 0,
+            .executable = true
+        };
+        while (i < block->instructions &&
+               !plain_memory_instruction_supported(&block->decoded[i]) &&
+               run.instructions < H8S_BLOCK_MAX_INSTRUCTIONS) {
+            run.decoded[run.instructions] = block->decoded[i];
+            run.bytes += block->decoded[i].bytes;
+            run.instructions++;
+            run.executable_prefix_instructions++;
+            ++i;
+        }
+        run.stop_pc = run.start + run.bytes;
+        if (!h8s_semantic_block_supported(&run) ||
+            !h8s_execute_semantic_block(&run, &updated))
+            return false;
+    }
+    return false;
 }
 
 bool h8s_execute_semantic_block_exit(const h8s_block_t *block,

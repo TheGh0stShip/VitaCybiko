@@ -16,6 +16,7 @@ typedef struct {
     int      frame_start_level;    /* Level at the beginning of the current frame */
     double   cycles_per_sample;
     double   cycle_fraction;
+    double   filtered_level;
     uint8_t  buffer[SPEAKER_BUFFER_SIZE];
     int      buffer_pos;
 
