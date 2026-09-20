@@ -398,6 +398,67 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
         uint8_t lo = (uint8_t)op;
 
         switch (hi) {
+        case 0x0a:
+            if ((lo & 0x80) == 0) return false;
+            {
+                unsigned rs = (lo >> 4) & 0x7;
+                unsigned rd = lo & 0x7;
+                uint32_t s = state->er[rs];
+                uint32_t d = state->er[rd];
+                uint32_t result = d + s;
+                state->er[rd] = result;
+                block_set_arithmetic_l(state, d, s, result, false);
+            }
+            break;
+        case 0x14: {
+            unsigned rs = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            int result = block_get_reg_b(state, rd) | block_get_reg_b(state, rs);
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_nz_b(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0x15: {
+            unsigned rs = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            int result = block_get_reg_b(state, rd) ^ block_get_reg_b(state, rs);
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_nz_b(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0x16: {
+            unsigned rs = (lo >> 4) & 0xf;
+            unsigned rd = lo & 0xf;
+            int result = block_get_reg_b(state, rd) & block_get_reg_b(state, rs);
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_nz_b(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0x1a:
+            if ((lo & 0x80) == 0) return false;
+            {
+                unsigned rs = (lo >> 4) & 0x7;
+                unsigned rd = lo & 0x7;
+                uint32_t s = state->er[rs];
+                uint32_t d = state->er[rd];
+                uint32_t result = d - s;
+                state->er[rd] = result;
+                block_set_arithmetic_l(state, d, s, result, true);
+            }
+            break;
+        case 0x1f:
+            if ((lo & 0x80) == 0) return false;
+            {
+                unsigned rs = (lo >> 4) & 0x7;
+                unsigned rd = lo & 0x7;
+                uint32_t s = state->er[rs];
+                uint32_t d = state->er[rd];
+                block_set_arithmetic_l(state, d, s, d - s, true);
+            }
+            break;
         case 0x80: case 0x81: case 0x82: case 0x83:
         case 0x84: case 0x85: case 0x86: case 0x87:
         case 0x88: case 0x89: case 0x8a: case 0x8b:

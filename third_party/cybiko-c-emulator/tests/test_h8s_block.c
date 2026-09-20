@@ -342,6 +342,29 @@ static void test_semantic_block_long_compare_no_write(void)
     TEST_CHECK(state.pc == 6);
 }
 
+static void test_semantic_block_executes_register_alu_ops(void)
+{
+    const uint8_t rom[] = {
+        0x0a, 0x90, /* ADD.L ER1,ER0 */
+        0x1f, 0x90, /* CMP.L ER1,ER0; no write */
+        0x1a, 0x90, /* SUB.L ER1,ER0 */
+        0x14, 0x89, /* OR.B R0L,R1L */
+        0x15, 0x98, /* XOR.B R1L,R0L */
+        0x16, 0x89, /* AND.B R0L,R1L */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_block_cpu_state_t state = {
+        .er = {0x10, 0x02, 0, 0, 0, 0, 0, 0},
+        .ccr = 0
+    };
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK(state.er[0] == 0x02);
+    TEST_CHECK((state.er[1] & 0xff) == 0x02);
+    TEST_CHECK(state.pc == 12);
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -362,5 +385,6 @@ TEST_LIST = {
     { "semantic_block_addx_subx_sticky_zero", test_semantic_block_addx_subx_sticky_zero },
     { "semantic_block_executes_word_long_immediates", test_semantic_block_executes_word_long_immediates },
     { "semantic_block_long_compare_no_write", test_semantic_block_long_compare_no_write },
+    { "semantic_block_executes_register_alu_ops", test_semantic_block_executes_register_alu_ops },
     { NULL, NULL }
 };

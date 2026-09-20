@@ -57,9 +57,9 @@ Current block-discovery gate:
 - an isolated semantic block executor now handles non-memory register/immediate
   forms (`ADDS`/`SUBS` ER forms, `MOV.L` register, byte immediate
   ADD/ADDX/CMP/SUBX/OR/XOR/AND/MOV, and word/long immediate
-  MOV/ADD/CMP/SUB/OR/XOR/AND) against a small standalone CPU state. It is
-  deliberately not wired into `h8s_cpu_run` yet; tests prove the semantics
-  before runtime integration.
+  MOV/ADD/CMP/SUB/OR/XOR/AND, plus long register ADD/SUB/CMP and byte register
+  OR/XOR/AND) against a small standalone CPU state. It is deliberately not wired
+  into `h8s_cpu_run` yet; tests prove the semantics before runtime integration.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
