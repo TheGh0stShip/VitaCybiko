@@ -1405,6 +1405,30 @@ This is accepted because it fixes an internal policy bug in the optional fast
 path: a more-specific cached mutable reject should not be downgraded to the
 generic window-reject backoff.
 
+Accepted immutable-ROM RTS fast path: the latest Xtreme profile showed the top
+cached ROM rejects were tiny helper blocks such as `0x0076c2`
+(`MOV.L ER2,ER0; RTS`). The ROM semantic fast path rejected all return exits,
+even when the stack return address could be read from plain RAM and the return
+target was immutable boot ROM/flash. The fast path now accepts only `RTS`
+return exits through the existing transactional mixed-block executor, and only
+commits when the resolved return target is immutable. Returns to RAM, I/O or an
+unreadable stack still reject and execute through the interpreter.
+
+Validation:
+
+- focused H8S CPU suite passed, including a new ROM `RTS` test with a plain RAM
+  stack return back into boot ROM;
+- full host suite passed 17/17;
+- Xtreme direct 600-frame smoke passed and improved to
+  `cpu_seconds=1.215664`, with unsupported-exit rejects dropping from about
+  103 to 19;
+- three-model smoke passed using Vita-pulled fixtures:
+  Classic V1 0.85 s, Classic V2 0.36 s, Xtreme 1.40 s wall time.
+
+This is accepted as a narrow branch-aware cached interpretation step. It does
+not implement a general call/return tier; it only handles the common immutable
+ROM helper-return case with explicit stack and target guards.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

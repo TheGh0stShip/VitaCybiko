@@ -2383,6 +2383,15 @@ static bool h8s_cpu_get_mutable_fetch_window(h8s_cpu_t *cpu, const uint8_t **dat
     return true;
 }
 
+static bool h8s_cpu_pc_is_immutable_target(const h8s_cpu_t *cpu, uint32_t pc)
+{
+    if (!cpu || !cpu->bus || !cpu->bus->machine) return false;
+    const cybiko_machine_t *m = cpu->bus->machine;
+    pc &= 0xffffffu;
+    return pc <= m->boot_end ||
+           (m->flash_size && pc >= m->flash_base && pc <= m->flash_end);
+}
+
 static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit,
                                                        int *cycles,
                                                        uint32_t start_pc)
@@ -2573,7 +2582,9 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     }
     if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
-        block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24) {
+        block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24 &&
+        !(block->branch_kind == H8S_BLOCK_BRANCH_RETURN &&
+          block->branch_op == 0x5470)) {
         semantic_reject_cache_store(cpu, data, start_pc);
         return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_unsupported_exit,
                                                  SEM_REJECT_UNSUPPORTED_EXIT, start_pc);
@@ -2590,18 +2601,25 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
         state.er[i] = cpu->er[i];
 
     uint32_t next_offset = 0;
-    if (!h8s_execute_semantic_block_exit(block, &cpu->semantic_edge_cache,
-                                         &state, &next_offset)) {
+    bool executed = false;
+    if (block->branch_kind == H8S_BLOCK_BRANCH_RETURN) {
+        executed = h8s_execute_mixed_plain_block_exit(block,
+                                                      &cpu->semantic_edge_cache,
+                                                      cpu->bus, base, &state,
+                                                      &next_offset);
+    } else {
+        executed = h8s_execute_semantic_block_exit(block,
+                                                   &cpu->semantic_edge_cache,
+                                                   &state, &next_offset);
+    }
+    if (!executed) {
         return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_branch_resolve,
                                     SEM_REJECT_BRANCH_RESOLVE, start_pc);
     }
     uint32_t next_pc = next_offset;
-    if (block->branch_kind == H8S_BLOCK_BRANCH_JMP_ABS24) {
-        const cybiko_machine_t *m = cpu->bus->machine;
-        bool immutable_target =
-            next_pc <= m->boot_end ||
-            (m->flash_size && next_pc >= m->flash_base && next_pc <= m->flash_end);
-        if (!immutable_target) {
+    if (block->branch_kind == H8S_BLOCK_BRANCH_JMP_ABS24 ||
+        block->branch_kind == H8S_BLOCK_BRANCH_RETURN) {
+        if (!h8s_cpu_pc_is_immutable_target(cpu, next_pc)) {
             semantic_reject_cache_store(cpu, data, start_pc);
             return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_target,
                                                      SEM_REJECT_TARGET, start_pc);

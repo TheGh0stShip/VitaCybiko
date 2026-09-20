@@ -427,6 +427,36 @@ static void test_semantic_rom_block_fast_path_executes_branch_only_bcc(void) {
     teardown();
 }
 
+static void test_semantic_rom_block_fast_path_executes_rts_to_rom(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_init(&bus.external_ram, bus.machine->ram_size, true);
+    memory_write16(&bus.boot_rom, 0x100, 0x0FA0); /* MOV.L ER2,ER0 */
+    memory_write16(&bus.boot_rom, 0x102, 0x5470); /* RTS */
+    memory_write16(&bus.boot_rom, 0x120, 0x0B01); /* immutable return target */
+    bus_build_memory_map(&bus);
+
+    uint32_t sp = bus.machine->ram_base + 0x200;
+    bus_write32(&bus, sp, 0x8120);
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+    cpu.er[2] = 0x12345678;
+    cpu.er[7] = sp;
+    int cycles = 0;
+    TEST_CHECK(h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
+    TEST_CHECK(cycles == 2);
+    TEST_CHECK(cpu.pc == 0x8120);
+    TEST_CHECK(cpu.er[0] == 0x12345678);
+    TEST_CHECK(cpu.er[7] == sp + 4);
+    TEST_CHECK(cpu.cycle_count == 2);
+    TEST_CHECK(cpu.semantic_fast_blocks == 1);
+    TEST_CHECK(cpu.semantic_fast_cycles == 2);
+
+    memory_free(&bus.external_ram);
+    memory_free(&bus.boot_rom);
+    teardown();
+}
+
 static void test_semantic_mutable_block_fast_path_matches_steps(void) {
     setup();
     memory_init(&bus.external_ram, bus.machine->ram_size, true);
@@ -973,6 +1003,7 @@ TEST_LIST = {
     {"immutable_fetch_window_rejects_ram_and_io", test_immutable_fetch_window_rejects_ram_and_io},
     {"semantic_rom_block_fast_path_executes_bcc", test_semantic_rom_block_fast_path_executes_bcc},
     {"semantic_rom_block_fast_path_executes_branch_only_bcc", test_semantic_rom_block_fast_path_executes_branch_only_bcc},
+    {"semantic_rom_block_fast_path_executes_rts_to_rom", test_semantic_rom_block_fast_path_executes_rts_to_rom},
     {"semantic_mutable_block_fast_path_matches_steps", test_semantic_mutable_block_fast_path_matches_steps},
     {"semantic_mutable_reject_cache_invalidates_on_code_write", test_semantic_mutable_reject_cache_invalidates_on_code_write},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
