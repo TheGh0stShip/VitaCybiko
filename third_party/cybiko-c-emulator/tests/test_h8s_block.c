@@ -765,6 +765,56 @@ static void test_plain_memory_instruction_matches_long_displacement(void)
     teardown_memory_equiv_cpu(&bus);
 }
 
+static void test_plain_memory_instruction_matches_absolute_byte_read(void)
+{
+    const uint8_t code[] = {0x6a, 0x02, 0x00, 0x80}; /* MOV.B @0x80:16,R2H */
+    uint8_t rom[4] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0xff);
+    memory_write8(&bus.boot_rom, 0x80, 0x7e);
+
+    h8s_block_cpu_state_t state = {.ccr = 0xff, .pc = 0};
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[2] == cpu.er[2]);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_plain_memory_instruction_matches_absolute_word_read(void)
+{
+    const uint8_t code[] = {0x6b, 0x02, 0x01, 0x20}; /* MOV.W @0x120:16,R2 */
+    uint8_t rom[4] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+    memory_write16(&bus.boot_rom, 0x120, 0x8001);
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[2] == cpu.er[2]);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_plain_memory_instruction_matches_multi_pop(void)
 {
     const uint8_t code[] = {0x01, 0x10, 0x6d, 0x75}; /* MOV.L @SP+,ER5-ER4 */
@@ -1765,6 +1815,8 @@ TEST_LIST = {
     { "plain_memory_instruction_rejects_mmio_and_rom_write", test_plain_memory_instruction_rejects_mmio_and_rom_write },
     { "plain_memory_instruction_matches_byte_postincrement", test_plain_memory_instruction_matches_byte_postincrement },
     { "plain_memory_instruction_matches_long_displacement", test_plain_memory_instruction_matches_long_displacement },
+    { "plain_memory_instruction_matches_absolute_byte_read", test_plain_memory_instruction_matches_absolute_byte_read },
+    { "plain_memory_instruction_matches_absolute_word_read", test_plain_memory_instruction_matches_absolute_word_read },
     { "plain_memory_instruction_matches_multi_pop", test_plain_memory_instruction_matches_multi_pop },
     { "plain_memory_instruction_matches_multi_push", test_plain_memory_instruction_matches_multi_push },
     { "counts_variable_immediates", test_counts_variable_immediates },

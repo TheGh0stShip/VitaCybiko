@@ -1120,6 +1120,28 @@ stack MOV forms; the profile still shows ~46.8k Xtreme window rejects, with
 top sites now around `0x49b928` (`0x2ab3 0x735a`), `0x4adf4e`
 (`0x6b02 0xfea6`), and call/return-heavy targets.
 
+Small accepted absolute-MOV coverage: the mixed plain-memory tier now also
+recognizes guarded `0x6a` byte absolute and `0x6b` word absolute MOV forms for
+ordinary memory. Focused tests compare `MOV.B @aa:16,R2H` and
+`MOV.W @aa:16,R2` against the interpreter. This deliberately does not fast-path
+the `0x2a`/`0x3a` short `@aa:8` I/O-page forms; profiling showed the top
+`0x49b928` reject begins with `0x2ab3`, which resolves to the on-chip I/O page
+and must remain interpreter/MMIO-visible.
+
+Validation:
+
+- focused `test_h8s_block` and `test_h8s_cpu` passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 1.32 s, Classic V2 0.54 s, Xtreme
+  1.71 s;
+- direct Xtreme repeats: 1.631/1.611/1.596 s with about 1.0M mutable fast
+  blocks and ~46.9k window rejects.
+
+This is accepted as safe coverage only. The unchanged window-reject count is
+evidence that the remaining top sites are dominated by MMIO and call/return
+boundaries; optimizing those for PS Vita requires a different design than
+blindly adding more plain-memory MOV forms.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

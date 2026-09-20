@@ -1888,6 +1888,29 @@ bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
         write = (lo & 0x80) != 0;
         reg = lo & 0xf;
         switch (hi) {
+        case 0x6a: /* MOV.B @aa:16/24,Rd / Rs,@aa:16/24 */
+            if (insn->bytes != 4 && insn->bytes != 6) return false;
+            bytes = 1;
+            if ((lo >> 4) == 1 || (lo >> 4) == 3) return false;
+            if (lo & 0x20) {
+                if (insn->bytes != 6) return false;
+                address = insn->imm & 0xffffffu;
+            } else {
+                if (insn->bytes != 4) return false;
+                address = (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+            }
+            break;
+        case 0x6b: /* MOV.W @aa:16/24,Rd / Rs,@aa:16/24 */
+            if (insn->bytes != 4 && insn->bytes != 6) return false;
+            bytes = 2;
+            if (lo & 0x20) {
+                if (insn->bytes != 6) return false;
+                address = insn->imm & 0xffffffu;
+            } else {
+                if (insn->bytes != 4) return false;
+                address = (uint32_t)(int32_t)(int16_t)(insn->imm & 0xffffu);
+            }
+            break;
         case 0x68: /* MOV.B @ERn,Rd / Rs,@ERn */
             if (insn->bytes != 2) return false;
             bytes = 1;
@@ -2009,6 +2032,13 @@ static bool plain_memory_instruction_supported(const h8s_block_instruction_t *in
             return rn + count < 8;
         return false;
     }
+    if (hi == 0x6a) {
+        if ((op & 0x00f0u) == 0x0010u || (op & 0x00f0u) == 0x0030u)
+            return false;
+        return (op & 0x0020u) ? insn->bytes == 6 : insn->bytes == 4;
+    }
+    if (hi == 0x6b)
+        return (op & 0x0020u) ? insn->bytes == 6 : insn->bytes == 4;
     return (hi == 0x68 || hi == 0x69 || hi == 0x6c || hi == 0x6d) ?
            insn->bytes == 2 :
            (hi == 0x6e || hi == 0x6f) ? insn->bytes == 4 : false;
