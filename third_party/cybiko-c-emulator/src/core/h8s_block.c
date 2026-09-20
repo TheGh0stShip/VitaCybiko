@@ -16,18 +16,85 @@ static bool is_control_transfer(uint16_t op)
     return false;
 }
 
-static bool instruction_length(uint16_t op, unsigned *bytes, bool *prefix_stop)
+static bool prefixed_01_length(const uint8_t *rom, size_t rom_size,
+                               uint32_t pc, uint16_t op, unsigned *bytes,
+                               bool *control_stop)
+{
+    uint8_t lo = (uint8_t)op;
+    if (lo == 0x80) {
+        *control_stop = true;
+        return false;
+    }
+    if ((size_t)pc + 3 >= rom_size) return false;
+
+    uint16_t op2 = read_be16(rom + pc + 2);
+    uint8_t hi2 = (uint8_t)(op2 >> 8);
+    uint8_t lo2 = (uint8_t)op2;
+
+    switch (lo) {
+    case 0x00:
+        switch (hi2) {
+        case 0x69: case 0x6d:
+            *bytes = 4;
+            return true;
+        case 0x6b:
+            *bytes = (lo2 & 0x20) ? 8 : 6;
+            return true;
+        case 0x6f:
+            *bytes = 6;
+            return true;
+        case 0x78:
+            *bytes = 8;
+            return true;
+        default:
+            *bytes = 4;
+            return true;
+        }
+    case 0x10: case 0x20: case 0x30:
+    case 0x41:
+        *bytes = 4;
+        return true;
+    case 0x40:
+        switch (hi2) {
+        case 0x69: case 0x6d:
+            *bytes = 4;
+            return true;
+        case 0x6b:
+            *bytes = (lo2 & 0x20) ? 8 : 6;
+            return true;
+        case 0x6f:
+            *bytes = 6;
+            return true;
+        default:
+            *bytes = 4;
+            return true;
+        }
+    case 0xc0: case 0xd0: case 0xf0:
+        if (hi2 == 0x6b) {
+            *bytes = (lo2 & 0x20) ? 8 : 6;
+        } else {
+            *bytes = 4;
+        }
+        return true;
+    default:
+        *bytes = 4;
+        return true;
+    }
+}
+
+static bool instruction_length(const uint8_t *rom, size_t rom_size,
+                               uint32_t pc, uint16_t op, unsigned *bytes,
+                               bool *prefix_stop, bool *control_stop)
 {
     uint8_t hi = (uint8_t)(op >> 8);
     uint8_t lo = (uint8_t)op;
     *prefix_stop = false;
+    *control_stop = false;
 
     switch (hi >> 4) {
     case 0x0:
-        if (hi == 0x01) {
-            *prefix_stop = true;
-            return false;
-        }
+        if (hi == 0x01)
+            return prefixed_01_length(rom, rom_size, pc, op, bytes, control_stop);
         *bytes = 2;
         return true;
     case 0x1:
@@ -57,9 +124,13 @@ static bool instruction_length(uint16_t op, unsigned *bytes, bool *prefix_stop)
         *bytes = 2;
         return true;
     case 0x7:
-        if (hi == 0x78 || hi == 0x7b || hi >= 0x7c) {
-            *prefix_stop = true;
-            return false;
+        if (hi == 0x78) {
+            *bytes = 8;
+            return true;
+        }
+        if (hi == 0x7b || hi >= 0x7c) {
+            *bytes = 4;
+            return true;
         }
         if (hi == 0x79) {
             *bytes = 4;
@@ -110,8 +181,10 @@ bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
 
         unsigned bytes = 0;
         bool prefix_stop = false;
-        if (!instruction_length(op, &bytes, &prefix_stop)) {
-            block.stop = prefix_stop ? H8S_BLOCK_STOP_PREFIX : H8S_BLOCK_STOP_UNSUPPORTED;
+        bool control_stop = false;
+        if (!instruction_length(rom, rom_size, pc, op, &bytes, &prefix_stop, &control_stop)) {
+            block.stop = control_stop ? H8S_BLOCK_STOP_BRANCH :
+                         prefix_stop ? H8S_BLOCK_STOP_PREFIX : H8S_BLOCK_STOP_UNSUPPORTED;
             block.stop_pc = pc;
             break;
         }

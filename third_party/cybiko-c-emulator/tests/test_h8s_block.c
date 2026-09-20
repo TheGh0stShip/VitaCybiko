@@ -49,17 +49,36 @@ static void test_counts_absolute_and_compound_bit_lengths(void)
     TEST_CHECK(block.stop_pc == 24);
 }
 
-static void test_prefix_is_conservative_boundary(void)
+static void test_counts_prefix_lengths(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x00,                         /* ADDS #1, ER0 */
+        0x01, 0x00, 0x69, 0x00,             /* MOV.L @ER0, ER0 */
+        0x01, 0x00, 0x6b, 0x20, 0x12, 0x34, 0x56, 0x78,
+        0x78, 0x00, 0x6a, 0x00, 0, 0, 0, 4, /* MOV.B @(d:32, ER0), R0 */
+        0x7c, 0x00, 0x70, 0x00,             /* bit op memory prefix */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.instructions == 5);
+    TEST_CHECK(block.bytes == 26);
+    TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
+    TEST_CHECK(block.stop_pc == 26);
+}
+
+static void test_sleep_is_control_boundary(void)
 {
     const uint8_t rom[] = {
         0x0b, 0x00,
-        0x01, 0x00, 0x69, 0x00
+        0x01, 0x80,
+        0x0b, 0x01
     };
     h8s_block_t block;
     TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
     TEST_CHECK(block.instructions == 1);
     TEST_CHECK(block.bytes == 2);
-    TEST_CHECK(block.stop == H8S_BLOCK_STOP_PREFIX);
+    TEST_CHECK(block.stop == H8S_BLOCK_STOP_BRANCH);
     TEST_CHECK(block.stop_pc == 2);
 }
 
@@ -80,7 +99,8 @@ TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
-    { "prefix_is_conservative_boundary", test_prefix_is_conservative_boundary },
+    { "counts_prefix_lengths", test_counts_prefix_lengths },
+    { "sleep_is_control_boundary", test_sleep_is_control_boundary },
     { "truncated_instruction", test_truncated_instruction },
     { NULL, NULL }
 };

@@ -33,7 +33,8 @@ Gates:
 Current block-discovery gate:
 
 - stops before Bcc/RTS/RTE/TRAPA/JMP/JSR/SLEEP control transfers;
-- treats prefix and unknown variable-length forms as conservative boundaries;
+- decodes implemented prefix instruction lengths while keeping control-flow
+  prefixes as conservative boundaries;
 - validates fixed and immediate instruction lengths before any runtime cache
   can use the ranges;
 - all 17 host test groups pass with `h8s_block` included;
@@ -44,17 +45,16 @@ Local block-scan coverage, max 32 instructions per candidate start:
 
 | Image | Avg insns | Stop branch | Stop prefix | Stop unsupported |
 | --- | ---: | ---: | ---: | ---: |
-| Classic V1 boot | 11.41 | 7,560 | 4,257 | 0 |
-| Classic V1 flash | 6.77 | 201,824 | 60,924 | 0 |
-| Classic V2 boot | 9.99 | 8,146 | 4,469 | 0 |
-| Classic V2 flash | 3.36 | 77,738 | 49,479 | 0 |
-| Xtreme boot | 6.34 | 9,917 | 4,830 | 0 |
-| Xtreme flash | 7.02 | 201,159 | 49,938 | 0 |
+| Classic V1 boot | 13.19 | 11,634 | 0 | 0 |
+| Classic V1 flash | 9.29 | 250,552 | 0 | 0 |
+| Classic V2 boot | 11.91 | 12,384 | 0 | 0 |
+| Classic V2 flash | 5.65 | 123,488 | 0 | 0 |
+| Xtreme boot | 8.11 | 14,591 | 0 | 0 |
+| Xtreme flash | 8.68 | 246,250 | 0 | 0 |
 
-The scan shows branch boundaries dominate and unsupported length decoding is no
-longer the blocker. The next decoded-block step should expand prefix handling
-or begin cache entries that execute only the already classified straight-line
-forms.
+The scan shows branch boundaries now dominate; unsupported and prefix length
+decoding are no longer the blocker. The next decoded-block step should begin
+cache entries that execute only the classified straight-line forms.
 
 ## Goal C — ARMv7 translation backend
 
