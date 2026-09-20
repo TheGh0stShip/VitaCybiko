@@ -1379,6 +1379,32 @@ Validation:
 This is accepted as a safe throughput cleanup, not a device emulation shortcut:
 the actual `0xffffxx` access remains on the interpreter/MMIO path.
 
+Accepted mutable cached-reject backoff preservation: profiling after the short
+absolute classifier fix showed Xtreme still reporting hot RAM-window rejects,
+because the mutable-block reject-cache path set the intended
+`H8S_SEMANTIC_CACHED_REJECT_BACKOFF` and then the immutable-window caller
+immediately overwrote it with the shorter generic window backoff. The caller
+now preserves any backoff already set by the mutable probe while still
+recording the reject counters. This reduces repeated probing at known
+RAM/MMIO-boundary PCs without changing guest execution; rejected instructions
+continue through the interpreter.
+
+Validation:
+
+- focused H8S CPU suite passed;
+- full host suite passed 17/17;
+- Xtreme 600-frame smoke passed and direct counters improved:
+  `semantic_fast_reject_window` dropped from about 26.2k to 4.2k,
+  `semantic_mutable_reject_cached` dropped from about 26.0k to 4.0k, and
+  `semantic_mutable_prefix_blocks` dropped from about 8.7k to 3.8k because the
+  hot boundary PCs are probed less often;
+- three-model smoke passed using Vita-pulled fixtures:
+  Classic V1 1.28 s, Classic V2 0.54 s, Xtreme 1.82 s wall time.
+
+This is accepted because it fixes an internal policy bug in the optional fast
+path: a more-specific cached mutable reject should not be downgraded to the
+generic window-reject backoff.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

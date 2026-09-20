@@ -2543,6 +2543,11 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     if (!h8s_cpu_get_immutable_fetch_window(cpu, &data, &base, &size)) {
         if (h8s_cpu_try_execute_semantic_mutable_block(cpu, limit, cycles, start_pc))
             return true;
+        if (cpu->semantic_reject_backoff) {
+            semantic_window_profile_record(cpu, start_pc);
+            return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_window,
+                                        SEM_REJECT_WINDOW, start_pc);
+        }
         semantic_window_profile_record(cpu, start_pc);
         return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_window,
                                                  SEM_REJECT_WINDOW, start_pc);
