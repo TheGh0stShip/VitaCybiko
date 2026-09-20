@@ -100,6 +100,16 @@ static void print_top_branch_targets(const unsigned long long *counts,
     free(printed);
 }
 
+static bool target_semantic_supported(const uint8_t *rom, size_t rom_size,
+                                      unsigned max_instructions, uint32_t target)
+{
+    if ((target & 1u) != 0 || (size_t)target + 1 >= rom_size) return false;
+    h8s_block_t target_block;
+    if (!h8s_analyze_rom_block(rom, rom_size, target, max_instructions, &target_block))
+        return false;
+    return h8s_semantic_block_supported(&target_block);
+}
+
 static unsigned parse_uint(const char *text, unsigned fallback)
 {
     if (!text) return fallback;
@@ -162,6 +172,11 @@ int main(int argc, char **argv)
     unsigned long long branch_static_targets = 0;
     unsigned long long branch_targets_in_rom = 0;
     unsigned long long branch_targets_even = 0;
+    unsigned long long chain_edges = 0;
+    unsigned long long chain_edges_in_rom_even = 0;
+    unsigned long long chain_edges_semantic_target = 0;
+    unsigned long long chain_conditional_edges = 0;
+    unsigned long long chain_unconditional_edges = 0;
     size_t target_slots = (rom_size + 1) / 2;
     unsigned long long *branch_target_hits = calloc(target_slots ? target_slots : 1,
                                                     sizeof(*branch_target_hits));
@@ -211,6 +226,32 @@ int main(int argc, char **argv)
                     }
                 }
             }
+            if (block.branch_kind == H8S_BLOCK_BRANCH_BCC8 ||
+                block.branch_kind == H8S_BLOCK_BRANCH_BCC16) {
+                uint32_t edge_targets[] = {block.branch_fallthrough, block.branch_target};
+                for (unsigned edge = 0; edge < 2; ++edge) {
+                    chain_edges++;
+                    chain_conditional_edges++;
+                    if ((edge_targets[edge] & 1u) == 0 && (size_t)edge_targets[edge] + 1 < rom_size) {
+                        chain_edges_in_rom_even++;
+                        if (target_semantic_supported(rom, rom_size, max_instructions, edge_targets[edge]))
+                            chain_edges_semantic_target++;
+                    }
+                }
+            } else if (block.branch_kind == H8S_BLOCK_BRANCH_BSR8 ||
+                       block.branch_kind == H8S_BLOCK_BRANCH_BSR16 ||
+                       block.branch_kind == H8S_BLOCK_BRANCH_JMP_ABS24 ||
+                       block.branch_kind == H8S_BLOCK_BRANCH_JSR_ABS24) {
+                chain_edges++;
+                chain_unconditional_edges++;
+                if (block.branch_has_target &&
+                    (block.branch_target & 1u) == 0 &&
+                    (size_t)block.branch_target + 1 < rom_size) {
+                    chain_edges_in_rom_even++;
+                    if (target_semantic_supported(rom, rom_size, max_instructions, block.branch_target))
+                        chain_edges_semantic_target++;
+                }
+            }
         }
         if (block.instructions > longest) {
             longest = block.instructions;
@@ -237,6 +278,9 @@ int main(int argc, char **argv)
         printf("stop_%s=%llu\n", stop_name((h8s_block_stop_t)i), stops[i]);
     printf("branch_conditional=%llu branch_static_targets=%llu branch_targets_in_rom=%llu branch_targets_even=%llu\n",
            branch_conditional, branch_static_targets, branch_targets_in_rom, branch_targets_even);
+    printf("chain_edges=%llu chain_conditional_edges=%llu chain_unconditional_edges=%llu chain_edges_in_rom_even=%llu chain_edges_semantic_target=%llu\n",
+           chain_edges, chain_conditional_edges, chain_unconditional_edges,
+           chain_edges_in_rom_even, chain_edges_semantic_target);
     for (unsigned i = 0; i <= H8S_BLOCK_BRANCH_SLEEP; ++i)
         printf("branch_%s=%llu\n", branch_kind_name((h8s_block_branch_kind_t)i), branch_kinds[i]);
     if (branch_target_hits) {

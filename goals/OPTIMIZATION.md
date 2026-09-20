@@ -111,8 +111,10 @@ Current block-discovery gate:
   exits (return, indirect, trap, sleep) deliberately reject resolution so a
   future dispatcher cannot accidentally chain through state-dependent exits.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
-  branch targets. This turns branch-aware cached-block work into a measurable
-  target instead of guessing from aggregate stop counts.
+  branch targets. It also reports chainable static edges and how many of those
+  edges land on semantic-supported decoded blocks. This turns branch-aware
+  cached-block work into a measurable target instead of guessing from aggregate
+  stop counts.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -175,6 +177,19 @@ Branch resolver gate:
 - Unit tests cover unconditional/never, equality, sign/overflow, signed
   greater/less, d:8/d:16 forms, absolute jump/call targets, and rejection of
   RTS/RTE/TRAPA/indirect/SLEEP exits.
+
+Current Classic V2 static chain-edge scan:
+
+| Image | Static chain edges | Conditional edges | Unconditional edges | In-ROM even edges | Semantic target edges |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Boot (`emu_rom.bin`) | 18,992 | 17,106 | 1,886 | 18,379 | 3,810 |
+| CyOS (`emu_cyos.bin`) | 156,115 | 109,546 | 46,569 | 112,949 | 29,700 |
+| DataFlash (`emu_flash.bin`) | 370,532 | 337,954 | 32,578 | 278,241 | 44,684 |
+
+The static chain-edge scan shows that a branch-aware tier must keep a cheap
+dispatcher fallback for non-semantic target blocks; a naive always-chain
+semantic path would leave most static edges uncovered. This favors a small C
+cached-interpreter dispatcher/edge cache before attempting ARMv7 native code.
 
 Do not make semantic block execution the default Vita runtime path until the
 guarded runtime experiment proves an actual speedup without breaking
