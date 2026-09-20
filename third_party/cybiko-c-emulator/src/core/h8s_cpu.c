@@ -128,19 +128,33 @@ static void cache_instruction_memory(h8s_cpu_t *cpu, uint32_t pc) {
     cpu->fetch_data = memory ? memory->data : NULL;
     cpu->fetch_base = base;
     cpu->fetch_end = memory ? base + (uint32_t)memory->size : 0;
+    cpu->fetch_immutable = memory == &b->boot_rom || memory == &b->flash_rom;
+    cpu->prefetch_valid = false;
     if (memory == &b->on_chip_ram && cpu->fetch_end > 0xFFFC00)
         cpu->fetch_end = 0xFFFC00;
 }
 
 static inline uint16_t fetch16(h8s_cpu_t *cpu) {
     uint32_t pc = cpu->pc & 0xffffff;
+    if (CPU_LIKELY(cpu->prefetch_valid && cpu->prefetch_pc == pc)) {
+        uint16_t val = cpu->prefetch_word;
+        cpu->pc = (pc + 2) & 0xffffff;
+        cpu->prefetch_valid = false;
+        return val;
+    }
     /* Firmware executes in long contiguous runs from ROM/RAM. Prefer the
      * validated region cache before looking up a 4 KiB bus page; peripheral
      * addresses never enter this range and still use the bus path below. */
     if (CPU_LIKELY(cpu->fetch_data && pc >= cpu->fetch_base && pc + 1 < cpu->fetch_end)) {
         const uint8_t *p = cpu->fetch_data + (pc - cpu->fetch_base);
         cpu->pc = (pc + 2) & 0xffffff;
-        return (uint16_t)((p[0] << 8) | p[1]);
+        uint16_t val = (uint16_t)((p[0] << 8) | p[1]);
+        if (cpu->fetch_immutable && cpu->pc + 3 < cpu->fetch_end) {
+            cpu->prefetch_pc = cpu->pc;
+            cpu->prefetch_word = (uint16_t)((p[2] << 8) | p[3]);
+            cpu->prefetch_valid = true;
+        }
+        return val;
     }
     const uint8_t *page = cpu->bus->read_pages[pc >> 12];
     unsigned offset = pc & 4095;
@@ -1724,6 +1738,10 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->pending_irq_count = 0;
     cpu->fetch_data = NULL;
     cpu->fetch_base = cpu->fetch_end = 0;
+    cpu->prefetch_pc = 0;
+    cpu->prefetch_word = 0;
+    cpu->prefetch_valid = false;
+    cpu->fetch_immutable = false;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
