@@ -757,7 +757,10 @@ static void decode01(h8s_cpu_t *cpu, int lo) {
             } else { unimplemented(cpu, 0x0100 | lo, cpu->pc - 4); }
             break;
         }
-        case 0x80: cpu->halted = true; break;
+        case 0x80:
+            cpu->halted = true;
+            branch_profile_record(10, true, cpu->pc);
+            break;
         default: { uint16_t op2 = fetch16(cpu); (void)op2; unimplemented(cpu, 0x0100 | lo, cpu->pc - 4); break; }
     }
 }
@@ -1408,6 +1411,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
             if (lo == 0x70) {
                 cpu->pc = bus_read32(cpu->bus, cpu->er[7]) & 0xFFFFFF;
                 cpu->er[7] += 4;
+                branch_profile_record(8, true, cpu->pc);
             } else { unimplemented(cpu, op, cpu->pc - 2); }
             break;
         }
@@ -1428,6 +1432,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
                 cpu->ccr = (uint8_t)(frame >> 24);
                 cpu->pc = frame & 0xFFFFFF;
                 cpu->er[7] += 4;
+                branch_profile_record(8, true, cpu->pc);
             } else { unimplemented(cpu, op, cpu->pc - 2); }
             break;
         }
@@ -1438,6 +1443,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
                 bus_write32(cpu->bus, cpu->er[7], ((uint32_t)cpu->ccr << 24) | cpu->pc);
                 cpu->pc = bus_read32(cpu->bus, 0x20 + (uint32_t)vec * 4) & 0xFFFFFF;
                 set_flag(cpu, BIT_I, true);
+                branch_profile_record(9, true, cpu->pc);
             } else { unimplemented(cpu, op, cpu->pc - 2); }
             break;
         }
@@ -1453,6 +1459,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
         case 0x59: { /* JMP @ERn */
             int rn = (lo >> 4) & 0x7;
             cpu->pc = cpu->er[rn] & 0xFFFFFF;
+            branch_profile_record(7, true, cpu->pc);
             break;
         }
         case 0x5A: { /* JMP @aa:24 */
@@ -1463,6 +1470,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
         }
         case 0x5B: { /* JMP @@aa:8 */
             cpu->pc = bus_read32(cpu->bus, lo & 0xFF) & 0xFFFFFF;
+            branch_profile_record(7, true, cpu->pc);
             break;
         }
         case 0x5C: { /* BSR d:16 */
@@ -1479,6 +1487,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
             cpu->er[7] -= 4;
             bus_write32(cpu->bus, cpu->er[7], cpu->pc);
             cpu->pc = cpu->er[rn] & 0xFFFFFF;
+            branch_profile_record(7, true, cpu->pc);
             break;
         }
         case 0x5E: { /* JSR @aa:24 */
@@ -1494,6 +1503,7 @@ static void decode5(h8s_cpu_t *cpu, uint16_t op, int hi, int lo) {
             cpu->er[7] -= 4;
             bus_write32(cpu->bus, cpu->er[7], cpu->pc);
             cpu->pc = addr;
+            branch_profile_record(7, true, cpu->pc);
             break;
         }
         default: unimplemented(cpu, op, cpu->pc - 2); break;

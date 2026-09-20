@@ -261,7 +261,8 @@ Executed opcode profile gate:
 - `CYBIKO_OPCODE_PROFILE=ON` now builds a host-only profiler that dumps H8S
   opcode high-byte counts at process exit; normal release/Vita builds leave it
   disabled. It now also reports dynamic static-branch execution/taken counts
-  and a direct-mapped top target sample for Bcc/BSR/JMP/JSR static targets.
+  and a direct-mapped top target sample for Bcc/BSR/JMP/JSR, return,
+  indirect, trap, and sleep exits.
 - 600-frame smoke profiles show that byte-immediate opcodes are not the right
   first runtime tier. The hottest groups are prefix `0x01`, `0x0f` MOV.L
   register, branches (`0x40`-`0x4f`), shifts/rotates (`0x10`/`0x11`), ADDS/SUBS
@@ -286,12 +287,18 @@ Dynamic branch profile on the locally staged Classic V2 600-frame smoke:
 | BSR d:16 | 19 | 19 | Rare |
 | JMP abs24 | 423 | 423 | Rare static exit |
 | JSR abs24 | 584,470 | 584,470 | Important static call edge |
+| Indirect JMP/JSR | 42,163 | 42,163 | Needs exit-to-dispatch, not static chaining |
+| Return/RTE | 654,985 | 654,985 | Hot enough to require a return/stack-aware exit plan |
+| Sleep | 1,297 | 1,297 | Event scheduler boundary |
 
 Top sampled dynamic branch targets included `0x001598` (562,841),
 `0x0061e0` (481,591), `0x002418` (278,288), and `0x0061ea`
 (198,809). This is much stronger evidence than the static scan: the next
 runtime experiment must prioritize Bcc d:8 taken/fall-through dispatch and hot
-JSR/static-target linking, with explicit event-deadline exits.
+JSR/static-target linking, while treating returns, indirect jumps/calls, sleep,
+and event deadlines as explicit exits back to the dispatcher. A branch-aware
+tier that ignores returns would miss a larger dynamic exit class than direct
+JSR abs24.
 
 Rejected runtime experiment on 2026-09-20:
 
