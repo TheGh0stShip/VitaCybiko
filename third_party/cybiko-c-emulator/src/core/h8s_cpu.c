@@ -1875,6 +1875,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->semantic_fast_cycles = 0;
     cpu->semantic_fast_rejects = 0;
     cpu->semantic_fast_cached_rejects = 0;
+    cpu->semantic_fast_backoff_skips = 0;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
@@ -2040,6 +2041,7 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     cpu->ccr = state.ccr;
     cpu->pc = next_pc & 0xffffff;
     cpu->cycle_count += (uint64_t)block_cycles;
+    cpu->semantic_reject_backoff = 0;
     cpu->semantic_fast_blocks++;
     cpu->semantic_fast_cycles += (uint64_t)block_cycles;
     *cycles = block_cycles;
@@ -2057,7 +2059,10 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
             !cpu->bus->sync_peripherals ||
             remaining > (H8S_BLOCK_MAX_INSTRUCTIONS + 1);
         bool can_probe_fast_path = cpu->semantic_reject_backoff == 0;
-        if (cpu->semantic_reject_backoff) cpu->semantic_reject_backoff--;
+        if (cpu->semantic_reject_backoff) {
+            cpu->semantic_reject_backoff--;
+            cpu->semantic_fast_backoff_skips++;
+        }
         if (can_skip_mid_block_sync &&
             can_probe_fast_path &&
             h8s_cpu_try_execute_semantic_rom_block(cpu, remaining, &fast_cycles)) {

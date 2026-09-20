@@ -180,6 +180,22 @@ Current block-discovery gate:
   next optimization must use this telemetry to either broaden safe semantic
   block execution or make the backoff adaptive, not return to every-cycle
   semantic probing.
+- The emulator API and `cybiko-smoke` now also report
+  `semantic_fast_backoff_skips`, the number of optional semantic probes skipped
+  while the cached-reject backoff was active. The Classic V2 600-frame smoke at
+  the fixed 128-cycle gate reported `semantic_fast_backoff_skips=11731784`,
+  proving that avoided failed probes are a material part of the current speedup
+  and must remain visible in Vita/host logs.
+
+Rejected follow-up experiment on 2026-09-20:
+
+- An adaptive cached-reject backoff that ramped from 16 to 128 cycles and reset
+  on semantic-block success preserved the `h8s_cpu` focused test and Classic V2
+  smoke activity, but regressed the same 600-frame smoke to 4.467410 CPU
+  seconds and produced repeated unmapped reads around PC `0x12831A`/`0x128322`.
+  Keep the measured fixed 128-cycle window until a broader block executor or a
+  PC-local policy can be validated. A global adaptive streak is too sensitive
+  to phase changes in CyOS boot.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware

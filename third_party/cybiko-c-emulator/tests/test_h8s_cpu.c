@@ -551,6 +551,7 @@ static void test_semantic_reject_cache_counts_state_independent_hits(void) {
     TEST_CHECK(!h8s_cpu_try_execute_semantic_rom_block(&cpu, 8, &cycles));
     TEST_CHECK(cpu.semantic_fast_rejects == 2);
     TEST_CHECK(cpu.semantic_fast_cached_rejects == 1);
+    TEST_CHECK(cpu.semantic_reject_backoff == H8S_SEMANTIC_REJECT_BACKOFF);
     teardown();
 }
 

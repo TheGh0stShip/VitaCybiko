@@ -399,6 +399,7 @@ bool cybiko_get_cpu_stats(const cybiko_emu_t *emu, cybiko_cpu_stats_t *stats) {
     stats->semantic_fast_cycles = emu->cpu.semantic_fast_cycles;
     stats->semantic_fast_rejects = emu->cpu.semantic_fast_rejects;
     stats->semantic_fast_cached_rejects = emu->cpu.semantic_fast_cached_rejects;
+    stats->semantic_fast_backoff_skips = emu->cpu.semantic_fast_backoff_skips;
     return true;
 }
 bool cybiko_load_dataflash(cybiko_emu_t *emu, const uint8_t *data, size_t len) {
