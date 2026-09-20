@@ -1,9 +1,31 @@
 #include "core/h8s_block.h"
 #include <string.h>
 
+#define BLOCK_CCR_C 0x01
 #define BLOCK_CCR_V 0x02
 #define BLOCK_CCR_Z 0x04
 #define BLOCK_CCR_N 0x08
+#define BLOCK_CCR_H 0x20
+
+static uint8_t block_get_reg_b(const h8s_block_cpu_state_t *state, unsigned n)
+{
+    return n < 8 ? (uint8_t)((state->er[n] >> 8) & 0xff) :
+                   (uint8_t)(state->er[n - 8] & 0xff);
+}
+
+static void block_set_reg_b(h8s_block_cpu_state_t *state, unsigned n, uint8_t value)
+{
+    if (n < 8)
+        state->er[n] = (state->er[n] & 0xffff00ffu) | ((uint32_t)value << 8);
+    else
+        state->er[n - 8] = (state->er[n - 8] & 0xffffff00u) | value;
+}
+
+static void block_set_flag(h8s_block_cpu_state_t *state, uint8_t mask, bool value)
+{
+    if (value) state->ccr |= mask;
+    else state->ccr &= (uint8_t)~mask;
+}
 
 static uint16_t read_be16(const uint8_t *p)
 {
@@ -314,6 +336,14 @@ static void block_set_nz_l(h8s_block_cpu_state_t *state, uint32_t value)
                            (value == 0 ? BLOCK_CCR_Z : 0));
 }
 
+static void block_set_nz_b(h8s_block_cpu_state_t *state, int result)
+{
+    uint8_t value = (uint8_t)result;
+    state->ccr = (uint8_t)((state->ccr & (uint8_t)~(BLOCK_CCR_N | BLOCK_CCR_Z)) |
+                           ((value >> 4) & BLOCK_CCR_N) |
+                           (value == 0 ? BLOCK_CCR_Z : 0));
+}
+
 bool h8s_execute_semantic_block(const h8s_block_t *block,
                                 h8s_block_cpu_state_t *state)
 {
@@ -326,6 +356,112 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
         uint8_t lo = (uint8_t)op;
 
         switch (hi) {
+        case 0x80: case 0x81: case 0x82: case 0x83:
+        case 0x84: case 0x85: case 0x86: case 0x87:
+        case 0x88: case 0x89: case 0x8a: case 0x8b:
+        case 0x8c: case 0x8d: case 0x8e: case 0x8f: {
+            unsigned rd = hi & 0xf;
+            int imm = lo;
+            int d = block_get_reg_b(state, rd);
+            int result = d + imm;
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_nz_b(state, result);
+            block_set_flag(state, BLOCK_CCR_C, result > 0xff);
+            block_set_flag(state, BLOCK_CCR_V, ((d ^ result) & (imm ^ result) & 0x80) != 0);
+            block_set_flag(state, BLOCK_CCR_H, ((d ^ imm ^ result) & 0x10) != 0);
+            break;
+        }
+        case 0x90: case 0x91: case 0x92: case 0x93:
+        case 0x94: case 0x95: case 0x96: case 0x97:
+        case 0x98: case 0x99: case 0x9a: case 0x9b:
+        case 0x9c: case 0x9d: case 0x9e: case 0x9f: {
+            unsigned rd = hi & 0xf;
+            int imm = lo;
+            int d = block_get_reg_b(state, rd);
+            int c = (state->ccr & BLOCK_CCR_C) ? 1 : 0;
+            int result = d + imm + c;
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_flag(state, BLOCK_CCR_C, result > 0xff);
+            block_set_flag(state, BLOCK_CCR_V, ((d ^ result) & (imm ^ result) & 0x80) != 0);
+            block_set_flag(state, BLOCK_CCR_H, ((d ^ imm ^ result) & 0x10) != 0);
+            if ((result & 0xff) != 0) block_set_flag(state, BLOCK_CCR_Z, false);
+            block_set_flag(state, BLOCK_CCR_N, (result & 0x80) != 0);
+            break;
+        }
+        case 0xa0: case 0xa1: case 0xa2: case 0xa3:
+        case 0xa4: case 0xa5: case 0xa6: case 0xa7:
+        case 0xa8: case 0xa9: case 0xaa: case 0xab:
+        case 0xac: case 0xad: case 0xae: case 0xaf: {
+            unsigned rd = hi & 0xf;
+            int imm = lo;
+            int d = block_get_reg_b(state, rd);
+            int result = d - imm;
+            block_set_nz_b(state, result);
+            block_set_flag(state, BLOCK_CCR_C, (result & 0x100) != 0);
+            block_set_flag(state, BLOCK_CCR_V, ((d ^ imm) & (d ^ result) & 0x80) != 0);
+            block_set_flag(state, BLOCK_CCR_H, ((d ^ imm ^ result) & 0x10) != 0);
+            break;
+        }
+        case 0xb0: case 0xb1: case 0xb2: case 0xb3:
+        case 0xb4: case 0xb5: case 0xb6: case 0xb7:
+        case 0xb8: case 0xb9: case 0xba: case 0xbb:
+        case 0xbc: case 0xbd: case 0xbe: case 0xbf: {
+            unsigned rd = hi & 0xf;
+            int imm = lo;
+            int d = block_get_reg_b(state, rd);
+            int c = (state->ccr & BLOCK_CCR_C) ? 1 : 0;
+            int result = d - imm - c;
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_flag(state, BLOCK_CCR_C, result < 0);
+            block_set_flag(state, BLOCK_CCR_V, ((d ^ imm) & (d ^ result) & 0x80) != 0);
+            block_set_flag(state, BLOCK_CCR_H, ((d ^ imm ^ result) & 0x10) != 0);
+            if ((result & 0xff) != 0) block_set_flag(state, BLOCK_CCR_Z, false);
+            block_set_flag(state, BLOCK_CCR_N, (result & 0x80) != 0);
+            break;
+        }
+        case 0xc0: case 0xc1: case 0xc2: case 0xc3:
+        case 0xc4: case 0xc5: case 0xc6: case 0xc7:
+        case 0xc8: case 0xc9: case 0xca: case 0xcb:
+        case 0xcc: case 0xcd: case 0xce: case 0xcf: {
+            unsigned rd = hi & 0xf;
+            int result = block_get_reg_b(state, rd) | lo;
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_nz_b(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0xd0: case 0xd1: case 0xd2: case 0xd3:
+        case 0xd4: case 0xd5: case 0xd6: case 0xd7:
+        case 0xd8: case 0xd9: case 0xda: case 0xdb:
+        case 0xdc: case 0xdd: case 0xde: case 0xdf: {
+            unsigned rd = hi & 0xf;
+            int result = block_get_reg_b(state, rd) ^ lo;
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_nz_b(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0xe0: case 0xe1: case 0xe2: case 0xe3:
+        case 0xe4: case 0xe5: case 0xe6: case 0xe7:
+        case 0xe8: case 0xe9: case 0xea: case 0xeb:
+        case 0xec: case 0xed: case 0xee: case 0xef: {
+            unsigned rd = hi & 0xf;
+            int result = block_get_reg_b(state, rd) & lo;
+            block_set_reg_b(state, rd, (uint8_t)result);
+            block_set_nz_b(state, result);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
+        case 0xf0: case 0xf1: case 0xf2: case 0xf3:
+        case 0xf4: case 0xf5: case 0xf6: case 0xf7:
+        case 0xf8: case 0xf9: case 0xfa: case 0xfb:
+        case 0xfc: case 0xfd: case 0xfe: case 0xff: {
+            unsigned rd = hi & 0xf;
+            block_set_reg_b(state, rd, lo);
+            block_set_nz_b(state, lo);
+            block_set_flag(state, BLOCK_CCR_V, false);
+            break;
+        }
         case 0x0b:
             switch (lo & 0xf0) {
             case 0x00: state->er[lo & 0x7] += 1; break;

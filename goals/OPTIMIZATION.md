@@ -52,10 +52,11 @@ Current block-discovery gate:
   consume cache entries without repeating length decode;
 - block-cache invalidation now uses an epoch/generation instead of clearing all
   decoded entries, so future runtime integration can invalidate cheaply;
-- an isolated semantic block executor now handles the first non-memory tier
-  (`ADDS`/`SUBS` ER forms and `MOV.L` register) against a small standalone CPU
-  state. It is deliberately not wired into `h8s_cpu_run` yet; tests prove the
-  semantics before runtime integration.
+- an isolated semantic block executor now handles non-memory register/immediate
+  forms (`ADDS`/`SUBS` ER forms, `MOV.L` register, and byte immediate
+  ADD/ADDX/CMP/SUBX/OR/XOR/AND/MOV) against a small standalone CPU state. It is
+  deliberately not wired into `h8s_cpu_run` yet; tests prove the semantics
+  before runtime integration.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 

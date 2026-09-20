@@ -256,7 +256,7 @@ static void test_semantic_block_executes_register_ops(void)
 static void test_semantic_block_rejects_unsupported_tier1(void)
 {
     const uint8_t rom[] = {
-        0x8a, 0x01, /* ADD.B #1,R2H: classified for future tier, not this executor */
+        0x70, 0x00, /* BSET/BCLR-style immediate bit op: classified for future tier */
         0x54, 0x70
     };
     h8s_block_t block;
@@ -264,6 +264,45 @@ static void test_semantic_block_rejects_unsupported_tier1(void)
     h8s_block_cpu_state_t state = {.pc = 0};
     TEST_CHECK(block.executable);
     TEST_CHECK(!h8s_execute_semantic_block(&block, &state));
+}
+
+static void test_semantic_block_executes_byte_immediates(void)
+{
+    const uint8_t rom[] = {
+        0xf8, 0x7f, /* MOV.B #0x7f,R0L */
+        0x88, 0x01, /* ADD.B #1,R0L -> 0x80, V/N */
+        0xc0, 0x0f, /* OR.B #0x0f,R0H */
+        0xd0, 0xff, /* XOR.B #0xff,R0H */
+        0xe0, 0xf0, /* AND.B #0xf0,R0H */
+        0xa8, 0x80, /* CMP.B #0x80,R0L; no write, Z */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_block_cpu_state_t state = {.er = {0}, .ccr = 0, .pc = 0};
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK(state.er[0] == 0xf080);
+    TEST_CHECK(state.pc == 12);
+    TEST_CHECK(state.ccr & 0x04); /* Z from CMP */
+    TEST_CHECK(!(state.ccr & 0x08));
+}
+
+static void test_semantic_block_addx_subx_sticky_zero(void)
+{
+    const uint8_t rom[] = {
+        0xf8, 0x00, /* MOV.B #0,R0L -> Z */
+        0x98, 0x00, /* ADDX.B #0,R0L with C=0 keeps Z set */
+        0xb8, 0x01, /* SUBX.B #1,R0L -> 0xff, clears Z, sets C/N */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_block_cpu_state_t state = {.er = {0}, .ccr = 0, .pc = 0};
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK((state.er[0] & 0xff) == 0xff);
+    TEST_CHECK(state.ccr & 0x01);
+    TEST_CHECK(state.ccr & 0x08);
+    TEST_CHECK(!(state.ccr & 0x04));
 }
 
 TEST_LIST = {
@@ -282,5 +321,7 @@ TEST_LIST = {
     { "cache_caps_instruction_limit", test_cache_caps_instruction_limit },
     { "semantic_block_executes_register_ops", test_semantic_block_executes_register_ops },
     { "semantic_block_rejects_unsupported_tier1", test_semantic_block_rejects_unsupported_tier1 },
+    { "semantic_block_executes_byte_immediates", test_semantic_block_executes_byte_immediates },
+    { "semantic_block_addx_subx_sticky_zero", test_semantic_block_addx_subx_sticky_zero },
     { NULL, NULL }
 };
