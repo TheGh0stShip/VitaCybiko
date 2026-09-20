@@ -19,6 +19,12 @@ typedef struct {
 } h8s_block_instruction_t;
 
 typedef struct {
+    uint32_t er[8];
+    uint8_t ccr;
+    uint32_t pc;
+} h8s_block_cpu_state_t;
+
+typedef struct {
     uint32_t start;
     uint32_t bytes;
     unsigned instructions;
@@ -56,5 +62,7 @@ void h8s_block_cache_clear(h8s_block_cache_t *cache);
 const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
                                        const uint8_t *rom, size_t rom_size,
                                        uint32_t start);
+bool h8s_execute_semantic_block(const h8s_block_t *block,
+                                h8s_block_cpu_state_t *state);
 
 #endif

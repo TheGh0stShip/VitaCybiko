@@ -1,6 +1,10 @@
 #include "core/h8s_block.h"
 #include <string.h>
 
+#define BLOCK_CCR_V 0x02
+#define BLOCK_CCR_Z 0x04
+#define BLOCK_CCR_N 0x08
+
 static uint16_t read_be16(const uint8_t *p)
 {
     return (uint16_t)((p[0] << 8) | p[1]);
@@ -301,4 +305,66 @@ const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
     entry->block = block;
     cache->misses++;
     return &entry->block;
+}
+
+static void block_set_nz_l(h8s_block_cpu_state_t *state, uint32_t value)
+{
+    state->ccr = (uint8_t)((state->ccr & (uint8_t)~(BLOCK_CCR_N | BLOCK_CCR_Z)) |
+                           ((value >> 28) & BLOCK_CCR_N) |
+                           (value == 0 ? BLOCK_CCR_Z : 0));
+}
+
+bool h8s_execute_semantic_block(const h8s_block_t *block,
+                                h8s_block_cpu_state_t *state)
+{
+    if (!block || !state || !block->executable) return false;
+
+    uint32_t pc = block->start;
+    for (unsigned i = 0; i < block->instructions; ++i) {
+        uint16_t op = block->decoded[i].op;
+        uint8_t hi = (uint8_t)(op >> 8);
+        uint8_t lo = (uint8_t)op;
+
+        switch (hi) {
+        case 0x0b:
+            switch (lo & 0xf0) {
+            case 0x00: state->er[lo & 0x7] += 1; break;
+            case 0x80: state->er[lo & 0x7] += 2; break;
+            case 0x90: state->er[lo & 0x7] += 4; break;
+            case 0xf0:
+                state->er[lo & 0x7] += 2;
+                block_set_nz_l(state, state->er[lo & 0x7]);
+                break;
+            default:
+                return false;
+            }
+            break;
+        case 0x1b:
+            switch (lo & 0xf0) {
+            case 0x00: state->er[lo & 0x7] -= 1; break;
+            case 0x80: state->er[lo & 0x7] -= 2; break;
+            case 0x90: state->er[lo & 0x7] -= 4; break;
+            case 0xf0:
+                state->er[lo & 0x7] -= 2;
+                block_set_nz_l(state, state->er[lo & 0x7]);
+                break;
+            default:
+                return false;
+            }
+            break;
+        case 0x0f:
+            if ((lo & 0x80) == 0) return false;
+            state->er[lo & 0x7] = state->er[(lo >> 4) & 0x7];
+            block_set_nz_l(state, state->er[lo & 0x7]);
+            state->ccr &= (uint8_t)~BLOCK_CCR_V;
+            break;
+        default:
+            return false;
+        }
+
+        pc += block->decoded[i].bytes;
+    }
+
+    state->pc = pc;
+    return true;
 }

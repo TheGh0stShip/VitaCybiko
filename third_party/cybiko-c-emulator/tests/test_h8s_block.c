@@ -231,6 +231,41 @@ static void test_cache_caps_instruction_limit(void)
     TEST_CHECK(block->decoded[H8S_BLOCK_MAX_INSTRUCTIONS - 1].bytes == 2);
 }
 
+static void test_semantic_block_executes_register_ops(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x90, /* ADDS #4, ER0 */
+        0x0f, 0x81, /* MOV.L ER0, ER1 */
+        0x1b, 0xf1, /* DEC.L #2, ER1; updates NZ */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_block_cpu_state_t state = {
+        .er = {0x10, 0, 0, 0, 0, 0, 0, 0},
+        .ccr = 0xff,
+        .pc = 0
+    };
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK(state.er[0] == 0x14);
+    TEST_CHECK(state.er[1] == 0x12);
+    TEST_CHECK(state.pc == 6);
+    TEST_CHECK((state.ccr & 0x0e) == 0);
+}
+
+static void test_semantic_block_rejects_unsupported_tier1(void)
+{
+    const uint8_t rom[] = {
+        0x8a, 0x01, /* ADD.B #1,R2H: classified for future tier, not this executor */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_block_cpu_state_t state = {.pc = 0};
+    TEST_CHECK(block.executable);
+    TEST_CHECK(!h8s_execute_semantic_block(&block, &state));
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -245,5 +280,7 @@ TEST_LIST = {
     { "cache_clear_preserves_limit", test_cache_clear_preserves_limit },
     { "cache_rejects_invalid_start", test_cache_rejects_invalid_start },
     { "cache_caps_instruction_limit", test_cache_caps_instruction_limit },
+    { "semantic_block_executes_register_ops", test_semantic_block_executes_register_ops },
+    { "semantic_block_rejects_unsupported_tier1", test_semantic_block_rejects_unsupported_tier1 },
     { NULL, NULL }
 };
