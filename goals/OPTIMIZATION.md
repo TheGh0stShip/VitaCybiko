@@ -1058,6 +1058,47 @@ performance work. Remaining window rejects are still high (~93k over 600
 frames), so the next tier should target the unsupported RAM memory forms now
 visible after mutable semantic blocks are accepted.
 
+Accepted Xtreme mixed plain-memory block tier: after re-profiling the
+Xtreme-only mutable semantic path, remaining window rejects were dominated by
+RAM blocks containing ordinary MOV memory forms:
+
+- `0x488806`: `0x6c4a 0xf200`;
+- `0x488340`: `0x0100 0x6f75`;
+- `0x488332`: `0x0100 0x6ff3`;
+- `0x48833a`: `0x0100 0x6981`;
+- plus related `0x68`/`0x69`/`0x6e`/`0x6f` byte/word memory moves.
+
+The Xtreme mutable runtime path now accepts mixed blocks composed of existing
+semantic instructions plus guarded plain-memory MOV forms. Supported memory
+forms are byte/word direct `@ERn`, byte/word post-increment/pre-decrement,
+byte/word `@(d:16,ERn)`, and long `0x0100` `@ERn`, absolute d:16, and
+`@(d:16,ERn)` forms. Reads use `bus_plain_read_ptr`; writes remain guarded as
+plain memory and go through `bus_write8/16/32` so watched code-page
+generations still invalidate cached RAM code. MMIO and page-crossing accesses
+still reject to the interpreter.
+
+A first implementation executed semantic instructions one at a time and was
+too Vita-unfriendly: coverage increased but direct Xtreme timings regressed up
+to ~2.5 s. The accepted implementation batches consecutive semantic runs and
+only breaks out for guarded memory operations. Focused tests caught and fixed
+the H8S same-register post-increment ordering case (`MOV.B @ER0+,R0L`), where
+the increment occurs before the destination byte write aliases ER0.
+
+Validation:
+
+- focused `test_h8s_block` and `test_h8s_cpu` passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 1.43 s, Classic V2 0.61 s, Xtreme
+  1.72 s for 600 frames;
+- direct Xtreme repeats after batching: 1.157/1.591/1.583 s;
+- Xtreme accepted about 1.0M mutable fast blocks and about 12.6M mutable fast
+  cycles per 600 frames, while window rejects dropped from about 93.8k to about
+  46.9k.
+
+Because this is PS Vita-targeted work, the accepted shape is the batched,
+Xtreme-only path. Do not reintroduce all-model mutable probing or
+one-instruction semantic wrapping; both are hostile to the Vita CPU budget.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

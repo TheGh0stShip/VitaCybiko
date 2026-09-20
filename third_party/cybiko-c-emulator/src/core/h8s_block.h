@@ -143,6 +143,12 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
 bool h8s_execute_plain_memory_instruction(const h8s_block_instruction_t *insn,
                                           address_bus_t *bus,
                                           h8s_block_cpu_state_t *state);
+bool h8s_mixed_plain_block_supported(const h8s_block_t *block);
+bool h8s_execute_mixed_plain_block_exit(const h8s_block_t *block,
+                                        h8s_branch_edge_cache_t *edge_cache,
+                                        address_bus_t *bus,
+                                        h8s_block_cpu_state_t *state,
+                                        uint32_t *next_pc);
 bool h8s_execute_semantic_block_exit(const h8s_block_t *block,
                                      h8s_branch_edge_cache_t *edge_cache,
                                      h8s_block_cpu_state_t *state,

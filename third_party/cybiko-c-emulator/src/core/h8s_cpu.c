@@ -2264,7 +2264,7 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
     const h8s_block_t *block =
         h8s_mutable_block_cache_get(&cpu->mutable_block_cache, cpu->bus,
                                     data, size, base, start_pc);
-    if (!block || !h8s_semantic_block_supported(block))
+    if (!block || !h8s_mixed_plain_block_supported(block))
         return false;
     if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
@@ -2281,8 +2281,8 @@ static bool h8s_cpu_try_execute_semantic_mutable_block(h8s_cpu_t *cpu, int limit
         state.er[i] = cpu->er[i];
 
     uint32_t next_offset = 0;
-    if (!h8s_execute_semantic_block_exit(block, &cpu->semantic_edge_cache,
-                                         &state, &next_offset))
+    if (!h8s_execute_mixed_plain_block_exit(block, &cpu->semantic_edge_cache,
+                                            cpu->bus, &state, &next_offset))
         return false;
 
     uint32_t next_pc = next_offset;

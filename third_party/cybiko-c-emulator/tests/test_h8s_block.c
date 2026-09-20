@@ -711,6 +711,60 @@ static void test_plain_memory_instruction_rejects_mmio_and_rom_write(void)
     teardown_memory_equiv_cpu(&bus);
 }
 
+static void test_plain_memory_instruction_matches_byte_postincrement(void)
+{
+    const uint8_t code[] = {0x6c, 0x08}; /* MOV.B @ER0+, R0L */
+    uint8_t rom[2] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0xff);
+    cpu.er[0] = bus.machine->ram_base + 0x80;
+    memory_write8(&bus.external_ram, 0x80, 0x5a);
+
+    h8s_block_cpu_state_t state = {.ccr = 0xff, .pc = 0};
+    state.er[0] = bus.machine->ram_base + 0x80;
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[0] == cpu.er[0]);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
+static void test_plain_memory_instruction_matches_long_displacement(void)
+{
+    const uint8_t code[] = {0x01, 0x00, 0x6f, 0x75, 0x00, 0x10}; /* MOV.L @(0x10,ER7),ER5 */
+    uint8_t rom[6] = {0};
+    memcpy(rom, code, sizeof(code));
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 4, &block));
+    TEST_ASSERT(block.instructions == 1);
+
+    uint32_t er[8] = {0};
+    address_bus_t bus;
+    h8s_cpu_t cpu;
+    setup_memory_equiv_cpu(&bus, &cpu, code, sizeof(code), er, 0);
+    cpu.er[7] = bus.machine->ram_base + 0x100;
+    memory_write32(&bus.external_ram, 0x110, 0x12345678);
+
+    h8s_block_cpu_state_t state = {.ccr = 0, .pc = 0};
+    state.er[7] = bus.machine->ram_base + 0x100;
+    TEST_CHECK(h8s_execute_plain_memory_instruction(&block.decoded[0], &bus, &state));
+    h8s_cpu_step(&cpu);
+
+    TEST_CHECK(state.er[5] == cpu.er[5]);
+    TEST_CHECK(state.ccr == cpu.ccr);
+    TEST_CHECK(state.pc == sizeof(code));
+    teardown_memory_equiv_cpu(&bus);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1647,6 +1701,8 @@ TEST_LIST = {
     { "semantic_block_exit_rejects_branch_only_return", test_semantic_block_exit_rejects_branch_only_return },
     { "plain_memory_instruction_reads_absolute_long_rom", test_plain_memory_instruction_reads_absolute_long_rom },
     { "plain_memory_instruction_rejects_mmio_and_rom_write", test_plain_memory_instruction_rejects_mmio_and_rom_write },
+    { "plain_memory_instruction_matches_byte_postincrement", test_plain_memory_instruction_matches_byte_postincrement },
+    { "plain_memory_instruction_matches_long_displacement", test_plain_memory_instruction_matches_long_displacement },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },
