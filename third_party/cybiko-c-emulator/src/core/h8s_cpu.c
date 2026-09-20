@@ -137,7 +137,7 @@ static inline uint16_t fetch16(h8s_cpu_t *cpu) {
     /* Firmware executes in long contiguous runs from ROM/RAM. Prefer the
      * validated region cache before looking up a 4 KiB bus page; peripheral
      * addresses never enter this range and still use the bus path below. */
-    if (cpu->fetch_data && pc >= cpu->fetch_base && pc + 1 < cpu->fetch_end) {
+    if (CPU_LIKELY(cpu->fetch_data && pc >= cpu->fetch_base && pc + 1 < cpu->fetch_end)) {
         const uint8_t *p = cpu->fetch_data + (pc - cpu->fetch_base);
         cpu->pc = (pc + 2) & 0xffffff;
         return (uint16_t)((p[0] << 8) | p[1]);
