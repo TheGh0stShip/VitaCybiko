@@ -471,6 +471,38 @@ static void test_cpu_run_semantic_fast_path_matches_steps(void) {
     teardown();
 }
 
+static void count_sync_callback(void *ctx)
+{
+    int *count = (int *)ctx;
+    ++*count;
+}
+
+static void test_cpu_run_fast_path_preserves_sync_boundary(void) {
+    setup();
+    memory_init(&bus.boot_rom, 32768, true);
+    memory_write16(&bus.boot_rom, 0x100, 0xF800); /* MOV.B #0,R0L -> Z */
+    memory_write16(&bus.boot_rom, 0x102, 0x4604); /* BNE fall-through */
+    memory_write16(&bus.boot_rom, 0x104, 0x0B01);
+    bus_build_memory_map(&bus);
+
+    int sync_count = 0;
+    bus.sync_peripherals = count_sync_callback;
+    bus.sync_ctx = &sync_count;
+    cpu.pc = 0x8100;
+    cpu.ccr = CCR_I;
+
+    int timer_debt = 0, completion_debt = 0;
+    bool io_access = false;
+    int done = h8s_cpu_run(&cpu, 2, 123, &timer_debt, &completion_debt, &io_access);
+
+    TEST_CHECK(done == 2);
+    TEST_CHECK(sync_count == 1);
+    TEST_CHECK(timer_debt == 2);
+    TEST_CHECK(completion_debt == 2);
+    TEST_CHECK(cpu.pc == 0x8104);
+    teardown();
+}
+
 static void test_long_displacement_store(void) {
     setup();
     cpu.er[1] = CODE_BASE + 0x100;
@@ -720,6 +752,7 @@ TEST_LIST = {
     {"semantic_rom_block_fast_path_executes_bcc", test_semantic_rom_block_fast_path_executes_bcc},
     {"semantic_rom_block_fast_path_rejects_guards", test_semantic_rom_block_fast_path_rejects_guards},
     {"cpu_run_semantic_fast_path_matches_steps", test_cpu_run_semantic_fast_path_matches_steps},
+    {"cpu_run_fast_path_preserves_sync_boundary", test_cpu_run_fast_path_preserves_sync_boundary},
     {"long_displacement_store", test_long_displacement_store},
     {"interrupt_frame", test_interrupt_frame},
     {"trap_and_task_frame", test_trap_and_task_frame},

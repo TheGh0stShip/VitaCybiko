@@ -1975,7 +1975,12 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
     while (done < limit) {
         cpu->bus->speaker->frame_cycle = frame_cycle + done;
         int fast_cycles = 0;
-        if (h8s_cpu_try_execute_semantic_rom_block(cpu, limit - done, &fast_cycles)) {
+        int remaining = limit - done;
+        bool can_skip_mid_block_sync =
+            !cpu->bus->sync_peripherals ||
+            remaining > (H8S_BLOCK_MAX_INSTRUCTIONS + 1);
+        if (can_skip_mid_block_sync &&
+            h8s_cpu_try_execute_semantic_rom_block(cpu, remaining, &fast_cycles)) {
             *timer_debt += fast_cycles;
             *completion_debt += fast_cycles;
             done += fast_cycles;

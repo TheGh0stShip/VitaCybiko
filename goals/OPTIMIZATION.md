@@ -137,7 +137,9 @@ Current block-discovery gate:
 - `h8s_cpu_run` now attempts that guarded Bcc-only semantic ROM block fast path
   before falling back to the interpreter. Timer/completion debts are charged for
   the whole accepted block, and the old one-instruction path remains unchanged
-  whenever any guard rejects the cached block.
+  whenever any guard rejects the cached block. The fast path is also suppressed
+  when it could cross the existing end-of-run peripheral synchronization
+  boundary.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -236,6 +238,8 @@ Branch edge-cache gate:
   semantic ROM fast path against repeated `h8s_cpu_step` for the same ROM block,
   including PC, registers, CCR, cycle count, I/O flag, and timer/completion
   debt.
+- A synchronization-boundary regression test proves that the fast path does not
+  skip the existing `sync_peripherals` callback at the end of a bounded run.
 
 Current Classic V2 static chain-edge scan:
 
