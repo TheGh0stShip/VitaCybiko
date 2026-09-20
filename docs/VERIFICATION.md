@@ -322,6 +322,38 @@ This is not a completed 1:1 release. Physical Vita smoothness/audio, Xtreme
 performance, Classic V1/Xtreme app coverage, the original launch bundle and
 wireless/accessory behavior remain open.
 
+## 01.17 preview candidate
+
+Vita package metadata is `01.17`. Candidate VPK SHA-256:
+
+```text
+dccacfd58ae84abd1dba5c236d6710bff2339aeeaa665b972c689dd586b1676b
+```
+
+Executable SELF SHA-256:
+
+```text
+0cf6b6c1f48f98b9acae8020f8e14c8d60bb53c8dd90cd9bcdd1344b5354c356
+```
+
+Raw linked executable SHA-256:
+
+```text
+b06a0ee813d77bc450cf9a5fe40e9c9df578067e80668ec3e1cb11e3e83b8ed1
+```
+
+- Package metadata, LiveArea title and runtime UI report `01.17`.
+- The VPK contains 9 ZIP entries, all stored for VitaShell compatibility, and
+  `zipfile.testzip()` reported no corrupt member.
+- The packaged `param.sfo` contains `VitaCybiko 01.17`, `01.17`, and title ID
+  `VCYB00001`.
+- This candidate includes the post-01.16 H8S arithmetic defined-behavior fix
+  for long INC/DEC and NEG wraparound.
+- Public CI on commit `1fca4da` passed the
+  [Host tests workflow](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/35521286530):
+  Release host build/tests and sanitizer/frontend host build/tests both
+  completed successfully.
+
 ## v0.1.3-preview candidate
 
 Vita package metadata is `01.03`. Candidate VPK SHA-256:

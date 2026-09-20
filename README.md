@@ -8,9 +8,10 @@ matching firmware is supplied, but they are not yet app-by-app verified and are
 slower than Classic V2. This is a **preview**, not complete 1:1 hardware
 emulation.
 
-Current package work is **01.16 preview**. It includes the 01.16 LiveArea/runtime
-version bump, Classic V2 smoke optimization, and expanded Vita performance
-telemetry, but it is still **not 60 FPS qualified** across all firmware/apps.
+Current package work is **01.17 preview**. It includes the 01.17 LiveArea/runtime
+version bump, Classic V2 smoke optimization, expanded Vita performance
+telemetry, and a post-01.16 H8S arithmetic defined-behavior fix, but it is
+still **not 60 FPS qualified** across all firmware/apps.
 See the [optimization workbench and remaining gates](goals/OPTIMIZATION.md).
 
 [Download the VPK](https://github.com/TheGh0stShip/VitaCybiko/releases) · [Setup](docs/MODELS.md) · [Compatibility](docs/COMPATIBILITY.md) · [Test evidence](docs/VERIFICATION.md)
@@ -76,11 +77,12 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 
 - Classic V2 setup, desktop, Pinball gameplay/exit, Calculator arithmetic and Text Editor save/reopen were observed in Vita3K. Clock continuity survives restart. Not every bundled app has been tested.
 - Classic V1 reaches the stock desktop in Vita3K. Xtreme reaches the first-run setup dialog in Vita3K. App compatibility and performance are not yet validated for those two profiles.
-- Package `01.16` corrects IRQ timing during CyOS task switches, enables full
+- Package `01.17` corrects IRQ timing during CyOS task switches, enables full
   Classic battery readings, removes audio gap injection, optimizes timer
   synchronization and H8S semantic fast-path probing, moves periodic saves off
-  the frame loop, and logs per-window CPU fast-path counters in
-  `performance.csv`. Physical Vita smoothness remains unverified after the
+  the frame loop, logs per-window CPU fast-path counters in `performance.csv`,
+  and fixes sanitizer-detected signed-overflow undefined behavior in H8S long
+  INC/DEC/NEG semantics. Physical Vita smoothness remains unverified after the
   latest optimization pass; frame interpolation remains presentation-side only,
   not proof of full-speed guest execution.
 - The exact original retail Classic launch bundle remains unverified.

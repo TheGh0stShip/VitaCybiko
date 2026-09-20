@@ -1,8 +1,11 @@
-# VitaCybiko 01.16 preview
+# VitaCybiko 01.17 preview
 
 Performance-instrumented preview for PlayStation Vita/PSTV.
 
-- Package metadata, LiveArea title, and runtime UI now report `01.16`.
+- Package metadata, LiveArea title, and runtime UI now report `01.17`.
+- Fixes sanitizer-detected signed-overflow undefined behavior in H8S long
+  INC/DEC and NEG semantics. Public CI now includes both a clean Release host
+  gate and a sanitizer/frontend host gate.
 - Adds H8S semantic fast-path telemetry to Vita `performance.csv`:
   accepted blocks, accepted cycles, guarded rejects, cached rejects, and
   backoff skips.
@@ -23,7 +26,7 @@ vendored core and tests; no Git submodule checkout is needed.
 Release asset SHA-256:
 
 ```text
-013373b31441d38285acdc42b9d7f3164fb4bdc92db3d9959bd3d7fbda88c24e  VitaCybiko.vpk
+dccacfd58ae84abd1dba5c236d6710bff2339aeeaa665b972c689dd586b1676b  VitaCybiko.vpk
 ```
 
 The release also includes `SHA256SUMS`; after downloading both assets into the
@@ -37,5 +40,5 @@ support and exact hardware equivalence remain open. Consult the
 [verification record](https://github.com/TheGh0stShip/VitaCybiko/blob/main/docs/VERIFICATION.md)
 before treating a profile or app as supported.
 
-Vita title ID: `VCYB00001`. Package metadata version: `01.16`.
+Vita title ID: `VCYB00001`. Package metadata version: `01.17`.
 Back up `ux0:data/VitaCybiko` before upgrading.
