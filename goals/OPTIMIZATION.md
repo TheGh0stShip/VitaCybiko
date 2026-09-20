@@ -724,6 +724,24 @@ the backoff as a substitute for real coverage; the next meaningful optimization
 must make more hot PCs executable through a branch-aware cached interpreter or
 ARMv7 translation tier.
 
+To make that next tier concrete, `CYBIKO_OPCODE_PROFILE=ON` now also reports
+the hottest semantic fast-path reject PCs by reason. This is host-only
+instrumentation; normal release/Vita builds keep the profiler compiled out.
+
+600-frame profile evidence with the 2048 cached-reject gate:
+
+| Model | Top semantic reject PCs |
+| --- | --- |
+| Xtreme | `0x0076c2` cached 5,046; `0x0076c0` cached 1,166; `0x004a50` cached 781; `0x0076b8` cached 579; `0x004a58` cached 424; `0x005920` cached 419 |
+| Classic V2 | `0x0061f0` cached 1,516; `0x001598` cached 851; `0x118612` cached 750; `0x0015a0` cached 620; `0x0061ee` cached 473; `0x118616` cached 259 |
+
+The Xtreme hot reject PCs cluster in boot ROM, while Classic V2 spans boot ROM
+and flash. The next implementation should disassemble/analyze these exact
+blocks and add branch-aware or memory-aware cached execution for their concrete
+exit patterns. Do not broaden the semantic executor blindly; use the hot reject
+PC list to decide which unsupported exit or memory form will repay its
+correctness risk.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

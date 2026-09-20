@@ -18,8 +18,21 @@
 #define CPU_UNLIKELY(x) (x)
 #endif
 
+typedef enum {
+    SEM_REJECT_GUARD = 1,
+    SEM_REJECT_IRQ,
+    SEM_REJECT_WINDOW,
+    SEM_REJECT_CACHED,
+    SEM_REJECT_UNSUPPORTED_BLOCK,
+    SEM_REJECT_UNSUPPORTED_EXIT,
+    SEM_REJECT_CYCLE_BUDGET,
+    SEM_REJECT_BRANCH_RESOLVE,
+    SEM_REJECT_TARGET
+} semantic_reject_profile_reason_t;
+
 #ifdef CYBIKO_OPCODE_PROFILE
 #define BRANCH_PROFILE_TARGET_SLOTS 4096
+#define SEMANTIC_REJECT_PROFILE_SLOTS 4096
 static uint64_t opcode_profile_hi[256];
 static uint64_t opcode_profile_exact[65536];
 static uint64_t prefix0100_profile_op2[65536];
@@ -30,6 +43,9 @@ static uint64_t branch_profile_kind[12];
 static uint64_t branch_profile_taken_kind[12];
 static uint32_t branch_profile_target_tag[BRANCH_PROFILE_TARGET_SLOTS];
 static uint64_t branch_profile_target_count[BRANCH_PROFILE_TARGET_SLOTS];
+static uint32_t semantic_reject_profile_tag[SEMANTIC_REJECT_PROFILE_SLOTS];
+static uint8_t semantic_reject_profile_reason[SEMANTIC_REJECT_PROFILE_SLOTS];
+static uint64_t semantic_reject_profile_count[SEMANTIC_REJECT_PROFILE_SLOTS];
 static bool opcode_profile_registered;
 
 static void opcode_profile_dump(void) {
@@ -126,6 +142,29 @@ static void opcode_profile_dump(void) {
                 rank + 1, branch_profile_target_tag[best],
                 (unsigned long long)best_count);
     }
+    bool reject_printed[SEMANTIC_REJECT_PROFILE_SLOTS] = {0};
+    static const char *reject_names[] = {
+        "none", "guard", "irq", "window", "cached", "unsupported_block",
+        "unsupported_exit", "cycle_budget", "branch_resolve", "target"
+    };
+    for (unsigned rank = 0; rank < 16; ++rank) {
+        unsigned best = 0;
+        uint64_t best_count = 0;
+        for (unsigned i = 0; i < SEMANTIC_REJECT_PROFILE_SLOTS; ++i) {
+            if (!reject_printed[i] && semantic_reject_profile_count[i] > best_count) {
+                best_count = semantic_reject_profile_count[i];
+                best = i;
+            }
+        }
+        if (!best_count) break;
+        reject_printed[best] = true;
+        uint8_t reason = semantic_reject_profile_reason[best];
+        const char *name = reason < sizeof(reject_names) / sizeof(reject_names[0]) ?
+            reject_names[reason] : "unknown";
+        fprintf(stderr, "semantic_reject_top%02u_pc=0x%06x reason=%s count=%llu\n",
+                rank + 1, semantic_reject_profile_tag[best], name,
+                (unsigned long long)best_count);
+    }
 }
 
 CPU_INLINE void opcode_profile_record(uint16_t op) {
@@ -204,6 +243,22 @@ CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target
         branch_profile_target_count[index]++;
     }
 }
+CPU_INLINE void semantic_reject_profile_record(uint32_t pc, unsigned reason) {
+    if (!opcode_profile_registered) {
+        atexit(opcode_profile_dump);
+        opcode_profile_registered = true;
+    }
+    pc &= 0xffffff;
+    unsigned index = ((pc >> 1) ^ (pc >> 12) ^ (reason * 131u)) &
+                     (SEMANTIC_REJECT_PROFILE_SLOTS - 1);
+    if (semantic_reject_profile_count[index] == 0 ||
+        (semantic_reject_profile_tag[index] == pc &&
+         semantic_reject_profile_reason[index] == reason)) {
+        semantic_reject_profile_tag[index] = pc;
+        semantic_reject_profile_reason[index] = (uint8_t)reason;
+        semantic_reject_profile_count[index]++;
+    }
+}
 #else
 CPU_INLINE void opcode_profile_record(uint16_t op) {
     (void)op;
@@ -218,12 +273,17 @@ CPU_INLINE void prefix0100_addr_profile_record(const address_bus_t *bus, bool wr
 CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target) {
     (void)kind; (void)taken; (void)target;
 }
+CPU_INLINE void semantic_reject_profile_record(uint32_t pc, unsigned reason) {
+    (void)pc; (void)reason;
+}
 #endif
 
-CPU_INLINE bool semantic_fast_reject(h8s_cpu_t *cpu, uint64_t *reason)
+CPU_INLINE bool semantic_fast_reject(h8s_cpu_t *cpu, uint64_t *counter,
+                                     unsigned profile_reason, uint32_t pc)
 {
     cpu->semantic_fast_rejects++;
-    if (reason) (*reason)++;
+    if (counter) (*counter)++;
+    semantic_reject_profile_record(pc, profile_reason);
     return false;
 }
 
@@ -2060,10 +2120,12 @@ CPU_INLINE void semantic_reject_cache_store(h8s_cpu_t *cpu,
 }
 
 CPU_INLINE bool semantic_fast_reject_with_backoff(h8s_cpu_t *cpu,
-                                                  uint64_t *reason)
+                                                  uint64_t *counter,
+                                                  unsigned profile_reason,
+                                                  uint32_t pc)
 {
     cpu->semantic_reject_backoff = H8S_SEMANTIC_REJECT_BACKOFF;
-    return semantic_fast_reject(cpu, reason);
+    return semantic_fast_reject(cpu, counter, profile_reason, pc);
 }
 
 CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
@@ -2117,27 +2179,31 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
                                             int *cycles)
 {
     if (!cpu || !cycles) return false;
+    uint32_t start_pc = cpu->pc & 0xffffff;
     if (limit <= 1 || cpu->halted || cpu->irq_deferred) {
-        return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_guard);
+        return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_guard,
+                                    SEM_REJECT_GUARD, start_pc);
     }
     if (cpu->pending_irq_count && !(cpu->ccr & CCR_I)) {
-        return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_irq);
+        return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_irq,
+                                    SEM_REJECT_IRQ, start_pc);
     }
 
     const uint8_t *data = NULL;
     uint32_t base = 0, size = 0;
-    uint32_t start_pc = cpu->pc & 0xffffff;
     if (!h8s_cpu_get_immutable_fetch_window(cpu, &data, &base, &size)) {
-        return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_window);
+        return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_window,
+                                                 SEM_REJECT_WINDOW, start_pc);
     }
     if (start_pc < base || start_pc >= base + size) {
-        return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_window);
+        return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_window,
+                                                 SEM_REJECT_WINDOW, start_pc);
     }
     if (semantic_reject_cached(cpu, data, start_pc)) {
         cpu->semantic_fast_cached_rejects++;
         cpu->semantic_fast_reject_cached++;
         cpu->semantic_reject_backoff = H8S_SEMANTIC_CACHED_REJECT_BACKOFF;
-        return semantic_fast_reject(cpu, NULL);
+        return semantic_fast_reject(cpu, NULL, SEM_REJECT_CACHED, start_pc);
     }
 
     uint32_t offset = start_pc - base;
@@ -2145,18 +2211,21 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
         h8s_block_cache_get(&cpu->semantic_block_cache, data, size, offset);
     if (!block || !h8s_semantic_block_supported(block)) {
         semantic_reject_cache_store(cpu, data, start_pc);
-        return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_unsupported_block);
+        return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_unsupported_block,
+                                                 SEM_REJECT_UNSUPPORTED_BLOCK, start_pc);
     }
     if (block->branch_kind != H8S_BLOCK_BRANCH_BCC8 &&
         block->branch_kind != H8S_BLOCK_BRANCH_BCC16 &&
         block->branch_kind != H8S_BLOCK_BRANCH_JMP_ABS24) {
         semantic_reject_cache_store(cpu, data, start_pc);
-        return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_unsupported_exit);
+        return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_unsupported_exit,
+                                                 SEM_REJECT_UNSUPPORTED_EXIT, start_pc);
     }
 
     int block_cycles = (int)block->instructions + 1; /* Include branch exit. */
     if (block_cycles <= 1 || block_cycles > limit) {
-        return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_cycle_budget);
+        return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_cycle_budget,
+                                    SEM_REJECT_CYCLE_BUDGET, start_pc);
     }
 
     h8s_block_cpu_state_t state = {.ccr = cpu->ccr, .pc = offset};
@@ -2166,7 +2235,8 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     uint32_t next_offset = 0;
     if (!h8s_execute_semantic_block_exit(block, &cpu->semantic_edge_cache,
                                          &state, &next_offset)) {
-        return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_branch_resolve);
+        return semantic_fast_reject(cpu, &cpu->semantic_fast_reject_branch_resolve,
+                                    SEM_REJECT_BRANCH_RESOLVE, start_pc);
     }
     uint32_t next_pc = next_offset;
     if (block->branch_kind == H8S_BLOCK_BRANCH_JMP_ABS24) {
@@ -2176,11 +2246,13 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
             (m->flash_size && next_pc >= m->flash_base && next_pc <= m->flash_end);
         if (!immutable_target) {
             semantic_reject_cache_store(cpu, data, start_pc);
-            return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_target);
+            return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_target,
+                                                     SEM_REJECT_TARGET, start_pc);
         }
     } else {
         if (next_offset >= size) {
-            return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_target);
+            return semantic_fast_reject_with_backoff(cpu, &cpu->semantic_fast_reject_target,
+                                                     SEM_REJECT_TARGET, start_pc);
         }
         next_pc = (base + next_offset) & 0xffffff;
     }
