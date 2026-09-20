@@ -2136,7 +2136,7 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     if (semantic_reject_cached(cpu, data, start_pc)) {
         cpu->semantic_fast_cached_rejects++;
         cpu->semantic_fast_reject_cached++;
-        cpu->semantic_reject_backoff = H8S_SEMANTIC_REJECT_BACKOFF;
+        cpu->semantic_reject_backoff = H8S_SEMANTIC_CACHED_REJECT_BACKOFF;
         return semantic_fast_reject(cpu, NULL);
     }
 

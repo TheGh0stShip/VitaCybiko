@@ -23,6 +23,10 @@ typedef struct address_bus address_bus_t;
  * A 256-cycle fixed backoff preserves the three-model smoke gates while
  * reducing repeated cached-reject probes on Xtreme after the BHI/BLS fix. */
 #define H8S_SEMANTIC_REJECT_BACKOFF 256
+/* Cached static rejects are already proven not to enter the current semantic
+ * fast path. Probe them less often than first-time misses while preserving
+ * regular opportunities to discover phase changes or future coverage wins. */
+#define H8S_SEMANTIC_CACHED_REJECT_BACKOFF 1024
 
 typedef struct {
     bool valid;

@@ -680,6 +680,28 @@ window rejects down from 32,149 to 133. Cached rejects remain the dominant
 Xtreme reason, so the next structural target is still a broader
 dispatcher/translation tier rather than another scalar timer tweak.
 
+The next measured cached-reject step uses a longer 1024-cycle backoff only
+after a cached static reject. First-time static misses remain at the accepted
+256-cycle window above. This follows the cached-interpreter/QEMU-style rule
+that a proven cache miss should not repeatedly pay the full lookup path while
+hot code is still in the same phase.
+
+Gate after the cached-reject-specific backoff:
+
+- focused CPU tests passed;
+- full host suite: 17/17 passed;
+- three-model smoke passed: Classic V1 1.13 s, Classic V2 0.53 s, Xtreme
+  5.17 s on the wrapper run;
+- direct repeat smokes: Classic V2 0.463759/0.356248/0.353124 s; Xtreme
+  4.863801/4.470016/4.670583 s.
+
+The reason counters show the intended reduction. Classic V2 total fast rejects
+fell from about 102,150 to about 31,500, with cached rejects down from about
+88,180 to about 23,830. Xtreme total fast rejects fell from 87,966 to 23,275,
+with cached rejects down from 87,603 to 22,961. Accepted semantic fast blocks
+also fell substantially, so this is a probe-overhead reduction, not a substitute
+for the broader branch-aware/translation tier still needed for Vita smoothness.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
