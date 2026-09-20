@@ -398,10 +398,12 @@ static void vertical_scaled(const motion_pair_t *p, unsigned phase, uint8_t *out
 }
 
 static void vertical_scaled_argb(const motion_pair_t *p, unsigned phase,
-                                 const uint32_t palette[256], uint32_t *out)
+                                 const uint32_t palette[256], uint32_t *out,
+                                 unsigned pitch)
 {
     int da = p->dy * (int)phase * 3, db = p->dy * (int)(256 - phase) * 3;
     for (int y = 0; y < 300; ++y) {
+        uint32_t *line = out + (unsigned)y * pitch;
         axis_sample_t a = axis_sample(y * 256 - da, 100);
         axis_sample_t b = axis_sample(y * 256 + db, 100);
         int sy = y / 3, tile_row = sy / 8 * MOTION_COLS;
@@ -419,9 +421,9 @@ static void vertical_scaled_argb(const motion_pair_t *p, unsigned phase,
                 value = combine(va, vb, phase, phase < 128 ? p->before[index] : p->after[index]);
             }
             uint32_t pixel = palette[value];
-            out[y * 480 + x * 3] = pixel;
-            out[y * 480 + x * 3 + 1] = pixel;
-            out[y * 480 + x * 3 + 2] = pixel;
+            line[x * 3] = pixel;
+            line[x * 3 + 1] = pixel;
+            line[x * 3 + 2] = pixel;
         }
     }
 }
@@ -464,7 +466,8 @@ static void horizontal_scaled(const motion_pair_t *p, unsigned phase,
 }
 
 static void horizontal_scaled_argb(const motion_pair_t *p, unsigned phase,
-                                   const uint32_t palette[256], uint32_t *out)
+                                   const uint32_t palette[256], uint32_t *out,
+                                   unsigned pitch)
 {
     axis_sample_t a[480], b[480];
     int previous_dx = INT_MAX;
@@ -480,7 +483,9 @@ static void horizontal_scaled_argb(const motion_pair_t *p, unsigned phase,
             previous_dx = dx;
         }
         int row = y * 160, tile_row = y / 8 * MOTION_COLS;
-        uint32_t *line = out + y * 3 * 480;
+        uint32_t *line0 = out + (unsigned)y * 3u * pitch;
+        uint32_t *line1 = line0 + pitch;
+        uint32_t *line2 = line1 + pitch;
         for (int x = 0; x < 480; ++x) {
             int index = row + x / 3, va = -1, vb = -1;
             uint8_t value;
@@ -496,9 +501,9 @@ static void horizontal_scaled_argb(const motion_pair_t *p, unsigned phase,
                 value = combine(va, vb, phase, phase < 128 ? p->before[index] : p->after[index]);
             }
             uint32_t pixel = palette[value];
-            line[x] = pixel;
-            line[x + 480] = pixel;
-            line[x + 960] = pixel;
+            line0[x] = pixel;
+            line1[x] = pixel;
+            line2[x] = pixel;
         }
     }
 }
@@ -562,16 +567,24 @@ bool motion_synthesize_scaled_argb_fast(const motion_pair_t *p, unsigned phase,
                                         const uint32_t palette[256],
                                         uint32_t *out)
 {
+    return motion_synthesize_scaled_argb_fast_pitch(p, phase, palette, out, 480);
+}
+
+bool motion_synthesize_scaled_argb_fast_pitch(const motion_pair_t *p, unsigned phase,
+                                              const uint32_t palette[256],
+                                              uint32_t *out, unsigned pitch_pixels)
+{
     if (!p || !palette || !out || phase >= 256 || !phase ||
-        p->cut || !p->moving_blocks || !p->translated) {
+        p->cut || !p->moving_blocks || !p->translated ||
+        pitch_pixels < MOTION_W * 3) {
         return false;
     }
     if (!p->dx) {
-        vertical_scaled_argb(p, phase, palette, out);
+        vertical_scaled_argb(p, phase, palette, out, pitch_pixels);
         return true;
     }
     if (!p->dy) {
-        horizontal_scaled_argb(p, phase, palette, out);
+        horizontal_scaled_argb(p, phase, palette, out, pitch_pixels);
         return true;
     }
     return false;

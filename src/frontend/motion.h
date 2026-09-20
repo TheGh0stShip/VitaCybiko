@@ -39,6 +39,9 @@ void motion_synthesize_scaled(const motion_pair_t *pair, unsigned phase,
 bool motion_synthesize_scaled_argb_fast(const motion_pair_t *pair, unsigned phase,
                                         const uint32_t palette[256],
                                         uint32_t *out);
+bool motion_synthesize_scaled_argb_fast_pitch(const motion_pair_t *pair, unsigned phase,
+                                              const uint32_t palette[256],
+                                              uint32_t *out, unsigned pitch_pixels);
 
 typedef struct {
     motion_pair_t pair;

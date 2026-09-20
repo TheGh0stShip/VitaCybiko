@@ -1434,6 +1434,18 @@ static void ensure_lcd_palette(app_ctx_t *ctx)
     ctx->lcd_palette_ready = true;
 }
 
+static void write_indexed_lcd_argb(const app_ctx_t *ctx, const uint8_t *pixels,
+                                   int width, int height, uint32_t *dst,
+                                   unsigned pitch_pixels)
+{
+    for (int y = 0; y < height; ++y) {
+        uint32_t *line = dst + (unsigned)y * pitch_pixels;
+        const uint8_t *src = pixels + y * width;
+        for (int x = 0; x < width; ++x)
+            line[x] = ctx->lcd_palette[src[x]];
+    }
+}
+
 static void upload_lcd(app_ctx_t *ctx, const uint8_t *pixels, int width, int height)
 {
     if (!ctx->lcd_texture || width != CYBIKO_LCD_WIDTH ||
@@ -1445,10 +1457,25 @@ static void upload_lcd(app_ctx_t *ctx, const uint8_t *pixels, int width, int hei
         !memcmp(ctx->lcd_previous, pixels, sizeof(ctx->lcd_previous))) return;
     uint64_t started = SDL_GetPerformanceCounter();
     ensure_lcd_palette(ctx);
-    for (int i = 0; i < width * height; ++i)
-        ctx->lcd_pixels[i] = ctx->lcd_palette[pixels[i]];
-    if (SDL_UpdateTexture(ctx->lcd_texture, NULL, ctx->lcd_pixels,
-                          width * (int)sizeof(uint32_t)) == 0) {
+    bool uploaded = false;
+    void *locked = NULL;
+    int pitch = 0;
+    if (SDL_LockTexture(ctx->lcd_texture, NULL, &locked, &pitch) == 0) {
+        write_indexed_lcd_argb(ctx, pixels, width, height, locked,
+                               (unsigned)pitch / (unsigned)sizeof(uint32_t));
+        SDL_UnlockTexture(ctx->lcd_texture);
+        uploaded = true;
+    } else {
+        write_indexed_lcd_argb(ctx, pixels, width, height, ctx->lcd_pixels,
+                               (unsigned)width);
+        uploaded = SDL_UpdateTexture(ctx->lcd_texture, NULL, ctx->lcd_pixels,
+                                     width * (int)sizeof(uint32_t)) == 0;
+    }
+#ifndef VITA
+    write_indexed_lcd_argb(ctx, pixels, width, height, ctx->lcd_pixels,
+                           (unsigned)width);
+#endif
+    if (uploaded) {
         memcpy(ctx->lcd_previous, pixels, sizeof(ctx->lcd_previous));
         ctx->lcd_previous_valid = true;
         ++ctx->lcd_updates;
@@ -2106,18 +2133,42 @@ static void render_frame(app_ctx_t *ctx)
                 ctx->motion_texture_active = false;
             } else {
                 ensure_lcd_palette(ctx);
-                bool direct_argb = !ctx->motion_trace &&
-                    motion_synthesize_scaled_argb_fast(&ctx->motion.pair, phase,
-                                                       ctx->lcd_palette,
-                                                       ctx->motion_pixels);
-                if (!direct_argb) {
+                bool updated = false;
+                void *locked = NULL;
+                int pitch = 0;
+                if (SDL_LockTexture(ctx->motion_texture, NULL, &locked, &pitch) == 0) {
+                    unsigned pitch_pixels = (unsigned)pitch / (unsigned)sizeof(uint32_t);
+                    bool direct_argb = !ctx->motion_trace &&
+                        motion_synthesize_scaled_argb_fast_pitch(&ctx->motion.pair, phase,
+                                                                 ctx->lcd_palette,
+                                                                 locked, pitch_pixels);
+                    if (!direct_argb) {
+                        motion_synthesize_scaled(&ctx->motion.pair, phase, LCD_SCALE,
+                                                 ctx->interpolated_lcd);
+                        write_indexed_lcd_argb(ctx, ctx->interpolated_lcd, LCD_W, LCD_H,
+                                               locked, pitch_pixels);
+                    }
+                    SDL_UnlockTexture(ctx->motion_texture);
+                    updated = true;
+#ifndef VITA
+                    if (direct_argb) {
+                        motion_synthesize_scaled_argb_fast(&ctx->motion.pair, phase,
+                                                           ctx->lcd_palette,
+                                                           ctx->motion_pixels);
+                    } else {
+                        write_indexed_lcd_argb(ctx, ctx->interpolated_lcd, LCD_W, LCD_H,
+                                               ctx->motion_pixels, LCD_W);
+                    }
+#endif
+                } else {
                     motion_synthesize_scaled(&ctx->motion.pair, phase, LCD_SCALE,
                                              ctx->interpolated_lcd);
                     for (unsigned i = 0; i < sizeof(ctx->interpolated_lcd); ++i)
                         ctx->motion_pixels[i] = ctx->lcd_palette[ctx->interpolated_lcd[i]];
+                    updated = SDL_UpdateTexture(ctx->motion_texture, NULL, ctx->motion_pixels,
+                                                LCD_W * sizeof(uint32_t)) == 0;
                 }
-                if (SDL_UpdateTexture(ctx->motion_texture, NULL, ctx->motion_pixels,
-                                      LCD_W * sizeof(uint32_t)) == 0) {
+                if (updated) {
                     ctx->motion_texture_active = true;
                     ++ctx->generated_lcd_frames;
                     ++ctx->lcd_updates;

@@ -162,8 +162,9 @@ static void check_argb_fast_matches_indexed(int dx, int dy)
     uint8_t a[MOTION_PIXELS], b[MOTION_PIXELS];
     uint8_t *indexed = malloc(MOTION_PIXELS * 9);
     uint32_t *argb = malloc(MOTION_PIXELS * 9 * sizeof(*argb));
+    uint32_t *pitched = malloc(300 * 512 * sizeof(*pitched));
     uint32_t palette[256];
-    TEST_ASSERT(p && indexed && argb);
+    TEST_ASSERT(p && indexed && argb && pitched);
     for (unsigned i = 0; i < 256; ++i)
         palette[i] = 0xff000000u | (i << 16) | ((255u - i) << 8) | ((i * 37u) & 0xffu);
 
@@ -174,14 +175,23 @@ static void check_argb_fast_matches_indexed(int dx, int dy)
                  "translation=%d displacement=%d,%d", p->translated, p->dx, p->dy);
     for (unsigned phase = 17; phase < 256; phase += 34) {
         TEST_CHECK(motion_synthesize_scaled_argb_fast(p, phase, palette, argb));
+        memset(pitched, 0xa5, 300 * 512 * sizeof(*pitched));
+        TEST_CHECK(motion_synthesize_scaled_argb_fast_pitch(p, phase, palette, pitched, 512));
         motion_synthesize_scaled(p, phase, 3, indexed);
         unsigned errors = 0;
-        for (int i = 0; i < MOTION_PIXELS * 9; ++i)
-            errors += argb[i] != palette[indexed[i]];
+        for (int y = 0; y < 300; ++y) {
+            for (int x = 0; x < 480; ++x) {
+                uint32_t expected = palette[indexed[y * 480 + x]];
+                errors += argb[y * 480 + x] != expected;
+                errors += pitched[y * 512 + x] != expected;
+            }
+            for (int x = 480; x < 512; ++x)
+                errors += pitched[y * 512 + x] != 0xa5a5a5a5u;
+        }
         TEST_CHECK_(errors == 0, "dx=%d dy=%d phase=%u errors=%u", dx, dy, phase, errors);
     }
 
-    free(argb); free(indexed); free(p);
+    free(pitched); free(argb); free(indexed); free(p);
 }
 
 static void test_scaled_argb_fast_path_matches_indexed(void)
