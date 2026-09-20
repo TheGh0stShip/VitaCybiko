@@ -785,6 +785,63 @@ static bool evaluate_condition(const h8s_cpu_t *cpu, int cond) {
     }
 }
 
+CPU_INLINE bool execute_hot_branch8(h8s_cpu_t *cpu, uint16_t op)
+{
+    uint8_t hi = (uint8_t)(op >> 8);
+    if ((hi >> 4) != 0x4)
+        return false;
+    int cond = hi & 0xf;
+    int8_t disp = (int8_t)(op & 0xff);
+    uint32_t target = (cpu->pc + disp) & 0xffffffu;
+    bool taken = evaluate_condition(cpu, cond);
+    if (taken)
+        cpu->pc = target;
+    branch_profile_record(1, taken, target);
+    cpu->hot_branch8_instructions++;
+    return true;
+}
+
+CPU_INLINE bool execute_hot_register_bit(h8s_cpu_t *cpu, uint16_t op)
+{
+    uint8_t hi = (uint8_t)(op >> 8);
+    if (hi < 0x70 || hi > 0x77)
+        return false;
+    uint8_t lo = (uint8_t)op;
+    int bit = (lo >> 4) & 0x7;
+    int rd = lo & 0xf;
+    bool bit_value = (get_reg_b(cpu, rd) & (1 << bit)) != 0;
+    switch (hi) {
+    case 0x70:
+        set_reg_b(cpu, rd, (uint8_t)(get_reg_b(cpu, rd) | (1 << bit)));
+        break;
+    case 0x71:
+        set_reg_b(cpu, rd, (uint8_t)(get_reg_b(cpu, rd) ^ (1 << bit)));
+        break;
+    case 0x72:
+        set_reg_b(cpu, rd, (uint8_t)(get_reg_b(cpu, rd) & ~(1 << bit)));
+        break;
+    case 0x73:
+        set_flag(cpu, BIT_Z, !bit_value);
+        break;
+    case 0x74:
+        set_flag(cpu, BIT_C, get_flag(cpu, BIT_C) | ((lo & 0x80) ? !bit_value : bit_value));
+        break;
+    case 0x75:
+        set_flag(cpu, BIT_C, get_flag(cpu, BIT_C) ^ ((lo & 0x80) ? !bit_value : bit_value));
+        break;
+    case 0x76:
+        set_flag(cpu, BIT_C, get_flag(cpu, BIT_C) & ((lo & 0x80) ? !bit_value : bit_value));
+        break;
+    case 0x77:
+        set_flag(cpu, BIT_C, (lo & 0x80) ? !bit_value : bit_value);
+        break;
+    default:
+        return false;
+    }
+    cpu->hot_register_bit_instructions++;
+    return true;
+}
+
 /* ---- Unimplemented opcode handler ---- */
 static void unimplemented(h8s_cpu_t *cpu, int op, uint32_t addr) {
     fprintf(stderr, "Unimplemented opcode 0x%04X at PC=0x%06X\n", op, addr);
@@ -2401,6 +2458,8 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->hot_plain_memory_2b_instructions = 0;
     cpu->hot_plain_memory_4b_instructions = 0;
     cpu->hot_prefix0100_plain_memory_instructions = 0;
+    cpu->hot_branch8_instructions = 0;
+    cpu->hot_register_bit_instructions = 0;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 
@@ -2538,6 +2597,14 @@ CPU_INLINE void execute_step(h8s_cpu_t *cpu) {
         return;
     }
     if (execute_hot_prefix0100_plain_memory(cpu, op)) {
+        cpu->cycle_count++;
+        return;
+    }
+    if (execute_hot_branch8(cpu, op)) {
+        cpu->cycle_count++;
+        return;
+    }
+    if (execute_hot_register_bit(cpu, op)) {
         cpu->cycle_count++;
         return;
     }

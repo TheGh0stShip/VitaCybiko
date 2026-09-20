@@ -43,6 +43,8 @@ typedef struct {
     uint64_t hot_plain_memory_2b_instructions;
     uint64_t hot_plain_memory_4b_instructions;
     uint64_t hot_prefix0100_plain_memory_instructions;
+    uint64_t hot_branch8_instructions;
+    uint64_t hot_register_bit_instructions;
 } cybiko_cpu_stats_t;
 
 cybiko_emu_t *cybiko_create(const cybiko_hal_t *hal);

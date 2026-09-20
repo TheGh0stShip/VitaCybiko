@@ -273,10 +273,12 @@ int main(int argc, char **argv)
         printf("semantic_mutable_prefix_blocks=%llu semantic_mutable_prefix_cycles=%llu\n",
                (unsigned long long)stats.semantic_mutable_prefix_blocks,
                (unsigned long long)stats.semantic_mutable_prefix_cycles);
-        printf("hot_plain_memory_2b_instructions=%llu hot_plain_memory_4b_instructions=%llu hot_prefix0100_plain_memory_instructions=%llu\n",
+        printf("hot_plain_memory_2b_instructions=%llu hot_plain_memory_4b_instructions=%llu hot_prefix0100_plain_memory_instructions=%llu hot_branch8_instructions=%llu hot_register_bit_instructions=%llu\n",
                (unsigned long long)stats.hot_plain_memory_2b_instructions,
                (unsigned long long)stats.hot_plain_memory_4b_instructions,
-               (unsigned long long)stats.hot_prefix0100_plain_memory_instructions);
+               (unsigned long long)stats.hot_prefix0100_plain_memory_instructions,
+               (unsigned long long)stats.hot_branch8_instructions,
+               (unsigned long long)stats.hot_register_bit_instructions);
     }
 
     bool screenshot_ok = argc <= frames_arg + 1 || write_screenshot(argv[frames_arg + 1], &ctx);

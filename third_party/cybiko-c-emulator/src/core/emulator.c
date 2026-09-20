@@ -573,6 +573,8 @@ bool cybiko_get_cpu_stats(const cybiko_emu_t *emu, cybiko_cpu_stats_t *stats) {
     stats->hot_plain_memory_2b_instructions = emu->cpu.hot_plain_memory_2b_instructions;
     stats->hot_plain_memory_4b_instructions = emu->cpu.hot_plain_memory_4b_instructions;
     stats->hot_prefix0100_plain_memory_instructions = emu->cpu.hot_prefix0100_plain_memory_instructions;
+    stats->hot_branch8_instructions = emu->cpu.hot_branch8_instructions;
+    stats->hot_register_bit_instructions = emu->cpu.hot_register_bit_instructions;
     return true;
 }
 bool cybiko_load_dataflash(cybiko_emu_t *emu, const uint8_t *data, size_t len) {

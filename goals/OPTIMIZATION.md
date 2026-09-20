@@ -1535,6 +1535,26 @@ Validation:
   3.24M two-byte hot-path instructions, 852k four-byte hot-path instructions,
   and 3.56M prefix-`0100` hot-path instructions.
 
+Accepted hot one-word control/bit fast paths: after the long-memory prefix
+work, the hottest remaining slow-interpreter exact opcodes included tight
+MMIO polling loops such as `0x2ab3; 0x735a; 0x47fa` and common branch
+conditions. The side-effecting MMIO byte read remains on the original bus path,
+but the adjacent one-word `Bcc d:8` branches and register bit operations
+`0x70` through `0x77` now execute through small single-instruction helpers
+before the full decoder.
+
+Validation:
+
+- focused H8S CPU suite passed with new branch and register-bit fast-path
+  tests;
+- release host suite passed 17/17;
+- local ASan/UBSan/leak core suite passed 17/17 with leak detection enabled;
+- Python tests passed 11/11;
+- Vita package build passed;
+- Xtreme direct 600-frame repeats passed at 1.201/1.138/1.199 s, with about
+  12.7M-13.4M hot branch instructions and 2.9M-3.5M hot register-bit
+  instructions per run.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
