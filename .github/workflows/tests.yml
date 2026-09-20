@@ -3,6 +3,17 @@ on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  release-host:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure release host build
+        run: cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+      - name: Build release host tools and tests
+        run: cmake --build build-release -j4
+      - name: Run release host tests
+        run: ctest --test-dir build-release --output-on-failure
+
   host:
     runs-on: ubuntu-24.04
     steps:
