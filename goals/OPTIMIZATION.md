@@ -166,6 +166,18 @@ Current block-discovery gate:
   CCR takes an out-of-window Bcc target, then succeeding when CCR falls through
   inside immutable ROM. Only state-independent unsupported blocks/exits are
   cached.
+- After a cached state-independent reject, `h8s_cpu_run` now backs off semantic
+  fast-path probing for a short 16-cycle interpreter window. This does not
+  change guest semantics because the fast path is optional and skipped probes
+  execute through the normal interpreter. On the same locally staged Classic V2
+  candidate smoke, this moved the run from blank/inactive failure to
+  `firmware-smoke: PASS` with `active=599`, `changed_frames=3`,
+  `blocks=1834177`, `cycles=4288575`, `rejects=7351376`, and
+  `cached_rejects=6178201` over 600 frames. Host CPU time was 5.710457 s, so
+  this is a correctness/boot-progress win rather than the final speed win.
+  The next optimization must use the telemetry to either broaden safe semantic
+  block execution or make the backoff adaptive, not return to every-cycle
+  semantic probing.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware

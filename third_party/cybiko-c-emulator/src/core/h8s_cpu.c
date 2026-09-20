@@ -1870,6 +1870,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     h8s_block_cache_clear(&cpu->semantic_block_cache);
     h8s_branch_edge_cache_clear(&cpu->semantic_edge_cache);
     memset(cpu->semantic_reject_cache, 0, sizeof(cpu->semantic_reject_cache));
+    cpu->semantic_reject_backoff = 0;
     cpu->semantic_fast_blocks = 0;
     cpu->semantic_fast_cycles = 0;
     cpu->semantic_fast_rejects = 0;
@@ -1978,6 +1979,7 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
     if (semantic_reject_cached(cpu, data, start_pc)) {
         cpu->semantic_fast_rejects++;
         cpu->semantic_fast_cached_rejects++;
+        cpu->semantic_reject_backoff = H8S_SEMANTIC_REJECT_BACKOFF;
         return false;
     }
 
@@ -2054,7 +2056,10 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
         bool can_skip_mid_block_sync =
             !cpu->bus->sync_peripherals ||
             remaining > (H8S_BLOCK_MAX_INSTRUCTIONS + 1);
+        bool can_probe_fast_path = cpu->semantic_reject_backoff == 0;
+        if (cpu->semantic_reject_backoff) cpu->semantic_reject_backoff--;
         if (can_skip_mid_block_sync &&
+            can_probe_fast_path &&
             h8s_cpu_try_execute_semantic_rom_block(cpu, remaining, &fast_cycles)) {
             *timer_debt += fast_cycles;
             *completion_debt += fast_cycles;
