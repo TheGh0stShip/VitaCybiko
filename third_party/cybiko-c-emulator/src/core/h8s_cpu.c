@@ -130,12 +130,22 @@ static void cache_instruction_memory(h8s_cpu_t *cpu, uint32_t pc) {
     cpu->fetch_end = memory ? base + (uint32_t)memory->size : 0;
     cpu->fetch_immutable = memory == &b->boot_rom || memory == &b->flash_rom;
     cpu->prefetch_valid = false;
+    cpu->rom_block_valid = false;
     if (memory == &b->on_chip_ram && cpu->fetch_end > 0xFFFC00)
         cpu->fetch_end = 0xFFFC00;
 }
 
 static inline uint16_t fetch16(h8s_cpu_t *cpu) {
     uint32_t pc = cpu->pc & 0xffffff;
+    if (CPU_LIKELY(cpu->fetch_immutable && cpu->rom_block_valid &&
+                   pc >= cpu->rom_block_base)) {
+        uint32_t delta = pc - cpu->rom_block_base;
+        unsigned index = delta >> 1;
+        if ((delta & 1u) == 0 && index < cpu->rom_block_count) {
+            cpu->pc = (pc + 2) & 0xffffff;
+            return cpu->rom_block_words[index];
+        }
+    }
     if (CPU_LIKELY(cpu->prefetch_valid && cpu->prefetch_pc == pc)) {
         uint16_t val = cpu->prefetch_word;
         cpu->pc = (pc + 2) & 0xffffff;
@@ -149,6 +159,19 @@ static inline uint16_t fetch16(h8s_cpu_t *cpu) {
         const uint8_t *p = cpu->fetch_data + (pc - cpu->fetch_base);
         cpu->pc = (pc + 2) & 0xffffff;
         uint16_t val = (uint16_t)((p[0] << 8) | p[1]);
+        if (cpu->fetch_immutable) {
+            uint32_t base = pc & ~(uint32_t)(H8S_ROM_FETCH_BLOCK_WORDS * 2 - 1);
+            if (base >= cpu->fetch_base && base + 1 < cpu->fetch_end) {
+                unsigned count = (cpu->fetch_end - base) / 2;
+                if (count > H8S_ROM_FETCH_BLOCK_WORDS) count = H8S_ROM_FETCH_BLOCK_WORDS;
+                const uint8_t *block = cpu->fetch_data + (base - cpu->fetch_base);
+                for (unsigned i = 0; i < count; ++i)
+                    cpu->rom_block_words[i] = (uint16_t)((block[i * 2] << 8) | block[i * 2 + 1]);
+                cpu->rom_block_base = base;
+                cpu->rom_block_count = (uint8_t)count;
+                cpu->rom_block_valid = true;
+            }
+        }
         if (cpu->fetch_immutable && cpu->pc + 3 < cpu->fetch_end) {
             cpu->prefetch_pc = cpu->pc;
             cpu->prefetch_word = (uint16_t)((p[2] << 8) | p[3]);
@@ -1742,6 +1765,9 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->prefetch_word = 0;
     cpu->prefetch_valid = false;
     cpu->fetch_immutable = false;
+    cpu->rom_block_base = 0;
+    cpu->rom_block_count = 0;
+    cpu->rom_block_valid = false;
     cpu->pc = bus_read32(cpu->bus, 0x000000) & 0xFFFFFF;
 }
 

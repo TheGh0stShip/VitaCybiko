@@ -16,6 +16,7 @@ typedef struct address_bus address_bus_t;
 
 #define MAX_PENDING_IRQS 32
 
+#define H8S_ROM_FETCH_BLOCK_WORDS 16
 typedef struct h8s_cpu {
     uint32_t er[8];
     uint32_t pc;
@@ -40,6 +41,10 @@ typedef struct h8s_cpu {
     uint16_t prefetch_word;
     bool prefetch_valid;
     bool fetch_immutable;
+    uint32_t rom_block_base;
+    uint16_t rom_block_words[H8S_ROM_FETCH_BLOCK_WORDS];
+    uint8_t rom_block_count;
+    bool rom_block_valid;
 } h8s_cpu_t;
 
 void     h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus);
