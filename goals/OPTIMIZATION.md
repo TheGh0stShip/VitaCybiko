@@ -56,6 +56,20 @@ Latest gate: all 16 host tests pass. The Xtreme 600-frame smoke moved from the
 previous optimized 14.87 s run to 13.50 s on the same host gate after the
 completion-bypass and timer helper cleanup; Classic V1/V2 remained smoke-pass.
 
+Rejected follow-up experiments on 2026-09-20:
+
+- Observable-only timer deadlines preserved scheduler tests but slowed Xtreme
+  smoke to 13.90-15.50 s, so raw timer deadlines remain the faster gate.
+- Direct 32-bit bus big-endian loads/stores preserved tests but measured
+  13.71-14.17 s on Xtreme, slower than the 13.50 s gate.
+- Hoisting bus/speaker/sync pointers in `h8s_cpu_run` preserved tests but
+  measured 14.71 s on Xtreme.
+- Increasing immutable ROM fetch blocks from 16 to 64 words preserved tests but
+  measured 15.91 s on Xtreme.
+
+Do not retry these as-is; the next performance step needs semantic decoded
+blocks or an ARMv7 translation tier rather than more scalar hot-path nibbling.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.
