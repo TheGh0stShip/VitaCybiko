@@ -371,6 +371,74 @@ static void test_rejects_dynamic_branch_exits(void)
     }
 }
 
+static void test_branch_edge_cache_hit_miss_and_ccr_keys(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x00,       /* ADDS #1, ER0 */
+        0x46, 0x04,       /* BNE d:8 */
+        0x0b, 0x01,
+        0x0b, 0x02
+    };
+    h8s_block_t block;
+    h8s_branch_edge_cache_t cache;
+    uint32_t next = 0;
+
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(block.stop_pc == 2);
+    h8s_branch_edge_cache_init(&cache);
+    TEST_CHECK(h8s_branch_edge_cache_get(&cache, &block, 0x00, &next));
+    TEST_CHECK(next == 8);
+    TEST_CHECK(cache.misses == 1 && cache.hits == 0);
+    TEST_CHECK(h8s_branch_edge_cache_get(&cache, &block, 0x20, &next)); /* H does not affect BNE. */
+    TEST_CHECK(next == 8);
+    TEST_CHECK(cache.misses == 1 && cache.hits == 1);
+    TEST_CHECK(h8s_branch_edge_cache_get(&cache, &block, 0x04, &next));
+    TEST_CHECK(next == 4);
+    TEST_CHECK(cache.misses == 2 && cache.hits == 1);
+}
+
+static void test_branch_edge_cache_clear_and_collision(void)
+{
+    uint8_t rom[1030] = {0};
+    h8s_branch_edge_cache_t cache;
+    uint32_t next = 0;
+    rom[0] = 0x40; rom[1] = 0x02;
+    rom[1026] = 0x40; rom[1027] = 0x04;
+
+    h8s_block_t first, colliding;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &first));
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 1026, 16, &colliding));
+
+    h8s_branch_edge_cache_init(&cache);
+    TEST_CHECK(h8s_branch_edge_cache_get(&cache, &first, 0, &next));
+    TEST_CHECK(next == 4);
+    TEST_CHECK(h8s_branch_edge_cache_get(&cache, &first, 0, &next));
+    TEST_CHECK(cache.hits == 1);
+
+    h8s_branch_edge_cache_clear(&cache);
+    TEST_CHECK(cache.hits == 0 && cache.misses == 0 && cache.evictions == 0);
+    TEST_CHECK(h8s_branch_edge_cache_get(&cache, &first, 0, &next));
+    TEST_CHECK(cache.misses == 1 && cache.hits == 0);
+
+    TEST_CHECK(h8s_branch_edge_cache_get(&cache, &colliding, 0, &next));
+    TEST_CHECK(next == 1032);
+    TEST_CHECK(cache.evictions == 1);
+}
+
+static void test_branch_edge_cache_rejects_dynamic_exits(void)
+{
+    const uint8_t rom[] = {0x54, 0x70}; /* RTS */
+    h8s_block_t block;
+    h8s_branch_edge_cache_t cache;
+    uint32_t next = 0x123456;
+
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    h8s_branch_edge_cache_init(&cache);
+    TEST_CHECK(!h8s_branch_edge_cache_get(&cache, &block, 0, &next));
+    TEST_CHECK(next == 0x123456);
+    TEST_CHECK(cache.hits == 0 && cache.misses == 0 && cache.evictions == 0);
+}
+
 static void test_counts_variable_immediates(void)
 {
     const uint8_t rom[] = {
@@ -1181,6 +1249,9 @@ TEST_LIST = {
     { "branch_metadata_for_indirect_and_system_exits", test_branch_metadata_for_indirect_and_system_exits },
     { "resolves_static_branch_exits", test_resolves_static_branch_exits },
     { "rejects_dynamic_branch_exits", test_rejects_dynamic_branch_exits },
+    { "branch_edge_cache_hit_miss_and_ccr_keys", test_branch_edge_cache_hit_miss_and_ccr_keys },
+    { "branch_edge_cache_clear_and_collision", test_branch_edge_cache_clear_and_collision },
+    { "branch_edge_cache_rejects_dynamic_exits", test_branch_edge_cache_rejects_dynamic_exits },
     { "counts_variable_immediates", test_counts_variable_immediates },
     { "counts_absolute_and_compound_bit_lengths", test_counts_absolute_and_compound_bit_lengths },
     { "counts_prefix_lengths", test_counts_prefix_lengths },

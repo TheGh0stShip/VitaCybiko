@@ -61,6 +61,7 @@ typedef struct {
 } h8s_block_t;
 
 #define H8S_BLOCK_CACHE_ENTRIES 256
+#define H8S_BRANCH_EDGE_CACHE_ENTRIES 512
 
 typedef struct {
     bool valid;
@@ -78,6 +79,22 @@ typedef struct {
     uint32_t generation;
 } h8s_block_cache_t;
 
+typedef struct {
+    bool valid;
+    uint32_t tag;
+    uint32_t generation;
+    uint8_t ccr_key;
+    uint32_t next_pc;
+} h8s_branch_edge_cache_entry_t;
+
+typedef struct {
+    h8s_branch_edge_cache_entry_t entries[H8S_BRANCH_EDGE_CACHE_ENTRIES];
+    unsigned hits;
+    unsigned misses;
+    unsigned evictions;
+    uint32_t generation;
+} h8s_branch_edge_cache_t;
+
 bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,
                            unsigned max_instructions, h8s_block_t *out);
 void h8s_block_cache_init(h8s_block_cache_t *cache, unsigned max_instructions);
@@ -91,5 +108,10 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
                                 h8s_block_cpu_state_t *state);
 bool h8s_block_resolve_static_branch(const h8s_block_t *block,
                                      uint8_t ccr, uint32_t *next_pc);
+void h8s_branch_edge_cache_init(h8s_branch_edge_cache_t *cache);
+void h8s_branch_edge_cache_clear(h8s_branch_edge_cache_t *cache);
+bool h8s_branch_edge_cache_get(h8s_branch_edge_cache_t *cache,
+                               const h8s_block_t *block, uint8_t ccr,
+                               uint32_t *next_pc);
 
 #endif

@@ -110,6 +110,12 @@ Current block-discovery gate:
   PC for Bcc d:8/d:16, BSR d:8/d:16, absolute JMP, and absolute JSR. Dynamic
   exits (return, indirect, trap, sleep) deliberately reject resolution so a
   future dispatcher cannot accidentally chain through state-dependent exits.
+- A standalone branch-edge cache now stores resolved static branch exits by
+  branch PC and CCR-dependent condition bits. It uses cheap generation
+  invalidation, deliberately ignores CCR bits irrelevant to the branch
+  decision, accounts hits/misses/evictions, and rejects dynamic exits. This is
+  still not wired into runtime dispatch; it is the next safety component for a
+  future branch-aware cached-block tier.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
   branch targets. It also reports chainable static edges and how many of those
   edges land on semantic-supported decoded blocks. This turns branch-aware
@@ -177,6 +183,16 @@ Branch resolver gate:
 - Unit tests cover unconditional/never, equality, sign/overflow, signed
   greater/less, d:8/d:16 forms, absolute jump/call targets, and rejection of
   RTS/RTE/TRAPA/indirect/SLEEP exits.
+
+Branch edge-cache gate:
+
+- `h8s_branch_edge_cache_t` is a 512-entry direct-mapped cache for resolved
+  static branch edges. It is intentionally separate from the runtime CPU loop
+  until the block-dispatch integration has equivalence coverage.
+- The CCR cache key includes only C/V/Z/N, so unrelated H-bit changes do not
+  create avoidable misses.
+- Unit tests cover miss-to-hit reuse, CCR-key reuse/difference, generation
+  clear, collision eviction, and rejection of dynamic branch exits.
 
 Current Classic V2 static chain-edge scan:
 

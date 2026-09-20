@@ -208,6 +208,72 @@ bool h8s_block_resolve_static_branch(const h8s_block_t *block,
     }
 }
 
+static uint8_t branch_ccr_key(const h8s_block_t *block, uint8_t ccr)
+{
+    if (!block || !block->branch_conditional) return 0;
+    return ccr & (BLOCK_CCR_C | BLOCK_CCR_V | BLOCK_CCR_Z | BLOCK_CCR_N);
+}
+
+static unsigned edge_cache_index(uint32_t branch_pc, uint8_t ccr_key)
+{
+    return ((branch_pc >> 1) ^ (branch_pc >> 10) ^ ccr_key) &
+           (H8S_BRANCH_EDGE_CACHE_ENTRIES - 1);
+}
+
+void h8s_branch_edge_cache_init(h8s_branch_edge_cache_t *cache)
+{
+    if (!cache) return;
+    memset(cache, 0, sizeof(*cache));
+    cache->generation = 1;
+}
+
+void h8s_branch_edge_cache_clear(h8s_branch_edge_cache_t *cache)
+{
+    if (!cache) return;
+    uint32_t generation = cache->generation + 1;
+    cache->hits = 0;
+    cache->misses = 0;
+    cache->evictions = 0;
+    cache->generation = generation;
+    if (generation == 0) {
+        memset(cache->entries, 0, sizeof(cache->entries));
+        cache->generation = 1;
+    }
+}
+
+bool h8s_branch_edge_cache_get(h8s_branch_edge_cache_t *cache,
+                               const h8s_block_t *block, uint8_t ccr,
+                               uint32_t *next_pc)
+{
+    if (!cache || !block || !next_pc || block->stop != H8S_BLOCK_STOP_BRANCH)
+        return false;
+
+    uint8_t ccr_key = branch_ccr_key(block, ccr);
+    unsigned index = edge_cache_index(block->stop_pc, ccr_key);
+    h8s_branch_edge_cache_entry_t *entry = &cache->entries[index];
+    if (entry->valid && entry->generation == cache->generation &&
+        entry->tag == block->stop_pc && entry->ccr_key == ccr_key) {
+        cache->hits++;
+        *next_pc = entry->next_pc;
+        return true;
+    }
+
+    uint32_t resolved = 0;
+    if (!h8s_block_resolve_static_branch(block, ccr, &resolved))
+        return false;
+
+    if (entry->valid && entry->generation == cache->generation)
+        cache->evictions++;
+    entry->valid = true;
+    entry->generation = cache->generation;
+    entry->tag = block->stop_pc;
+    entry->ccr_key = ccr_key;
+    entry->next_pc = resolved;
+    cache->misses++;
+    *next_pc = resolved;
+    return true;
+}
+
 static bool is_shift_rotate_form(uint8_t lo)
 {
     switch ((lo >> 4) & 0xf) {
