@@ -49,7 +49,9 @@ Current block-discovery gate:
   the executable prefix before memory/I/O/control-sensitive forms;
 - cached blocks now store bounded decoded instruction words and byte lengths,
   capped by `H8S_BLOCK_MAX_INSTRUCTIONS`, so the next semantic executor can
-  consume cache entries without repeating length decode.
+  consume cache entries without repeating length decode;
+- block-cache invalidation now uses an epoch/generation instead of clearing all
+  decoded entries, so future runtime integration can invalidate cheaply.
 
 Local block-scan coverage, max 32 instructions per candidate start:
 
@@ -105,6 +107,12 @@ Rejected runtime experiment on 2026-09-20:
   path passed all 17 host tests but slowed the 600-frame Xtreme smoke to
   18.21 s, so it was removed. Branch micro-tuning is not the remaining path;
   reducing total interpreter dispatches is.
+- Embedding the decoded block cache directly in `h8s_cpu_t` and clearing it on
+  instruction-memory remaps passed all 17 host tests but slowed the 600-frame
+  Xtreme smoke to 16.96-19.82 s depending on invalidation strategy, so CPU
+  runtime wiring was removed for now. Keep decoded block data structures out of
+  the hot CPU state until the executor can actually use them to offset the
+  footprint/invalidation cost.
 
 ## Goal C — ARMv7 translation backend
 

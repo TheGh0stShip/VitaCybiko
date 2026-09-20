@@ -256,16 +256,25 @@ void h8s_block_cache_init(h8s_block_cache_t *cache, unsigned max_instructions)
     cache->max_instructions = max_instructions ? max_instructions : 32;
     if (cache->max_instructions > H8S_BLOCK_MAX_INSTRUCTIONS)
         cache->max_instructions = H8S_BLOCK_MAX_INSTRUCTIONS;
+    cache->generation = 1;
 }
 
 void h8s_block_cache_clear(h8s_block_cache_t *cache)
 {
     if (!cache) return;
     unsigned max_instructions = cache->max_instructions;
-    memset(cache, 0, sizeof(*cache));
+    uint32_t generation = cache->generation + 1;
+    cache->hits = 0;
+    cache->misses = 0;
+    cache->evictions = 0;
     cache->max_instructions = max_instructions ? max_instructions : 32;
     if (cache->max_instructions > H8S_BLOCK_MAX_INSTRUCTIONS)
         cache->max_instructions = H8S_BLOCK_MAX_INSTRUCTIONS;
+    cache->generation = generation;
+    if (generation == 0) {
+        memset(cache->entries, 0, sizeof(cache->entries));
+        cache->generation = 1;
+    }
 }
 
 const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
@@ -276,7 +285,7 @@ const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
 
     unsigned index = cache_index(start);
     h8s_block_cache_entry_t *entry = &cache->entries[index];
-    if (entry->valid && entry->tag == start) {
+    if (entry->valid && entry->generation == cache->generation && entry->tag == start) {
         cache->hits++;
         return &entry->block;
     }
@@ -285,9 +294,10 @@ const h8s_block_t *h8s_block_cache_get(h8s_block_cache_t *cache,
     if (!h8s_analyze_rom_block(rom, rom_size, start, cache->max_instructions, &block))
         return NULL;
 
-    if (entry->valid) cache->evictions++;
+    if (entry->valid && entry->generation == cache->generation) cache->evictions++;
     entry->valid = true;
     entry->tag = start;
+    entry->generation = cache->generation;
     entry->block = block;
     cache->misses++;
     return &entry->block;

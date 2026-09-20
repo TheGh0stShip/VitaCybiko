@@ -36,6 +36,7 @@ typedef struct {
 typedef struct {
     bool valid;
     uint32_t tag;
+    uint32_t generation;
     h8s_block_t block;
 } h8s_block_cache_entry_t;
 
@@ -45,6 +46,7 @@ typedef struct {
     unsigned hits;
     unsigned misses;
     unsigned evictions;
+    uint32_t generation;
 } h8s_block_cache_t;
 
 bool h8s_analyze_rom_block(const uint8_t *rom, size_t rom_size, uint32_t start,

@@ -199,6 +199,9 @@ static void test_cache_clear_preserves_limit(void)
     block = h8s_block_cache_get(&cache, rom, sizeof(rom), 0);
     TEST_ASSERT(block != NULL);
     TEST_CHECK(block->instructions == 2);
+    TEST_CHECK(cache.misses == 1);
+    TEST_CHECK(cache.hits == 0);
+    TEST_CHECK(cache.evictions == 0);
 }
 
 static void test_cache_rejects_invalid_start(void)
