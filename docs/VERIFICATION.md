@@ -20,9 +20,18 @@ cf6b2ed2085fc6c2604db542fbada30113c1a73ecf9c2e65a0b94784566faf6c  eboot.bin
 ```
 
 The first FTP deployment attempt failed before login with “No route to host”.
-No 01.12 files were transferred in that attempt; physical-Vita validation of
-this version remains pending. The 01.11 performance log was retrieved earlier
-and is analyzed in [the investigation](INVESTIGATION-01.12.md).
+No 01.12 files were transferred in that attempt. After FTP became available,
+01.12 was installed at `ux0:/app/VCYB00001/` and
+`ux0:/VPK/VitaCybiko.vpk`. All nine installed package members and the complete
+VPK were downloaded back and SHA-256 verified against the local release.
+The previous nine app files and VPK were backed up locally before any upload,
+in `/tmp/vitacybiko-0112-install-backup-efnjmuk4`; that directory also contains
+the installed verification manifest. Firmware, saves, and plugins were untouched.
+
+Physical-Vita runtime validation of 01.12 remains pending; installation and
+readback do not establish animation smoothness or game accuracy. The 01.11
+performance log was retrieved earlier and is analyzed in
+[the investigation](INVESTIGATION-01.12.md).
 
 ## 01.11 candidate
 
