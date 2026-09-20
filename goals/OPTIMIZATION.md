@@ -782,6 +782,22 @@ preserved the focused CPU tests, but Xtreme 600-frame smoke regressed/noised to
 until a broader call/return-aware tier can amortize stack-visible control flow;
 do not reintroduce isolated RTS handling as a standalone fast path.
 
+The `--inspect` path now annotates common memory-form instructions so the next
+memory tier can distinguish plain RAM/ROM candidates from MMIO hazards. Current
+Xtreme hot-block inspection shows:
+
+- `0x005920`: unsupported `0x2a84` is `MOV.B @0xffff84,R2L`, an on-chip
+  I/O/MMIO byte read. This must remain an explicit interpreter/peripheral
+  boundary unless the tier models sync and side effects.
+- `0x004a50`: unsupported `0x0100 0x6b00 ...` is a prefixed absolute word
+  memory form before a static `JSR @0x0076b0`. This is a better candidate for a
+  guarded memory-aware block tier, but only when the effective address is proven
+  to map to ordinary RAM/ROM and not MMIO.
+
+This reinforces the next implementation order: add guarded memory-form support
+for plain RAM/ROM only, keep MMIO forms as exits, and keep returns/calls as
+interpreter exits until a proper call/return-aware tier exists.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

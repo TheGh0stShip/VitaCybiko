@@ -136,6 +136,87 @@ static const char *yesno(bool value)
     return value ? "yes" : "no";
 }
 
+static const char *byte_reg_name(unsigned reg)
+{
+    static const char *names[] = {
+        "R0H", "R1H", "R2H", "R3H", "R4H", "R5H", "R6H", "R7H",
+        "R0L", "R1L", "R2L", "R3L", "R4L", "R5L", "R6L", "R7L"
+    };
+    return reg < sizeof(names) / sizeof(names[0]) ? names[reg] : "?";
+}
+
+static const char *word_reg_name(unsigned reg)
+{
+    static const char *names[] = {
+        "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
+        "E0", "E1", "E2", "E3", "E4", "E5", "E6", "E7"
+    };
+    return reg < sizeof(names) / sizeof(names[0]) ? names[reg] : "?";
+}
+
+static const char *er_name(unsigned reg)
+{
+    static const char *names[] = {
+        "ER0", "ER1", "ER2", "ER3", "ER4", "ER5", "ER6", "ER7"
+    };
+    return reg < sizeof(names) / sizeof(names[0]) ? names[reg] : "?";
+}
+
+static void describe_instruction(char *out, size_t out_size,
+                                 const h8s_block_instruction_t *insn)
+{
+    if (!out || !out_size || !insn) return;
+    out[0] = '\0';
+    uint16_t op = insn->op;
+    uint8_t hi = (uint8_t)(op >> 8);
+    uint8_t lo = (uint8_t)op;
+
+    if ((hi >> 4) == 0x2) {
+        snprintf(out, out_size, "MOV.B @0xffff%02x,%s (MMIO/absolute byte read)",
+                 lo, byte_reg_name(hi & 0xf));
+        return;
+    }
+    if ((hi >> 4) == 0x3) {
+        snprintf(out, out_size, "MOV.B %s,@0xffff%02x (MMIO/absolute byte write)",
+                 byte_reg_name(hi & 0xf), lo);
+        return;
+    }
+    if (hi == 0x68) {
+        bool write = (lo & 0x80) != 0;
+        unsigned er = (lo >> 4) & 0x7;
+        unsigned br = lo & 0xf;
+        snprintf(out, out_size, write ? "MOV.B %s,@%s" : "MOV.B @%s,%s",
+                 write ? byte_reg_name(br) : er_name(er),
+                 write ? er_name(er) : byte_reg_name(br));
+        return;
+    }
+    if (op == 0x0100 && insn->bytes >= 4) {
+        uint16_t op2 = (uint16_t)(insn->imm >> 16);
+        if (op2 == 0) op2 = (uint16_t)insn->imm;
+        uint8_t hi2 = (uint8_t)(op2 >> 8);
+        uint8_t lo2 = (uint8_t)op2;
+        if (hi2 == 0x6b) {
+            bool write = (lo2 & 0x80) != 0;
+            bool addr24 = (lo2 & 0x20) != 0;
+            unsigned wr = lo2 & 0xf;
+            uint32_t addr = insn->imm & 0xffffffu;
+            if (addr24) {
+                if (write)
+                    snprintf(out, out_size, "MOV.W %s,@0x%06x",
+                             word_reg_name(wr), addr);
+                else
+                    snprintf(out, out_size, "MOV.W @0x%06x,%s",
+                             addr, word_reg_name(wr));
+            } else {
+                snprintf(out, out_size, "MOV.W absolute d:16 form op2=0x%04x", op2);
+            }
+            return;
+        }
+        snprintf(out, out_size, "prefixed 0x0100 memory form op2=0x%04x", op2);
+        return;
+    }
+}
+
 static void inspect_pc(const uint8_t *rom, size_t rom_size, unsigned max_instructions,
                        uint32_t pc)
 {
@@ -167,9 +248,13 @@ static void inspect_pc(const uint8_t *rom, size_t rom_size, unsigned max_instruc
             uint8_t hi2 = (uint8_t)(insn->imm >> 8);
             supported = hi2 == 0x64 || hi2 == 0x65 || hi2 == 0x66;
         }
-        printf("inspect_insn%02u pc=0x%06x op=0x%04x bytes=%u imm=0x%08x semantic=%s\n",
+        char desc[128];
+        describe_instruction(desc, sizeof(desc), insn);
+        printf("inspect_insn%02u pc=0x%06x op=0x%04x bytes=%u imm=0x%08x semantic=%s",
                i + 1, insn_pc,
                insn->op, insn->bytes, insn->imm, yesno(supported));
+        if (desc[0]) printf(" desc=\"%s\"", desc);
+        printf("\n");
         insn_pc += insn->bytes;
     }
 }
