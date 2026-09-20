@@ -21,6 +21,7 @@
 #ifdef CYBIKO_OPCODE_PROFILE
 #define BRANCH_PROFILE_TARGET_SLOTS 4096
 static uint64_t opcode_profile_hi[256];
+static uint64_t opcode_profile_exact[65536];
 static uint64_t branch_profile_kind[12];
 static uint64_t branch_profile_taken_kind[12];
 static uint32_t branch_profile_target_tag[BRANCH_PROFILE_TARGET_SLOTS];
@@ -32,6 +33,21 @@ static void opcode_profile_dump(void) {
         if (opcode_profile_hi[i])
             fprintf(stderr, "opcode_hi_%02x=%llu\n", i,
                     (unsigned long long)opcode_profile_hi[i]);
+    }
+    bool opcode_printed[65536] = {0};
+    for (unsigned rank = 0; rank < 24; ++rank) {
+        unsigned best = 0;
+        uint64_t best_count = 0;
+        for (unsigned i = 0; i < 65536; ++i) {
+            if (!opcode_printed[i] && opcode_profile_exact[i] > best_count) {
+                best_count = opcode_profile_exact[i];
+                best = i;
+            }
+        }
+        if (!best_count) break;
+        opcode_printed[best] = true;
+        fprintf(stderr, "opcode_exact_top%02u_op=0x%04x count=%llu\n",
+                rank + 1, best, (unsigned long long)best_count);
     }
     static const char *names[] = {
         "none", "bcc8", "bcc16", "bsr8", "bsr16", "jmp_abs24",
@@ -67,6 +83,7 @@ CPU_INLINE void opcode_profile_record(uint16_t op) {
         opcode_profile_registered = true;
     }
     opcode_profile_hi[op >> 8]++;
+    opcode_profile_exact[op]++;
 }
 
 CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target) {

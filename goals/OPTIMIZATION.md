@@ -444,10 +444,10 @@ Initial interpreter-equivalence gate:
 Executed opcode profile gate:
 
 - `CYBIKO_OPCODE_PROFILE=ON` now builds a host-only profiler that dumps H8S
-  opcode high-byte counts at process exit; normal release/Vita builds leave it
-  disabled. It now also reports dynamic static-branch execution/taken counts
-  and a direct-mapped top target sample for Bcc/BSR/JMP/JSR, return,
-  indirect, trap, and sleep exits.
+  opcode high-byte counts and the top exact 16-bit opcodes at process exit;
+  normal release/Vita builds leave it disabled. It now also reports dynamic
+  static-branch execution/taken counts and a direct-mapped top target sample
+  for Bcc/BSR/JMP/JSR, return, indirect, trap, and sleep exits.
 - 600-frame smoke profiles show that byte-immediate opcodes are not the right
   first runtime tier. The hottest groups are prefix `0x01`, `0x0f` MOV.L
   register, branches (`0x40`-`0x4f`), shifts/rotates (`0x10`/`0x11`), ADDS/SUBS
@@ -461,6 +461,21 @@ Top executed high-byte opcodes over 600 smoke frames:
 | Classic V1 | 01 14.14% | 11 9.09% | 0f 8.16% | 0b 4.95% | 46 4.38% |
 | Classic V2 | 01 8.76% | 0f 8.55% | 47 5.84% | 11 5.53% | 0b 5.22% |
 | Xtreme | 01 9.69% | 0f 9.63% | 47 5.95% | 0b 5.59% | 11 4.93% |
+
+Top exact 16-bit opcodes over the same 600-frame smoke runs:
+
+| Image | #1 | #2 | #3 | #4 | #5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Classic V1 | 0100 8,369,121 | 1173 4,630,836 | 0b03 1,436,545 | 1072 1,402,748 | 0fc2 1,295,891 |
+| Classic V2 | 0100 1,832,567 | 47fa 730,287 | 735a 728,733 | 0b03 706,174 | 1175 706,120 |
+| Xtreme | 0100 5,283,437 | 0b03 2,060,564 | 0f80 1,951,666 | 470c 1,941,254 | 01f0 1,683,705 |
+
+Exact opcode profiling changes the next optimization target: any branch-aware
+cached-interpreter or ARMv7 translation tier that still exits on the hot
+`0x01xx` prefix forms will leave the largest executed class in the interpreter.
+The first useful design checkpoint is therefore coverage for `0x0100` and
+`0x01f0`-class prefix forms plus the already-hot branch/call/return exits,
+not another single-family ALU shortcut.
 
 Dynamic branch profile on the locally staged Classic V2 600-frame smoke:
 
