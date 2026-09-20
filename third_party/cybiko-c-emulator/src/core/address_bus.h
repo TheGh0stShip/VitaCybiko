@@ -66,6 +66,7 @@ typedef struct address_bus {
     int     io_fallthrough_log;
     int     dma_debug_log;
     bool    in_dma;  /* true during DMA transfers */
+    unsigned sync_suppressed; /* composite MMIO access already synchronized */
     /* Only complete, side-effect-free 4 KiB pages are mapped. The last page
      * (on-chip I/O), partial pages and page-crossing accesses use the router.
      * Entries alias live backing storage, not a copy of guest bytes. */

@@ -73,6 +73,23 @@ static void test_io_boundary_byte_access_synchronizes(void)
     teardown_bus(&bus);
 }
 
+static void test_composite_mmio_access_synchronizes_once(void)
+{
+    address_bus_t bus;
+    setup_bus(&bus);
+
+    bus_write16(&bus, 0xffff60, 0xa55a);
+    TEST_CHECK(sync_count == 1);
+    TEST_CHECK(memory_read8(&bus.on_chip_ram, 0x2360) == 0xa5);
+    TEST_CHECK(memory_read8(&bus.on_chip_ram, 0x2361) == 0x5a);
+
+    sync_count = 0;
+    TEST_CHECK(bus_read16(&bus, 0xffff60) == 0xa55a);
+    TEST_CHECK(sync_count == 1);
+
+    teardown_bus(&bus);
+}
+
 static void test_plain_range_classifier_accepts_mapped_ram_and_rom(void)
 {
     address_bus_t bus;
@@ -232,6 +249,7 @@ TEST_LIST = {
     {"plain_on_chip_ram_fast_path_stays_below_io_boundary", test_plain_on_chip_ram_fast_path_stays_below_io_boundary},
     {"on_chip_access_reaching_io_boundary_uses_slow_router", test_on_chip_access_reaching_io_boundary_uses_slow_router},
     {"io_boundary_byte_access_synchronizes", test_io_boundary_byte_access_synchronizes},
+    {"composite_mmio_access_synchronizes_once", test_composite_mmio_access_synchronizes_once},
     {"plain_range_classifier_accepts_mapped_ram_and_rom", test_plain_range_classifier_accepts_mapped_ram_and_rom},
     {"plain_range_classifier_rejects_mmio_and_page_crossing", test_plain_range_classifier_rejects_mmio_and_page_crossing},
     {"plain_pointer_helpers_return_live_backing_storage", test_plain_pointer_helpers_return_live_backing_storage},

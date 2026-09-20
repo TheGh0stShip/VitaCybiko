@@ -59,6 +59,12 @@ static void     write_on_chip16(address_bus_t *bus, uint32_t address, uint16_t v
 static void     execute_dma_transfer(address_bus_t *bus, int channel);
 static void update_rtc_pins(address_bus_t *bus);
 
+static void sync_peripherals_for_io(address_bus_t *bus)
+{
+    if (bus->sync_peripherals && !bus->sync_suppressed)
+        bus->sync_peripherals(bus->sync_ctx);
+}
+
 /* --- Address decoding --- */
 
 static bus_region_t decode_region(address_bus_t *bus, uint32_t address)
@@ -510,7 +516,7 @@ static uint8_t read_on_chip8(address_bus_t *bus, uint32_t address)
 {
     if (address < 0xFFFC00)
         return memory_read8(&bus->on_chip_ram, on_chip_offset(bus, address));
-    if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
+    if (address >= 0xFFFC00) sync_peripherals_for_io(bus);
     /* Timer16 channels (non-contiguous, check first) */
     int t16 = route_timer16_read8(bus, address);
     if (t16 >= 0) return (uint8_t)t16;
@@ -598,7 +604,7 @@ static uint16_t read_on_chip16(address_bus_t *bus, uint32_t address)
 {
     if (address < 0xFFFC00)
         return memory_read16(&bus->on_chip_ram, on_chip_offset(bus, address));
-    if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
+    if (address >= 0xFFFC00) sync_peripherals_for_io(bus);
     /* Timer16 routing first */
     int t16 = route_timer16_read16(bus, address);
     if (t16 >= 0) return (uint16_t)t16;
@@ -607,7 +613,11 @@ static uint16_t read_on_chip16(address_bus_t *bus, uint32_t address)
      * ADC sample is left-aligned in bits 15:6 even for a MOV.W access. The
      * H8S2245 map uses addr8_r, not the unrelated raw addr16_r helper. */
     if (address >= 0xFFFE00) {
-        return (read_on_chip8(bus, address) << 8) | read_on_chip8(bus, address + 1);
+        bus->sync_suppressed++;
+        uint16_t value = (uint16_t)((read_on_chip8(bus, address) << 8) |
+                                    read_on_chip8(bus, address + 1));
+        bus->sync_suppressed--;
+        return value;
     }
 
     /* Below 0xFFFE00: direct on-chip RAM read */
@@ -663,7 +673,7 @@ static void write_on_chip8(address_bus_t *bus, uint32_t address, uint8_t value)
         bus_note_code_write(bus, address, 1);
         return;
     }
-    if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
+    if (address >= 0xFFFC00) sync_peripherals_for_io(bus);
     /* Timer16 routing (check first, non-contiguous addresses) */
     if (route_timer16_write8(bus, address, value)) return;
 
@@ -860,14 +870,16 @@ static void write_on_chip16(address_bus_t *bus, uint32_t address, uint16_t value
         bus_note_code_write(bus, address, 2);
         return;
     }
-    if (address >= 0xFFFC00 && bus->sync_peripherals) bus->sync_peripherals(bus->sync_ctx);
+    if (address >= 0xFFFC00) sync_peripherals_for_io(bus);
     /* Timer16 routing first */
     if (route_timer16_write16(bus, address, value)) return;
 
     /* I/O register region: split into two 8-bit writes */
     if (address >= 0xFFFE00) {
+        bus->sync_suppressed++;
         write_on_chip8(bus, address, (value >> 8) & 0xFF);
         write_on_chip8(bus, address + 1, value & 0xFF);
+        bus->sync_suppressed--;
         return;
     }
 
