@@ -330,6 +330,7 @@ typedef struct {
     unsigned audio_dropped_frames;
     uint64_t audio_ticks;
     uint64_t lcd_ticks;
+    uint64_t present_ticks;
     bool audio_s16_stereo;
     SDL_GameController *controller;
 
@@ -1674,6 +1675,13 @@ static void record_present(present_timing_t *timing, uint64_t now, uint64_t inte
     timing->previous = now;
 }
 
+static void present_renderer(app_ctx_t *ctx)
+{
+    uint64_t started = SDL_GetPerformanceCounter();
+    SDL_RenderPresent(ctx->renderer);
+    ctx->present_ticks += SDL_GetPerformanceCounter() - started;
+}
+
 static void hal_keyboard_poll(void *ctx_ptr, uint16_t *matrix, int num_columns)
 {
     app_ctx_t *ctx = ctx_ptr;
@@ -1961,7 +1969,7 @@ static void present_portrait_target(app_ctx_t *ctx)
     };
     SDL_RenderCopyEx(ctx->renderer, ctx->portrait_target, NULL, &dst,
                      90.0, NULL, SDL_FLIP_NONE);
-    SDL_RenderPresent(ctx->renderer);
+    present_renderer(ctx);
 }
 
 static void render_layout_button(app_ctx_t *ctx)
@@ -2117,7 +2125,7 @@ static void render_landscape(app_ctx_t *ctx)
     SDL_Rect lcd = {20, 96, 480, 300};
     SDL_RenderCopy(ctx->renderer, ctx->motion_texture_active ? ctx->motion_texture : ctx->lcd_texture, NULL, &lcd);
     rectangleRGBA(ctx->renderer, 19, 95, 500, 396, 160, 182, 162, 255);
-    SDL_RenderPresent(ctx->renderer);
+    present_renderer(ctx);
 }
 
 static void render_frame(app_ctx_t *ctx)
@@ -2229,7 +2237,7 @@ static void render_message_screen(app_ctx_t *ctx, const char *line1,
     for (int i = 0; i < 4; ++i)
         stringRGBA(ctx->renderer, (SCREEN_WIDTH - text_width(lines[i])) / 2,
                    175 + i * 45, lines[i], 200, 218, 225, 255);
-    SDL_RenderPresent(ctx->renderer);
+    present_renderer(ctx);
 }
 
 static void release_all_inputs(app_ctx_t *ctx)
@@ -2726,7 +2734,7 @@ select_model:
     snprintf(perf_path, sizeof(perf_path), "%s/performance.csv", runtime_root);
     frame_log_t *perf_log = create_frame_log(perf_path);
     if (perf_log) {
-        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents,source_lcd_updates,generated_lcd_frames,motion_estimate_ms,interpolation_delay_ms,semantic_fast_blocks,semantic_fast_cycles,semantic_mutable_fast_blocks,semantic_mutable_fast_cycles,semantic_fast_rejects,semantic_fast_cached_rejects,semantic_fast_backoff_skips,semantic_fast_reject_guard,semantic_fast_reject_irq,semantic_fast_reject_window,semantic_fast_reject_cached,semantic_fast_reject_unsupported_block,semantic_fast_reject_unsupported_exit,semantic_fast_reject_cycle_budget,semantic_fast_reject_branch_resolve,semantic_fast_reject_target\n");
+        append_frame_log(perf_log, "version,model,presents,guest_frames,lcd_updates,elapsed_ms,core_ms,render_ms,draw_ms,present_ms,max_core_ms,pc,audio_ms,lcd_ms,audio_underruns,audio_dropped_frames,audio_queue_bytes,save_capture_ms,save_worker_ms,max_present_interval_ms,late_presents,source_lcd_updates,generated_lcd_frames,motion_estimate_ms,interpolation_delay_ms,semantic_fast_blocks,semantic_fast_cycles,semantic_mutable_fast_blocks,semantic_mutable_fast_cycles,semantic_fast_rejects,semantic_fast_cached_rejects,semantic_fast_backoff_skips,semantic_fast_reject_guard,semantic_fast_reject_irq,semantic_fast_reject_window,semantic_fast_reject_cached,semantic_fast_reject_unsupported_block,semantic_fast_reject_unsupported_exit,semantic_fast_reject_cycle_budget,semantic_fast_reject_branch_resolve,semantic_fast_reject_target\n");
     }
     cybiko_cpu_stats_t perf_cpu_start = {0};
     cybiko_get_cpu_stats(emu, &perf_cpu_start);
@@ -2736,7 +2744,7 @@ select_model:
     uint64_t perf_motion = 0;
     ctx->audio_ticks = ctx->lcd_ticks = 0;
     ctx->audio_underruns = ctx->audio_dropped_frames = 0;
-    uint64_t perf_start = frame_deadline, perf_core = 0, perf_render = 0, perf_max_core = 0;
+    uint64_t perf_start = frame_deadline, perf_core = 0, perf_render = 0, perf_present = 0, perf_max_core = 0;
     double perf_save_capture_ms = 0, perf_save_worker_ms = 0;
     present_timing_t present_timing = {0};
     while (running) {
@@ -2800,7 +2808,7 @@ select_model:
             guest_deadline = frame_deadline;
             perf_start = frame_deadline;
             perf_presents = perf_guest = 0;
-            perf_core = perf_render = perf_max_core = 0;
+            perf_core = perf_render = perf_present = perf_max_core = 0;
             perf_lcd_start = ctx->lcd_updates;
             perf_source_start = ctx->source_lcd_updates;
             perf_generated_start = ctx->generated_lcd_frames;
@@ -2829,22 +2837,28 @@ select_model:
         }
 
         uint64_t render_start = SDL_GetPerformanceCounter();
+        uint64_t present_before = ctx->present_ticks;
         render_frame(ctx);
         uint64_t present_stamp = SDL_GetPerformanceCounter();
         last_render_ticks = present_stamp - render_start;
+        uint64_t present_ticks = ctx->present_ticks - present_before;
         record_present(&present_timing, present_stamp, frame_interval);
         perf_render += last_render_ticks;
+        perf_present += present_ticks;
         if (++perf_presents == 60) {
             uint64_t stamp = SDL_GetPerformanceCounter();
             if (perf_log && perf_rows++ < 600) {
                 double ms = 1000.0 / (double)perf_frequency;
                 cybiko_cpu_stats_t perf_cpu_now = {0};
                 cybiko_get_cpu_stats(emu, &perf_cpu_now);
-                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u,%u,%u,%.3f,%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
+                uint64_t draw_ticks = perf_render > perf_present ?
+                    perf_render - perf_present : 0;
+                append_frame_log(perf_log, "%s,%d,%u,%u,%u,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%06X,%.3f,%.3f,%u,%u,%u,%.3f,%.3f,%.3f,%u,%u,%u,%.3f,%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
                         VITACYBIKO_VERSION, ctx->model, perf_presents, perf_guest,
                         ctx->lcd_updates - perf_lcd_start,
                         (stamp - perf_start) * ms, perf_core * ms,
-                        perf_render * ms, perf_max_core * ms,
+                        perf_render * ms, draw_ticks * ms, perf_present * ms,
+                        perf_max_core * ms,
                         guest_pc,
                         ctx->audio_ticks * ms, ctx->lcd_ticks * ms,
                         ctx->audio_underruns, ctx->audio_dropped_frames,
@@ -2877,7 +2891,7 @@ select_model:
             present_timing.max_gap = 0;
             present_timing.late = 0;
             perf_presents = perf_guest = 0;
-            perf_core = perf_render = perf_max_core = 0;
+            perf_core = perf_render = perf_present = perf_max_core = 0;
             perf_lcd_start = ctx->lcd_updates;
             perf_source_start = ctx->source_lcd_updates;
             perf_generated_start = ctx->generated_lcd_frames;
