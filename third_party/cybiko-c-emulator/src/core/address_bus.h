@@ -87,7 +87,11 @@ void     bus_write32_slow(address_bus_t *bus, uint32_t address, uint32_t value);
 static inline uint8_t bus_read8(address_bus_t *bus, uint32_t address) {
     address &= 0xffffff;
     const uint8_t *page = bus->read_pages[address >> 12];
-    return page ? page[address & 4095] : bus_read8_slow(bus, address);
+    if (page) return page[address & 4095];
+    const cybiko_machine_t *m = bus->machine;
+    if (m && address >= m->on_chip_base && address < 0xfffc00)
+        return memory_read8(&bus->on_chip_ram, address - m->on_chip_base);
+    return bus_read8_slow(bus, address);
 }
 static inline uint16_t bus_read16(address_bus_t *bus, uint32_t address) {
     address &= 0xffffff;
@@ -95,6 +99,9 @@ static inline uint16_t bus_read16(address_bus_t *bus, uint32_t address) {
     unsigned offset = address & 4095;
     if (page && offset <= 4094)
         return (uint16_t)((page[offset] << 8) | page[offset + 1]);
+    const cybiko_machine_t *m = bus->machine;
+    if (m && address >= m->on_chip_base && address + 1 < 0xfffc00)
+        return memory_read16(&bus->on_chip_ram, address - m->on_chip_base);
     return bus_read16_slow(bus, address);
 }
 static inline uint32_t bus_read32(address_bus_t *bus, uint32_t address) {
@@ -104,13 +111,24 @@ static inline uint32_t bus_read32(address_bus_t *bus, uint32_t address) {
     if (page && offset <= 4092)
         return ((uint32_t)page[offset] << 24) | ((uint32_t)page[offset + 1] << 16) |
                ((uint32_t)page[offset + 2] << 8) | page[offset + 3];
+    const cybiko_machine_t *m = bus->machine;
+    if (m && address >= m->on_chip_base && address + 3 < 0xfffc00)
+        return memory_read32(&bus->on_chip_ram, address - m->on_chip_base);
     return bus_read32_slow(bus, address);
 }
 static inline void bus_write8(address_bus_t *bus, uint32_t address, uint8_t value) {
     address &= 0xffffff;
     uint8_t *page = bus->write_pages[address >> 12];
-    if (page) page[address & 4095] = value;
-    else bus_write8_slow(bus, address, value);
+    if (page) {
+        page[address & 4095] = value;
+        return;
+    }
+    const cybiko_machine_t *m = bus->machine;
+    if (m && address >= m->on_chip_base && address < 0xfffc00) {
+        memory_write8(&bus->on_chip_ram, address - m->on_chip_base, value);
+        return;
+    }
+    bus_write8_slow(bus, address, value);
 }
 static inline void bus_write16(address_bus_t *bus, uint32_t address, uint16_t value) {
     address &= 0xffffff;
@@ -118,7 +136,14 @@ static inline void bus_write16(address_bus_t *bus, uint32_t address, uint16_t va
     unsigned offset = address & 4095;
     if (page && offset <= 4094) {
         page[offset] = (uint8_t)(value >> 8); page[offset + 1] = (uint8_t)value;
-    } else bus_write16_slow(bus, address, value);
+        return;
+    }
+    const cybiko_machine_t *m = bus->machine;
+    if (m && address >= m->on_chip_base && address + 1 < 0xfffc00) {
+        memory_write16(&bus->on_chip_ram, address - m->on_chip_base, value);
+        return;
+    }
+    bus_write16_slow(bus, address, value);
 }
 static inline void bus_write32(address_bus_t *bus, uint32_t address, uint32_t value) {
     address &= 0xffffff;
@@ -127,7 +152,14 @@ static inline void bus_write32(address_bus_t *bus, uint32_t address, uint32_t va
     if (page && offset <= 4092) {
         page[offset] = (uint8_t)(value >> 24); page[offset + 1] = (uint8_t)(value >> 16);
         page[offset + 2] = (uint8_t)(value >> 8); page[offset + 3] = (uint8_t)value;
-    } else bus_write32_slow(bus, address, value);
+        return;
+    }
+    const cybiko_machine_t *m = bus->machine;
+    if (m && address >= m->on_chip_base && address + 3 < 0xfffc00) {
+        memory_write32(&bus->on_chip_ram, address - m->on_chip_base, value);
+        return;
+    }
+    bus_write32_slow(bus, address, value);
 }
 
 void     bus_tick_dma_completion(address_bus_t *bus);

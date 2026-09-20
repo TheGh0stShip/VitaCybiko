@@ -24,6 +24,8 @@ static uint64_t opcode_profile_hi[256];
 static uint64_t opcode_profile_exact[65536];
 static uint64_t prefix0100_profile_op2[65536];
 static uint64_t prefix01f0_profile_op2[65536];
+static uint64_t prefix0100_addr_region[2][8];
+static uint64_t prefix0100_addr_fast[2];
 static uint64_t branch_profile_kind[12];
 static uint64_t branch_profile_taken_kind[12];
 static uint32_t branch_profile_target_tag[BRANCH_PROFILE_TARGET_SLOTS];
@@ -81,6 +83,23 @@ static void opcode_profile_dump(void) {
         fprintf(stderr, "prefix01f0_op2_top%02u_op=0x%04x count=%llu\n",
                 rank + 1, best, (unsigned long long)best_count);
     }
+    static const char *access_names[] = {"read", "write"};
+    static const char *region_names[] = {
+        "boot", "flash", "external_ram", "on_chip_ram",
+        "lcd", "io_or_unmapped", "page_cross", "unknown"
+    };
+    for (unsigned access = 0; access < 2; ++access) {
+        if (prefix0100_addr_fast[access])
+            fprintf(stderr, "prefix0100_addr_%s_fast_page=%llu\n",
+                    access_names[access],
+                    (unsigned long long)prefix0100_addr_fast[access]);
+        for (unsigned region = 0; region < 8; ++region) {
+            if (prefix0100_addr_region[access][region])
+                fprintf(stderr, "prefix0100_addr_%s_%s=%llu\n",
+                        access_names[access], region_names[region],
+                        (unsigned long long)prefix0100_addr_region[access][region]);
+        }
+    }
     static const char *names[] = {
         "none", "bcc8", "bcc16", "bsr8", "bsr16", "jmp_abs24",
         "jsr_abs24", "indirect", "return", "trap", "sleep", "unknown"
@@ -129,6 +148,46 @@ CPU_INLINE void prefix01_profile_record(uint8_t lo, uint16_t op2) {
         prefix01f0_profile_op2[op2]++;
 }
 
+CPU_INLINE void prefix0100_addr_profile_record(const address_bus_t *bus, bool write,
+                                               uint32_t address) {
+    if (!opcode_profile_registered) {
+        atexit(opcode_profile_dump);
+        opcode_profile_registered = true;
+    }
+    address &= 0xffffff;
+    unsigned access = write ? 1u : 0u;
+    unsigned offset = address & 4095u;
+    if (offset > 4092u) {
+        prefix0100_addr_region[access][6]++;
+        return;
+    }
+    if (write) {
+        if (bus->write_pages[address >> 12])
+            prefix0100_addr_fast[access]++;
+    } else if (bus->read_pages[address >> 12]) {
+        prefix0100_addr_fast[access]++;
+    }
+
+    const cybiko_machine_t *m = bus->machine;
+    unsigned region = 7;
+    if (m) {
+        if (address <= m->boot_end) {
+            region = 0;
+        } else if (m->flash_size && address >= m->flash_base && address <= m->flash_end) {
+            region = 1;
+        } else if (address >= m->ram_base && address <= m->ram_end) {
+            region = 2;
+        } else if (address >= m->on_chip_base && address < m->on_chip_base + 0x2400u) {
+            region = 3;
+        } else if (address >= m->lcd_base && address <= m->lcd_end) {
+            region = 4;
+        } else {
+            region = 5;
+        }
+    }
+    prefix0100_addr_region[access][region]++;
+}
+
 CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target) {
     if (!opcode_profile_registered) {
         atexit(opcode_profile_dump);
@@ -151,6 +210,10 @@ CPU_INLINE void opcode_profile_record(uint16_t op) {
 }
 CPU_INLINE void prefix01_profile_record(uint8_t lo, uint16_t op2) {
     (void)lo; (void)op2;
+}
+CPU_INLINE void prefix0100_addr_profile_record(const address_bus_t *bus, bool write,
+                                               uint32_t address) {
+    (void)bus; (void)write; (void)address;
 }
 CPU_INLINE void branch_profile_record(unsigned kind, bool taken, uint32_t target) {
     (void)kind; (void)taken; (void)target;
@@ -579,7 +642,7 @@ static void execute_bit_op_at_address(h8s_cpu_t *cpu, uint32_t addr, uint16_t bi
 CPU_INLINE void decode(h8s_cpu_t *cpu, uint16_t op);
 
 /* ---- MOV.L with absolute address (6B_32) ---- */
-static void decode6B_32(h8s_cpu_t *cpu, uint16_t op2) {
+static void decode6B_32(h8s_cpu_t *cpu, uint16_t op2, bool profile0100) {
     int lo2 = op2 & 0xFF;
     bool write = (lo2 & 0x80) != 0;
     bool addr24 = (lo2 & 0x20) != 0;
@@ -587,6 +650,7 @@ static void decode6B_32(h8s_cpu_t *cpu, uint16_t op2) {
     uint32_t addr;
     if (addr24) addr = fetch32(cpu) & 0xFFFFFF;
     else { addr = (uint32_t)(int32_t)(int16_t)fetch16(cpu); addr &= 0xFFFFFF; }
+    if (profile0100) prefix0100_addr_profile_record(cpu->bus, write, addr);
 
     if (!write) {
         cpu->er[rd] = bus_read32(cpu->bus, addr);
@@ -719,27 +783,32 @@ static void decode0100(h8s_cpu_t *cpu, uint16_t op2) {
         case 0x69: {
             int rh = (lo2 >> 4) & 0x7;
             int rl = lo2 & 0x7;
+            uint32_t addr = cpu->er[rh];
+            prefix0100_addr_profile_record(cpu->bus, (lo2 & 0x80) != 0, addr);
             if ((lo2 & 0x80) == 0) {
-                cpu->er[rl] = bus_read32(cpu->bus, cpu->er[rh]);
+                cpu->er[rl] = bus_read32(cpu->bus, addr);
                 set_nz_l(cpu, (int32_t)cpu->er[rl]); set_flag(cpu, BIT_V, false);
             } else {
-                bus_write32(cpu->bus, cpu->er[rh], cpu->er[rl]);
+                bus_write32(cpu->bus, addr, cpu->er[rl]);
                 set_nz_l(cpu, (int32_t)cpu->er[rl]); set_flag(cpu, BIT_V, false);
             }
             break;
         }
-        case 0x6B: decode6B_32(cpu, op2); break;
+        case 0x6B: decode6B_32(cpu, op2, true); break;
         case 0x6D: {
             int rh = (lo2 >> 4) & 0x7;
             int rl = lo2 & 0x7;
             if ((lo2 & 0x80) == 0) {
-                uint32_t val = bus_read32(cpu->bus, cpu->er[rh]);
+                uint32_t addr = cpu->er[rh];
+                prefix0100_addr_profile_record(cpu->bus, false, addr);
+                uint32_t val = bus_read32(cpu->bus, addr);
                 cpu->er[rh] += 4;
                 cpu->er[rl] = val;
                 set_nz_l(cpu, (int32_t)cpu->er[rl]); set_flag(cpu, BIT_V, false);
             } else {
                 uint32_t val = cpu->er[rl];
                 cpu->er[rh] -= 4;
+                prefix0100_addr_profile_record(cpu->bus, true, cpu->er[rh]);
                 bus_write32(cpu->bus, cpu->er[rh], val);
                 set_nz_l(cpu, (int32_t)val); set_flag(cpu, BIT_V, false);
             }
@@ -749,11 +818,13 @@ static void decode0100(h8s_cpu_t *cpu, uint16_t op2) {
             int rh = (lo2 >> 4) & 0x7;
             int rl = lo2 & 0x7;
             int16_t disp = (int16_t)fetch16(cpu);
+            uint32_t addr = cpu->er[rh] + disp;
+            prefix0100_addr_profile_record(cpu->bus, (lo2 & 0x80) != 0, addr);
             if ((lo2 & 0x80) == 0) {
-                cpu->er[rl] = bus_read32(cpu->bus, cpu->er[rh] + disp);
+                cpu->er[rl] = bus_read32(cpu->bus, addr);
                 set_nz_l(cpu, (int32_t)cpu->er[rl]); set_flag(cpu, BIT_V, false);
             } else {
-                bus_write32(cpu->bus, cpu->er[rh] + disp, cpu->er[rl]);
+                bus_write32(cpu->bus, addr, cpu->er[rl]);
                 set_nz_l(cpu, (int32_t)cpu->er[rl]); set_flag(cpu, BIT_V, false);
             }
             break;
@@ -763,11 +834,13 @@ static void decode0100(h8s_cpu_t *cpu, uint16_t op2) {
             uint16_t op3 = fetch16(cpu);
             int32_t disp = (int32_t)fetch32(cpu);
             int r2 = op3 & 0x7;
+            uint32_t addr = cpu->er[r1] + disp;
+            prefix0100_addr_profile_record(cpu->bus, (op3 & 0x0080) != 0, addr);
             if ((op3 & 0x0080) == 0) {
-                cpu->er[r2] = bus_read32(cpu->bus, cpu->er[r1] + disp);
+                cpu->er[r2] = bus_read32(cpu->bus, addr);
                 set_nz_l(cpu, (int32_t)cpu->er[r2]); set_flag(cpu, BIT_V, false);
             } else {
-                bus_write32(cpu->bus, cpu->er[r1] + disp, cpu->er[r2]);
+                bus_write32(cpu->bus, addr, cpu->er[r2]);
                 set_nz_l(cpu, (int32_t)cpu->er[r2]); set_flag(cpu, BIT_V, false);
             }
             break;
@@ -803,7 +876,7 @@ static void decode01(h8s_cpu_t *cpu, int lo) {
             uint16_t op2 = fetch16(cpu);
             prefix01_profile_record((uint8_t)lo, op2);
             int hi2 = (op2 >> 8) & 0xFF;
-            if (hi2 == 0x6B) { decode6B_32(cpu, op2); }
+            if (hi2 == 0x6B) { decode6B_32(cpu, op2, false); }
             else if (hi2 == 0x50 || hi2 == 0x52) { decode_mulxs(cpu, hi2, op2); }
             else if (hi2 == 0x51 || hi2 == 0x53) { decode_divxs(cpu, hi2, op2); }
             else if (lo == 0xF0 && hi2 == 0x64) {

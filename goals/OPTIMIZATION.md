@@ -505,6 +505,25 @@ synchronization. This matches QEMU-style translated memory fast/slow paths:
 fast only when the address-space guard proves ordinary memory, otherwise fall
 back to the existing interpreter/bus path.
 
+Effective-address profiling for `0x0100` shows the immediate bus-routing
+opportunity before a full memory-aware block tier:
+
+| Image | Read fast page | Read external RAM | Read on-chip RAM | Write fast page | Write external RAM | Write on-chip RAM |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Classic V1 | 3,989,093 | 3,988,381 | 1,562,437 | 2,804,625 | 2,804,625 | 12,959 |
+| Classic V2 | 1,281,383 | 956,919 | 317,992 | 512,773 | 512,723 | 5,810 |
+| Xtreme | 2,970,498 | 2,482,715 | 1,000,551 | 1,136,542 | 1,136,467 | 559,602 |
+
+On-chip RAM below `0xFFFC00` is plain storage, but pages adjacent to the I/O
+window cannot be fully mapped in the 4 KiB page table. The bus now has an
+inline guarded fast path for reads/writes wholly inside that plain on-chip RAM
+subrange while keeping `0xFFFC00` and above on the slow peripheral router. Host
+gates passed after the change: `test_h8s_cpu`, `test_h8s_block`,
+`test_emulator`, full `ctest` 16/16, and three-model 600-frame smoke measured
+Classic V1 0.99 s, Classic V2 0.37 s, Xtreme 3.64 s. Repeated Xtreme-only
+runs were 3.66/3.62/4.21 s, so this is a safe hot-path cleanup with noisy host
+timing, not proof of physical Vita smoothness.
+
 Dynamic branch profile on the locally staged Classic V2 600-frame smoke:
 
 | Branch kind | Executed | Taken | Notes |
