@@ -317,6 +317,7 @@ typedef struct {
     SDL_Texture *ui_cache;
     SDL_Texture *lcd_texture;
     SDL_Texture *motion_texture;
+    bool renderer_vsync;
     SDL_AudioDeviceID audio_dev;
     SDL_AudioSpec audio_have;
     Uint32 audio_frame_bytes;
@@ -2410,6 +2411,9 @@ static bool init_sdl(app_ctx_t *ctx)
         fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
         return false;
     }
+    SDL_RendererInfo renderer_info;
+    if (SDL_GetRendererInfo(ctx->renderer, &renderer_info) == 0)
+        ctx->renderer_vsync = (renderer_info.flags & SDL_RENDERER_PRESENTVSYNC) != 0;
     SDL_RenderSetLogicalSize(ctx->renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     ctx->portrait_target = SDL_CreateTexture(ctx->renderer,
@@ -2819,7 +2823,7 @@ select_model:
         /* Service completions and input without tying either to presentation.
          * This is deliberately not a wait on the guest CPU: a 100 ms guest
          * frame must not prevent six UI presentations. */
-        if (frame_now < frame_deadline) {
+        if (!ctx->renderer_vsync && frame_now < frame_deadline) {
             SDL_Delay(1);
             continue;
         }
