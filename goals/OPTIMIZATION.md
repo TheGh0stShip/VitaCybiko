@@ -167,15 +167,17 @@ Current block-discovery gate:
   inside immutable ROM. Only state-independent unsupported blocks/exits are
   cached.
 - After a cached state-independent reject, `h8s_cpu_run` now backs off semantic
-  fast-path probing for a short 16-cycle interpreter window. This does not
+  fast-path probing for a 128-cycle interpreter window. This does not
   change guest semantics because the fast path is optional and skipped probes
   execute through the normal interpreter. On the same locally staged Classic V2
-  candidate smoke, this moved the run from blank/inactive failure to
-  `firmware-smoke: PASS` with `active=599`, `changed_frames=3`,
-  `blocks=1834177`, `cycles=4288575`, `rejects=7351376`, and
-  `cached_rejects=6178201` over 600 frames. Host CPU time was 5.710457 s, so
-  this is a correctness/boot-progress win rather than the final speed win.
-  The next optimization must use the telemetry to either broaden safe semantic
+  candidate smoke, 16/32/64-cycle backoff windows all passed but still spent
+  5.71/5.58/5.50 CPU seconds respectively. A 128-cycle window passed with
+  `active=599`, `changed_frames=5`, `blocks=220057`, `cycles=556359`,
+  `rejects=229188`, and `cached_rejects=91655` over 600 frames while reducing
+  host CPU time to 0.561577 s. A real 256-cycle window also passed after
+  widening the counter type, but measured 0.572431 s with fewer active frames
+  (`active=596`) in the same smoke, so 128 is the current measured gate. The
+  next optimization must use this telemetry to either broaden safe semantic
   block execution or make the backoff adaptive, not return to every-cycle
   semantic probing.
 - `cybiko-block-scan` now reports branch-exit distributions and top static
