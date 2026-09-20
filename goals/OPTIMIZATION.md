@@ -68,6 +68,9 @@ Current block-discovery gate:
   make a tier-one block miss semantic-executor coverage. This turns the next
   executor expansion into a measured backlog rather than another broad
   interpreter tweak.
+- `cybiko-block-scan` now reports exact unsupported opcode words inside
+  tier-one blocks, because high-byte families are too coarse for the remaining
+  coverage work.
 - The semantic executor now covers valid `0x10`-`0x13` shift/rotate register
   forms (byte/word/long, one/two-bit, logical/arithmetic, and with/without
   carry), with standalone tests for flags, carry flow, register width, and PC
@@ -113,8 +116,9 @@ Next semantic-executor targets, in order:
    low-byte form; the common non-memory variants are now implemented, so any
    remainder is either a rare valid subform or over-broad tier-one
    classification.
-2. Add an exact unsupported-opcode report to `cybiko-block-scan`; high-byte
-   grouping is now too coarse to guide the final semantic coverage work.
+2. Tighten tier-one classification for invalid/unsupported subforms now that
+   exact opcode reports show many remaining gaps are not broadly valid
+   register-only instructions.
 
 Do not wire semantic block execution into the Vita runtime until these expanded
 families pass standalone CPU-state tests and the scanner shows materially higher
@@ -147,6 +151,20 @@ After adding direct register bit/word logic, local Classic V2 coverage moved to:
 | Classic V2 flash (`emu_flash.bin`) | 43,124 | 115,681 | 4,411 | 4,785 | `0x0b` 27.04%, `0x0a` 13.08%, `0x0f` 9.49%, `0x17` 8.28%, `0x1b` 8.17% |
 | Classic V2 flash 512K (`emu_flash_512k.bin`) | 42,998 | 115,555 | 3,973 | 4,221 | `0x0b` 21.70%, `0x0f` 10.76%, `0x0a` 10.42%, `0x17` 9.38%, `0x1b` 9.26% |
 | Classic V2 CyOS (`emu_cyos.bin`) | 21,552 | 38,101 | 93 | 93 | `0x0b` 44.09%, `0x0a` 17.20%, `0x10` 13.98%, `0x0f` 7.53%, `0x1b` 6.45% |
+
+Exact unsupported-opcode scan after the register bit/word-logic expansion:
+
+| Image | Top exact unsupported opcodes |
+| --- | --- |
+| Classic V2 boot (`emu_rom.bin`) | `0x1a40` 18.95%, `0x1f40` 18.95%, `0x0b40` 12.63%, `0x17c0` 12.63%, `0x0a46` 6.32% |
+| Classic V2 flash (`emu_flash.bin`) | `0x0b2b` 9.13%, `0x0a61` 6.83%, `0x0bb1` 4.83%, `0x0f00` 1.13%, `0x0a43` 0.59% |
+| Classic V2 flash 512K (`emu_flash_512k.bin`) | `0x0b2b` 4.38%, `0x0a61` 3.34%, `0x0bb1` 2.49%, `0x0f00` 1.28%, `0x0a43` 0.66% |
+| Classic V2 CyOS (`emu_cyos.bin`) | `0x1020` 10.75%, `0x0a6e` 5.38%, `0x0b64` 4.30%, `0x0bb4` 4.30%, `0x0bb8` 4.30% |
+
+The exact scan suggests the next action is classification tightening, not blind
+semantic expansion: many top forms do not match the interpreter's supported
+subop masks for INC/DEC/ADDS/SUBS or shift/rotate. Treat them as block
+boundaries unless verified against the H8S manual and interpreter.
 
 Executed opcode profile gate:
 
@@ -246,6 +264,8 @@ starvation with frame dropping.
 - [MAME H8 core](https://github.com/mamedev/mame/blob/master/src/devices/cpu/h8/h8.h)
 - [MAME H8 execution core](https://github.com/mamedev/mame/blob/master/src/devices/cpu/h8/h8.cpp)
 - [MAME H8S/2000 device wrapper](https://github.com/mamedev/mame/blob/master/src/devices/cpu/h8/h8s2000.cpp)
+- [Renesas H8/300H software manual](https://www.renesas.com/)
+- [H8/300 programming manual mirror](https://docs.alexrp.com/h8300/)
 - [QEMU TCG translation blocks](https://www.qemu.org/docs/master/devel/tcg.html)
 - [Cached interpreter overview](https://emudev.org/2021/01/31/cached-interpreter.html)
 - [melonDS JIT/cached-interpreter notes](https://melonds.kuribo64.net/comments.php?id=138)

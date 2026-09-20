@@ -38,6 +38,27 @@ static void print_top_semantic_gaps(const unsigned long long counts[256],
     }
 }
 
+static void print_top_semantic_opcode_gaps(const unsigned long long counts[65536],
+                                           unsigned long long total)
+{
+    bool printed[65536] = {0};
+    for (unsigned rank = 0; rank < 20; ++rank) {
+        unsigned best = 0;
+        unsigned long long best_count = 0;
+        for (unsigned op = 0; op < 65536; ++op) {
+            if (!printed[op] && counts[op] > best_count) {
+                best_count = counts[op];
+                best = op;
+            }
+        }
+        if (!best_count) break;
+        printed[best] = true;
+        printf("semantic_gap_opcode_top%02u_op=0x%04x count=%llu share=%.2f%%\n",
+               rank + 1, best, best_count,
+               total ? 100.0 * (double)best_count / (double)total : 0.0);
+    }
+}
+
 static unsigned parse_uint(const char *text, unsigned fallback)
 {
     if (!text) return fallback;
@@ -92,6 +113,7 @@ int main(int argc, char **argv)
     unsigned long long semantic_gap_blocks = 0;
     unsigned long long semantic_gap_instructions = 0;
     unsigned long long semantic_gap_hi[256] = {0};
+    unsigned long long semantic_gap_op[65536] = {0};
     unsigned long long bytes = 0;
     unsigned long long stops[H8S_BLOCK_STOP_UNSUPPORTED + 1] = {0};
     unsigned longest = 0;
@@ -114,6 +136,7 @@ int main(int argc, char **argv)
                 uint16_t op = block.decoded[i].op;
                 if (!h8s_semantic_instruction_supported(op)) {
                     semantic_gap_hi[(uint8_t)(op >> 8)]++;
+                    semantic_gap_op[op]++;
                     semantic_gap_instructions++;
                     if (!counted_block) {
                         semantic_gap_blocks++;
@@ -143,6 +166,7 @@ int main(int argc, char **argv)
            semantic_blocks, semantic_instructions);
     printf("semantic_gap_blocks=%llu\n", semantic_gap_blocks);
     print_top_semantic_gaps(semantic_gap_hi, semantic_gap_instructions);
+    print_top_semantic_opcode_gaps(semantic_gap_op, semantic_gap_instructions);
     printf("longest_block_pc=0x%06x longest_instructions=%u\n", longest_pc, longest);
     for (unsigned i = 0; i <= H8S_BLOCK_STOP_UNSUPPORTED; ++i)
         printf("stop_%s=%llu\n", stop_name((h8s_block_stop_t)i), stops[i]);
