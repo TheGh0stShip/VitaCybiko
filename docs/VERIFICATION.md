@@ -360,6 +360,26 @@ b06a0ee813d77bc450cf9a5fe40e9c9df578067e80668ec3e1cb11e3e83b8ed1
   Release host build/tests and sanitizer/frontend host build/tests both
   completed successfully.
 
+## Post-01.17 Xtreme semantic branch fix
+
+The worktree after `v0.1.17-preview` fixes the H8S semantic block resolver for
+BHI/BLS branches so it matches the interpreter condition table. The previous
+semantic resolver treated BHI as `!C` and BLS as `C`; the interpreter uses
+`!C && !Z` and `C || Z`.
+
+- `test_h8s_block` now covers BHI taken/fall-through and BLS
+  taken/fall-through cases.
+- `test_h8s_block`, `test_h8s_cpu`, and the full 16-test Release host suite
+  pass.
+- Local MAME-reference firmware smoke benchmark after the fix:
+  Classic V1 `PASS`, 600 frames, 586 active, PC `219C8E`, 1.02 s wall;
+  Classic V2 `PASS`, 600 frames, 596 active, PC `11ED98`, 0.39 s wall;
+  Xtreme `PASS`, 600 frames, 600 active, PC `4A3C40`, 4.43 s wall.
+- The Xtreme smoke was checked against a baseline without the fix and failed
+  with unmapped `0xF00000` execution, 0 active frames and PC `FFFAD2`, so this
+  is a real Xtreme correctness/boot-progress fix rather than a cosmetic timing
+  change.
+
 ## v0.1.3-preview candidate
 
 Vita package metadata is `01.03`. Candidate VPK SHA-256:

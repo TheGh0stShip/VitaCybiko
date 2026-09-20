@@ -322,6 +322,12 @@ static void test_resolves_static_branch_exits(void)
     } cases[] = {
         {"BRA d:8", {0x40, 0x06}, 2, 0x00, 8},
         {"BRN d:8", {0x41, 0x06}, 2, 0x00, 2},
+        {"BHI taken", {0x42, 0x06}, 2, 0x00, 8},
+        {"BHI fallthrough carry", {0x42, 0x06}, 2, 0x01, 2},
+        {"BHI fallthrough zero", {0x42, 0x06}, 2, 0x04, 2},
+        {"BLS taken carry", {0x43, 0x06}, 2, 0x01, 8},
+        {"BLS taken zero", {0x43, 0x06}, 2, 0x04, 8},
+        {"BLS fallthrough", {0x43, 0x06}, 2, 0x00, 2},
         {"BNE taken", {0x46, 0x06}, 2, 0x00, 8},
         {"BNE fallthrough", {0x46, 0x06}, 2, 0x04, 2},
         {"BEQ taken", {0x47, 0x06}, 2, 0x04, 8},

@@ -165,8 +165,8 @@ static bool block_evaluate_condition(uint8_t ccr, unsigned cond)
     switch (cond & 0xf) {
     case 0x0: return true;          /* BRA/BT */
     case 0x1: return false;         /* BRN/BF */
-    case 0x2: return !c;            /* BHI */
-    case 0x3: return c;             /* BLS */
+    case 0x2: return !c && !z;      /* BHI */
+    case 0x3: return c || z;        /* BLS */
     case 0x4: return !c;            /* BCC/BHS */
     case 0x5: return c;             /* BCS/BLO */
     case 0x6: return !z;            /* BNE */

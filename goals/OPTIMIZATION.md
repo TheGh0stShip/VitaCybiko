@@ -195,9 +195,25 @@ Current block-discovery gate:
   Xtreme or Classic slowdowns can now be separated into CPU fast-path coverage,
   repeated reject/probe overhead, audio queue starvation, render/present stalls,
   and interpolation work from the same runtime trace.
+- The semantic branch resolver now matches the interpreter for BHI/BLS
+  conditions: BHI requires both C and Z clear, while BLS is true when C or Z is
+  set. The previous resolver ignored Z for these two conditions, which could
+  send the optional semantic ROM fast path down an interpreter-inconsistent
+  branch. With MAME-reference local fixtures, the same 600-frame Xtreme smoke
+  that previously fell into unmapped `0xF00000` execution now passes with
+  `active=600`, `pc=4A3C40`, `semantic_fast_blocks=874500`, and
+  `semantic_fast_cycles=2205420`. This is a correctness fix that also removes
+  the largest current Xtreme host-smoke blocker.
 
 Rejected follow-up experiment on 2026-09-20:
 
+- Branch-chaining multiple semantic ROM blocks inside one `h8s_cpu_run`
+  fast-path attempt was prototyped with transactional rollback tests. It did
+  not materially improve the three-model host smoke after the BHI/BLS fix and
+  added extra correctness risk around rejected absolute-jump targets, so it was
+  removed. Keep future branch-aware work at the decoded-block/JIT design level
+  with full equivalence gates rather than adding ad-hoc chaining to the current
+  optional fast path.
 - An adaptive cached-reject backoff that ramped from 16 to 128 cycles and reset
   on semantic-block success preserved the `h8s_cpu` focused test and Classic V2
   smoke activity, but regressed the same 600-frame smoke to 4.467410 CPU
