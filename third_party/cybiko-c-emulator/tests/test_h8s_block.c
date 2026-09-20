@@ -459,6 +459,80 @@ static void test_semantic_block_executes_shift_rotate_ops(void)
     TEST_CHECK(state.ccr & 0x08);
 }
 
+static void test_semantic_block_executes_inc_dec_forms(void)
+{
+    const uint8_t rom[] = {
+        0x0b, 0x50, /* INC.W #1,R0: 0x7fff -> 0x8000, V/N */
+        0x0b, 0x71, /* INC.L #1,ER1: 0x7fffffff -> 0x80000000, V/N */
+        0x0b, 0xd2, /* INC.W #2,R2 */
+        0x1b, 0x53, /* DEC.W #1,R3: 0x8000 -> 0x7fff, V */
+        0x1b, 0x74, /* DEC.L #1,ER4: 0x80000000 -> 0x7fffffff, V */
+        0x1b, 0xd5, /* DEC.W #2,R5: 0x8001 -> 0x7fff, V */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(h8s_semantic_block_supported(&block));
+    h8s_block_cpu_state_t state = {
+        .er = {
+            0x00007fff,
+            0x7fffffff,
+            0x00000001,
+            0x00008000,
+            0x80000000,
+            0x00008001,
+            0, 0
+        },
+        .ccr = 0
+    };
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK((state.er[0] & 0xffff) == 0x8000);
+    TEST_CHECK(state.er[1] == 0x80000000);
+    TEST_CHECK((state.er[2] & 0xffff) == 0x0003);
+    TEST_CHECK((state.er[3] & 0xffff) == 0x7fff);
+    TEST_CHECK(state.er[4] == 0x7fffffff);
+    TEST_CHECK((state.er[5] & 0xffff) == 0x7fff);
+    TEST_CHECK(state.pc == 12);
+    TEST_CHECK(state.ccr & 0x02);
+}
+
+static void test_semantic_block_executes_zero_a_inc_dec_forms(void)
+{
+    const uint8_t rom[] = {
+        0x0a, 0x08, /* INC.B R0L: 0x7f -> 0x80, V/N */
+        0x0a, 0x51, /* INC.W R1: 0x7fff -> 0x8000, V/N */
+        0x0a, 0x72, /* INC.L ER2: 0x7fffffff -> 0x80000000, V/N */
+        0x1a, 0x03, /* DEC.B R3H: 0x80 -> 0x7f, V */
+        0x1a, 0x54, /* DEC.W R4: 0x8000 -> 0x7fff, V */
+        0x1a, 0x75, /* DEC.L ER5: 0x80000000 -> 0x7fffffff, V */
+        0x54, 0x70
+    };
+    h8s_block_t block;
+    TEST_ASSERT(h8s_analyze_rom_block(rom, sizeof(rom), 0, 16, &block));
+    TEST_CHECK(h8s_semantic_block_supported(&block));
+    h8s_block_cpu_state_t state = {
+        .er = {
+            0x0000007f,
+            0x00007fff,
+            0x7fffffff,
+            0x00008000,
+            0x00008000,
+            0x80000000,
+            0, 0
+        },
+        .ccr = 0
+    };
+    TEST_CHECK(h8s_execute_semantic_block(&block, &state));
+    TEST_CHECK((state.er[0] & 0xff) == 0x80);
+    TEST_CHECK((state.er[1] & 0xffff) == 0x8000);
+    TEST_CHECK(state.er[2] == 0x80000000);
+    TEST_CHECK(((state.er[3] >> 8) & 0xff) == 0x7f);
+    TEST_CHECK((state.er[4] & 0xffff) == 0x7fff);
+    TEST_CHECK(state.er[5] == 0x7fffffff);
+    TEST_CHECK(state.pc == 12);
+    TEST_CHECK(state.ccr & 0x02);
+}
+
 TEST_LIST = {
     { "stops_before_branch", test_stops_before_branch },
     { "counts_variable_immediates", test_counts_variable_immediates },
@@ -483,5 +557,7 @@ TEST_LIST = {
     { "semantic_block_executes_byte_word_register_ops", test_semantic_block_executes_byte_word_register_ops },
     { "semantic_block_executes_unary_register_ops", test_semantic_block_executes_unary_register_ops },
     { "semantic_block_executes_shift_rotate_ops", test_semantic_block_executes_shift_rotate_ops },
+    { "semantic_block_executes_inc_dec_forms", test_semantic_block_executes_inc_dec_forms },
+    { "semantic_block_executes_zero_a_inc_dec_forms", test_semantic_block_executes_zero_a_inc_dec_forms },
     { NULL, NULL }
 };

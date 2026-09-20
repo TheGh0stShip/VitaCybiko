@@ -615,11 +615,15 @@ bool h8s_semantic_instruction_supported(uint16_t op)
         return true;
     case 0x10: case 0x11: case 0x12: case 0x13:
         return block_shift_rotate_form(lo);
-    case 0x0a: case 0x1a: case 0x1f:
+    case 0x0a: case 0x1a:
+        return (lo & 0x80) != 0 || (lo & 0xf0) == 0x00 ||
+               (lo & 0xf0) == 0x50 || (lo & 0xf0) == 0x70;
+    case 0x1f:
         return (lo & 0x80) != 0;
     case 0x0b: case 0x1b:
         switch (lo & 0xf0) {
-        case 0x00: case 0x80: case 0x90: case 0xf0:
+        case 0x00: case 0x50: case 0x70:
+        case 0x80: case 0x90: case 0xd0: case 0xf0:
             return true;
         default:
             return false;
@@ -690,8 +694,7 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
             break;
         }
         case 0x0a:
-            if ((lo & 0x80) == 0) return false;
-            {
+            if ((lo & 0x80) != 0) {
                 unsigned rs = (lo >> 4) & 0x7;
                 unsigned rd = lo & 0x7;
                 uint32_t s = state->er[rs];
@@ -699,6 +702,37 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
                 uint32_t result = d + s;
                 state->er[rd] = result;
                 block_set_arithmetic_l(state, d, s, result, false);
+            } else {
+                switch (lo & 0xf0) {
+                case 0x00: {
+                    unsigned rd = lo & 0xf;
+                    int val = block_get_reg_b(state, rd);
+                    int result = (val + 1) & 0xff;
+                    block_set_reg_b(state, rd, (uint8_t)result);
+                    block_set_nz_b(state, result);
+                    block_set_flag(state, BLOCK_CCR_V, val == 0x7f);
+                    break;
+                }
+                case 0x50: {
+                    unsigned rd = lo & 0xf;
+                    int val = block_get_r(state, rd);
+                    int result = (val + 1) & 0xffff;
+                    block_set_r(state, rd, (uint16_t)result);
+                    block_set_nz_w(state, result);
+                    block_set_flag(state, BLOCK_CCR_V, val == 0x7fff);
+                    break;
+                }
+                case 0x70: {
+                    unsigned rd = lo & 0x7;
+                    int32_t val = (int32_t)state->er[rd];
+                    state->er[rd] = (uint32_t)(val + 1);
+                    block_set_nz_l(state, state->er[rd]);
+                    block_set_flag(state, BLOCK_CCR_V, val == 0x7fffffff);
+                    break;
+                }
+                default:
+                    return false;
+                }
             }
             break;
         case 0x0c: {
@@ -871,8 +905,7 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
             break;
         }
         case 0x1a:
-            if ((lo & 0x80) == 0) return false;
-            {
+            if ((lo & 0x80) != 0) {
                 unsigned rs = (lo >> 4) & 0x7;
                 unsigned rd = lo & 0x7;
                 uint32_t s = state->er[rs];
@@ -880,6 +913,37 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
                 uint32_t result = d - s;
                 state->er[rd] = result;
                 block_set_arithmetic_l(state, d, s, result, true);
+            } else {
+                switch (lo & 0xf0) {
+                case 0x00: {
+                    unsigned rd = lo & 0xf;
+                    int val = block_get_reg_b(state, rd);
+                    int result = (val - 1) & 0xff;
+                    block_set_reg_b(state, rd, (uint8_t)result);
+                    block_set_nz_b(state, result);
+                    block_set_flag(state, BLOCK_CCR_V, val == 0x80);
+                    break;
+                }
+                case 0x50: {
+                    unsigned rd = lo & 0xf;
+                    int val = block_get_r(state, rd);
+                    int result = (val - 1) & 0xffff;
+                    block_set_r(state, rd, (uint16_t)result);
+                    block_set_nz_w(state, result);
+                    block_set_flag(state, BLOCK_CCR_V, val == 0x8000);
+                    break;
+                }
+                case 0x70: {
+                    unsigned rd = lo & 0x7;
+                    int32_t val = (int32_t)state->er[rd];
+                    state->er[rd] = (uint32_t)(val - 1);
+                    block_set_nz_l(state, state->er[rd]);
+                    block_set_flag(state, BLOCK_CCR_V, (uint32_t)val == 0x80000000u);
+                    break;
+                }
+                default:
+                    return false;
+                }
             }
             break;
         case 0x1c: {
@@ -1154,8 +1218,33 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
         case 0x0b:
             switch (lo & 0xf0) {
             case 0x00: state->er[lo & 0x7] += 1; break;
+            case 0x50: {
+                unsigned rd = lo & 0xf;
+                int val = block_get_r(state, rd);
+                int result = (val + 1) & 0xffff;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_V, val == 0x7fff);
+                break;
+            }
+            case 0x70: {
+                unsigned rd = lo & 0x7;
+                int32_t val = (int32_t)state->er[rd];
+                state->er[rd] = (uint32_t)(val + 1);
+                block_set_nz_l(state, state->er[rd]);
+                block_set_flag(state, BLOCK_CCR_V, val == 0x7fffffff);
+                break;
+            }
             case 0x80: state->er[lo & 0x7] += 2; break;
             case 0x90: state->er[lo & 0x7] += 4; break;
+            case 0xd0: {
+                unsigned rd = lo & 0xf;
+                int val = block_get_r(state, rd);
+                int result = (val + 2) & 0xffff;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                break;
+            }
             case 0xf0:
                 state->er[lo & 0x7] += 2;
                 block_set_nz_l(state, state->er[lo & 0x7]);
@@ -1167,8 +1256,34 @@ bool h8s_execute_semantic_block(const h8s_block_t *block,
         case 0x1b:
             switch (lo & 0xf0) {
             case 0x00: state->er[lo & 0x7] -= 1; break;
+            case 0x50: {
+                unsigned rd = lo & 0xf;
+                int val = block_get_r(state, rd);
+                int result = (val - 1) & 0xffff;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_V, val == 0x8000);
+                break;
+            }
+            case 0x70: {
+                unsigned rd = lo & 0x7;
+                int32_t val = (int32_t)state->er[rd];
+                state->er[rd] = (uint32_t)(val - 1);
+                block_set_nz_l(state, state->er[rd]);
+                block_set_flag(state, BLOCK_CCR_V, (uint32_t)val == 0x80000000u);
+                break;
+            }
             case 0x80: state->er[lo & 0x7] -= 2; break;
             case 0x90: state->er[lo & 0x7] -= 4; break;
+            case 0xd0: {
+                unsigned rd = lo & 0xf;
+                int val = block_get_r(state, rd);
+                int result = (val - 2) & 0xffff;
+                block_set_r(state, rd, (uint16_t)result);
+                block_set_nz_w(state, result);
+                block_set_flag(state, BLOCK_CCR_V, val == 0x8000 || val == 0x8001);
+                break;
+            }
             case 0xf0:
                 state->er[lo & 0x7] -= 2;
                 block_set_nz_l(state, state->er[lo & 0x7]);
