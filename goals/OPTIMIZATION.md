@@ -864,6 +864,67 @@ so this trace shape rejects in practice. Future call/return work needs an event
 deadline-aware trace scheduler or a lower-overhead translated loop body, not a
 single bounded call wrapper.
 
+## Xtreme-specific diagnosis
+
+Public/upstream research did not reveal a known "Cybiko Xtreme is slow in
+emulators" consensus. MAME's Cybiko driver documents the family as historically
+undertested and lacking software-loading facilities, while public hardware
+summaries describe Xtreme as the faster second-generation model: H8S/2323 at
+18 MHz, more RAM, larger ROM, improved audio and OS. Therefore the current
+VitaCybiko Xtreme lag should be treated as a local core/scheduler mismatch, not
+as an unavoidable property of Xtreme emulation.
+
+Host-only scheduler profiling (`CYBIKO_OPCODE_PROFILE=ON`) now records CPU-run
+chunk histograms and next-event deadline histograms. A 600-frame Xtreme run
+showed the critical difference:
+
+- Xtreme: `scheduler_run_calls=14251994`, `io_breaks=14251642`.
+  The scheduler was forced into tiny chunks for almost the whole boot window:
+  `scheduler_chunk_1=531756`, `scheduler_chunk_2=336183`,
+  `scheduler_chunk_3_4=12997902`, and only `scheduler_chunk_129_plus=385737`.
+- Classic V2: `scheduler_run_calls=1655462`, `io_breaks=1654165`.
+  Classic V2 mostly runs in large chunks:
+  `scheduler_chunk_129_plus=1614488`, with only a few thousand sub-16-cycle
+  chunks.
+
+That makes Xtreme about 8.6x more fragmented at the scheduler boundary during
+the same 600-frame smoke. The next-event histogram mirrors the chunk histogram,
+so the fragmentation is driven by timer/DMA/peripheral deadlines, not merely by
+arbitrary frontend frame slicing.
+
+The Xtreme instruction/branch profile explains why small semantic-block
+extensions keep failing:
+
+- `0x0100` prefixed long-memory forms dominate (`5,283,436` executions), with
+  hot forms such as `0x6f75`, `0x6ff5`, `0x6f42`, `0x6f73`, `0x6ff3`,
+  `0x6b00`, `0x6901`, and `0x6981`.
+- Most `0x0100` accesses are ordinary memory, not device I/O:
+  read fast pages `2,970,498`, external RAM `2,482,715`, on-chip RAM
+  `1,000,551`; write fast pages `1,136,542`, external RAM `1,136,467`.
+- Branch traffic is also extreme: `branch_bcc8=14,404,968`,
+  `branch_jsr_abs24=1,335,730`, and `branch_return=1,412,802`.
+- Hot branch targets cluster around the same ROM call/return loop:
+  `0x004a50`, `0x004a5e`, `0x00591c`, `0x0076b0`, `0x0076b2`,
+  `0x0076bc`, `0x0076c2`.
+
+Conclusion: Xtreme probably needs a bespoke Xtreme-aware execution tier, but not
+a separate emulator fork. The target should be a model-aware high-throughput
+tier for Xtreme's hot ROM/event pattern:
+
+1. keep shared Classic/Xtreme correctness infrastructure;
+2. add an Xtreme-targeted event-deadline-aware trace scheduler that can execute
+   repeated 1-4 cycle deadlines without re-entering the full outer scheduler
+   millions of times;
+3. add a trace/JIT/cached-interpreter body for the hot H8S loop families
+   (`0x0100` MOV.L variants, Bcc loops, JSR/RTS pairs) while preserving explicit
+   exits for MMIO, IRQ, DMA/timer compare deadlines, and LCD/audio side effects;
+4. treat frontend frame interpolation as presentation polish only after this
+   Xtreme core path is real-time.
+
+Do not keep nibbling at single opcodes unless the Xtreme scheduler histogram
+changes or a profiler shows a specific helper dominating inside those tiny
+deadline windows.
+
 ## Goal E — Presentation budget
 
 Status: separate from CPU optimization.

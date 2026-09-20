@@ -21,6 +21,77 @@
 
 #define HALT_FAST_FORWARD_MIN_CYCLES 32
 
+#ifdef CYBIKO_OPCODE_PROFILE
+static uint64_t scheduler_chunk_hist[10];
+static uint64_t scheduler_next_event_hist[10];
+static uint64_t scheduler_run_calls;
+static uint64_t scheduler_run_cycles;
+static uint64_t scheduler_io_breaks;
+static bool scheduler_profile_registered;
+
+static unsigned scheduler_bucket(int cycles)
+{
+    if (cycles <= 0) return 0;
+    if (cycles == 1) return 1;
+    if (cycles == 2) return 2;
+    if (cycles <= 4) return 3;
+    if (cycles <= 8) return 4;
+    if (cycles <= 16) return 5;
+    if (cycles <= 32) return 6;
+    if (cycles <= 64) return 7;
+    if (cycles <= 128) return 8;
+    return 9;
+}
+
+static const char *scheduler_bucket_name(unsigned bucket)
+{
+    static const char *names[] = {
+        "0", "1", "2", "3_4", "5_8", "9_16", "17_32",
+        "33_64", "65_128", "129_plus"
+    };
+    return bucket < sizeof(names) / sizeof(names[0]) ? names[bucket] : "unknown";
+}
+
+static void scheduler_profile_dump(void)
+{
+    if (scheduler_run_calls)
+        fprintf(stderr, "scheduler_run_calls=%llu cycles=%llu io_breaks=%llu\n",
+                (unsigned long long)scheduler_run_calls,
+                (unsigned long long)scheduler_run_cycles,
+                (unsigned long long)scheduler_io_breaks);
+    for (unsigned i = 0; i < sizeof(scheduler_chunk_hist) / sizeof(scheduler_chunk_hist[0]); ++i) {
+        if (scheduler_chunk_hist[i])
+            fprintf(stderr, "scheduler_chunk_%s=%llu\n",
+                    scheduler_bucket_name(i),
+                    (unsigned long long)scheduler_chunk_hist[i]);
+    }
+    for (unsigned i = 0; i < sizeof(scheduler_next_event_hist) / sizeof(scheduler_next_event_hist[0]); ++i) {
+        if (scheduler_next_event_hist[i])
+            fprintf(stderr, "scheduler_next_event_%s=%llu\n",
+                    scheduler_bucket_name(i),
+                    (unsigned long long)scheduler_next_event_hist[i]);
+    }
+}
+
+static void scheduler_profile_record(int chunk, int next_event, int ran, bool io_break)
+{
+    if (!scheduler_profile_registered) {
+        atexit(scheduler_profile_dump);
+        scheduler_profile_registered = true;
+    }
+    scheduler_chunk_hist[scheduler_bucket(chunk)]++;
+    scheduler_next_event_hist[scheduler_bucket(next_event)]++;
+    scheduler_run_calls++;
+    scheduler_run_cycles += (uint64_t)ran;
+    if (io_break) scheduler_io_breaks++;
+}
+#else
+static void scheduler_profile_record(int chunk, int next_event, int ran, bool io_break)
+{
+    (void)chunk; (void)next_event; (void)ran; (void)io_break;
+}
+#endif
+
 struct cybiko_emu {
     cybiko_hal_t hal;
 
@@ -323,10 +394,12 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
         int next_event = cycles_until_next_peripheral_event(emu);
         if (next_event > 0 && next_event < chunk) chunk = next_event;
         emu->peripheral_access = false;
-        cycle += h8s_cpu_run(&emu->cpu, chunk, cycle,
-                            &emu->pending_timer_cycles,
-                            &emu->pending_completion_cycles,
-                            &emu->peripheral_access);
+        int ran = h8s_cpu_run(&emu->cpu, chunk, cycle,
+                              &emu->pending_timer_cycles,
+                              &emu->pending_completion_cycles,
+                              &emu->peripheral_access);
+        scheduler_profile_record(chunk, next_event, ran, emu->peripheral_access);
+        cycle += ran;
         sync_peripherals(emu);
     }
     emu->total_steps += (uint64_t)frame_cycles;
