@@ -4,10 +4,10 @@
 
 | Model / feature | Evidence |
 | --- | --- |
-| Classic V2 / CyOS 1.3.58 | Genuine first-run setup, Main Desktop, Pinball gameplay/exit, Calculator 2 + 3 = 5, Text Editor save/reopen in Windows Vita3K |
-| Classic V1 / original stock | Matching firmware staged; host smoke reaches desktop; Windows Vita3K reaches stock desktop, but app-by-app behavior and performance are not validated |
+| Classic V2 / CyOS 1.3.58 | Genuine first-run setup, Main Desktop, Pinball gameplay/exit, Calculator 2 + 3 = 5, Text Editor save/reopen in Windows Vita3K; a deterministic replay of a physical-Vita checkpoint also reaches live Pinball gameplay and a playable Reversi board |
+| Classic V1 / original stock | Windows Vita3K reaches the stock desktop; a deterministic replay of a physical-Vita checkpoint remains stable for 3,600 frames and responds to desktop navigation, but app-by-app behavior is not yet validated |
 | Xtreme / CyOS 1.5.08 | Matching firmware staged; Windows Vita3K ran an application and produced 01.14 timing logs, but only ~9.9 guest frames/sec; app-by-app behavior and performance remain open |
-| Physical Vita / PSTV | v0.1.3 fixed VPK and app folder staged over FTP to a physical Vita; launch/performance evidence still pending user confirmation |
+| Physical Vita / PSTV | Pulled checkpoints and timing logs prove both Classic models ran on a physical Vita. The newest captured V1 run is 01.18; the available V2 timing capture is older 01.14, so a fresh same-build V2 performance/audio/suspend pass remains required |
 | Persistence | Setup, a created text document and clock continuity survive Vita3K restart; RAM/flash binding and corruption rejection tested on host |
 | Input | Touch setup and game launch observed; host tests cover controller/touch isolation, modifiers, focus release and layout switching |
 | Audio | Speaker core, suspend/resume tests and v0.1.4 low-latency/prebuffer frontend queue bounds are covered; audible fidelity remains user-test territory |
@@ -38,15 +38,16 @@ Xtreme profile. It records 5.88 guest frames/sec across the captured run, with
 zero SDL audio underrun counters after the continuity change. This does not
 mean audio is perceptually correct: repeated last-frame audio is a bounded
 gap-avoidance measure while the guest falls behind. The Xtreme CPU path remains
-the highest-priority performance backlog item.
+a severe performance backlog, but optimization and broad app coverage are
+intentionally deferred until Classic playability is qualified.
 
-The same current capture contains 92 Classic V1 rows and 127 Classic V2 rows.
-Their aggregate guest rates are 42.00 and 18.06 frames/sec, respectively,
-versus 5.88 for Xtreme. This confirms the severe slowdown is workload/model
-dependent rather than a universal audio-device failure; all three logs report
-zero producer-observed audio underruns after the continuity work. Classic V2's
-newly observed 18 FPS result also shows that the interpreter/presentation
-budget can regress outside Xtreme and must be measured per workload.
+The locally retained physical captures contain 42 Classic V1 rows from 01.18
+and 127 Classic V2 rows from the older 01.14 build. V1 averages 25.21 guest
+frames/sec when its boot interval is included and settles around 44–45 in the
+last captured desktop windows; the older V2 capture averages 18.06. These are
+different builds and workloads, so they are diagnostic evidence rather than a
+model comparison. Both logs report zero producer-observed audio underruns.
+Fresh same-build measurements remain necessary, especially for V2.
 
 `tools/extract_cd_pack.py` recovers a user-supplied original CD CAP pack without
 running its Windows installer. The inspected pack contains 13 applications and

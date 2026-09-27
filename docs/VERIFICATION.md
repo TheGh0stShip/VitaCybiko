@@ -646,6 +646,26 @@ Capture helper:
   recognized V1/V2/Xtreme ROMs without overwriting existing saves and reports
   each missing profile individually.
 
+## 2026-09-27 physical-checkpoint replays
+
+The 2026-09-20 Classic checkpoints pulled from the physical Vita were replayed
+deterministically with the matching recognized firmware. The replay runner now
+loads the frontend's `ram.dat` and `clock.dat` directly and rejects a bad model,
+size, header checksum, RAM checksum, clock checksum or flash/RAM mismatch.
+Synthetic unit tests cover both accepted sidecars and these rejection paths.
+
+| Replay | Result |
+| --- | --- |
+| Classic V1 desktop | 3,600/3,600 frames, 3,586 active, 149 changed, 2,880,000 audio samples; scripted directions visibly moved the desktop selection |
+| Classic V2 desktop | 3,600/3,600 frames, 3,596 active, 140 changed, 2,880,000 audio samples; scripted directions visibly moved the desktop selection |
+| Classic V2 Pinball Pro | Reached live Level 1 gameplay with a nonzero score; 1,800/1,800 frames remained running and emitted 1,440,000 audio samples |
+| Classic V2 Reversi 3 | Passed instructions, timeout and partner selection and reached the playable board; 4,200/4,200 frames remained running and emitted 3,360,000 audio samples |
+
+These are saved-state host compatibility checks, not fresh physical-Vita speed
+measurements or audible-fidelity claims. They establish real desktop/app
+progress rather than treating nonblank LCD activity as success. Fresh physical
+V1/V2 input, audio, suspend/resume and performance qualification is still open.
+
 ## Open acceptance items
 
 Physical Vita/PSTV testing; V1/Xtreme app coverage and performance; all

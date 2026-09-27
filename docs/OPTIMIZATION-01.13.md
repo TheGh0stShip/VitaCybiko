@@ -130,8 +130,8 @@ firmware and saved sessions are supplied locally, never included in the repo.
 Example (use absolute local paths for executables/fixtures):
 
 ```sh
-CYBIKO_SMOKE_RAM=/path/to/ram.raw \
-CYBIKO_SMOKE_CLOCK=/path/to/clock.raw \
+CYBIKO_SMOKE_RAM=/path/to/ram.dat \
+CYBIKO_SMOKE_CLOCK=/path/to/clock.dat \
 python3 tools/compare_replays.py \
   --baseline /path/to/baseline/cybiko-replay \
   --candidate /path/to/candidate/cybiko-replay \
@@ -144,6 +144,9 @@ python3 tools/compare_replays.py \
 until changed. The standard smoke Enter-pulse option still works without a
 keyboard script. CSV fingerprints exclude timing; they are regression
 fingerprints, not cryptographic proofs of complete machine equivalence.
+`CYBIKO_SMOKE_RAM` and `CYBIKO_SMOKE_CLOCK` accept the Vita frontend's complete
+sidecars directly as well as legacy raw fixtures. Full sidecars are validated,
+and a Classic RAM sidecar must match the selected serial flash.
 
 In five alternating 600-frame runs per build/profile before the separate
 unsigned-multiply correction, all fingerprints matched 01.12. Host median

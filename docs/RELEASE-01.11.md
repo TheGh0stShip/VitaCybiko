@@ -73,9 +73,12 @@ Build the host tests, then run `test_scheduler` with these environment variables
 - `CYBIKO_SCHEDULER_DATAFLASH`: serial flash, for Classic.
 - `CYBIKO_SCHEDULER_RAM`: optional raw RAM without the Vita checkpoint header.
 
-The smoke executable also accepts optional `CYBIKO_SMOKE_RAM` and
-`CYBIKO_SMOKE_CLOCK` raw checkpoints and `CYBIKO_SMOKE_ENTER_FRAME` for one
-12-frame Enter press. It reports CPU time and changed LCD frames. LCD activity
+The smoke and replay executables accept optional `CYBIKO_SMOKE_RAM` and
+`CYBIKO_SMOKE_CLOCK` checkpoints. They accept either historical raw RAM/clock
+data or the frontend's complete `ram.dat`/`clock.dat` files; complete sidecars
+are checked for magic, model, size and CRC, and Classic RAM is bound to the
+selected serial-flash image. `CYBIKO_SMOKE_ENTER_FRAME` requests one 12-frame
+Enter press. The tools report CPU time and changed LCD frames. LCD activity
 alone remains insufficient to prove a completed boot.
 
 ADC references: [MAME H8S2245 memory map and interrupt wiring](https://github.com/mamedev/mame/blob/master/src/devices/cpu/h8/h8s2245.cpp),

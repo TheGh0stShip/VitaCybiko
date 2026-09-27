@@ -8,6 +8,7 @@
 
 #include "core/cfs.h"
 #include "core/emulator.h"
+#include "checkpoint.h"
 
 typedef struct {
     unsigned frames;
@@ -199,17 +200,17 @@ int main(int argc, char **argv)
     if (ram_path) {
         size_t size = 0;
         uint8_t *data = load_file(ram_path, &size);
-        bool ok = data && size == cybiko_machine(model)->ram_size &&
-                  cybiko_load_nvram(emu, data, size);
+        bool ok = data && cybiko_checkpoint_load_ram(emu, model, data, size,
+                                                     serial, serial_size);
         free(data);
-        if (!ok) { fprintf(stderr, "invalid raw RAM checkpoint\n"); return 4; }
+        if (!ok) { fprintf(stderr, "invalid RAM checkpoint\n"); return 4; }
     }
     if (clock_path) {
         size_t size = 0;
         uint8_t *data = load_file(clock_path, &size);
-        bool ok = data && cybiko_load_clock(emu, data, size, 0);
+        bool ok = data && cybiko_checkpoint_load_clock(emu, data, size);
         free(data);
-        if (!ok) { fprintf(stderr, "invalid raw clock checkpoint\n"); return 4; }
+        if (!ok) { fprintf(stderr, "invalid clock checkpoint\n"); return 4; }
     }
     cybiko_reset(emu);
     clock_t started = clock();
