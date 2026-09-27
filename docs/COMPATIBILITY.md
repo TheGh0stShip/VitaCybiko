@@ -7,7 +7,7 @@
 | Classic V2 / CyOS 1.3.58 | Genuine first-run setup, Main Desktop, Pinball gameplay/exit, Calculator 2 + 3 = 5, Text Editor save/reopen in Windows Vita3K; a deterministic replay of a physical-Vita checkpoint also reaches live Pinball gameplay and a playable Reversi board |
 | Classic V1 / original stock | Windows Vita3K reaches the stock desktop; a deterministic replay of a physical-Vita checkpoint remains stable for 3,600 frames and responds to desktop navigation, but app-by-app behavior is not yet validated |
 | Xtreme / CyOS 1.5.08 | Matching firmware staged; Windows Vita3K ran an application and produced 01.14 timing logs, but only ~9.9 guest frames/sec; app-by-app behavior and performance remain open |
-| Physical Vita / PSTV | Pulled checkpoints and timing logs prove both Classic models ran on a physical Vita. The newest captured V1 run is 01.18; the available V2 timing capture is older 01.14, so a fresh same-build V2 performance/audio/suspend pass remains required |
+| Physical Vita / PSTV | On-device 01.18 checkpoints and timing logs prove both Classic models ran on a physical Vita. A read-only 2026-09-27 pull found 77 V1 and 40 V2 one-second windows with no frontend audio underruns or dropped audio frames; post-checkpoint-fix install, suspend/resume and subjective smoothness still require confirmation |
 | Persistence | Setup, a created text document and clock continuity survive Vita3K restart; RAM/flash binding and corruption rejection tested on host |
 | Input | Touch setup and game launch observed; host tests cover controller/touch isolation, modifiers, focus release and layout switching |
 | Audio | Speaker core, suspend/resume tests and v0.1.4 low-latency/prebuffer frontend queue bounds are covered; audible fidelity remains user-test territory |
@@ -41,13 +41,13 @@ gap-avoidance measure while the guest falls behind. The Xtreme CPU path remains
 a severe performance backlog, but optimization and broad app coverage are
 intentionally deferred until Classic playability is qualified.
 
-The locally retained physical captures contain 42 Classic V1 rows from 01.18
-and 127 Classic V2 rows from the older 01.14 build. V1 averages 25.21 guest
-frames/sec when its boot interval is included and settles around 44–45 in the
-last captured desktop windows; the older V2 capture averages 18.06. These are
-different builds and workloads, so they are diagnostic evidence rather than a
-model comparison. Both logs report zero producer-observed audio underruns.
-Fresh same-build measurements remain necessary, especially for V2.
+A read-only pull from the reachable physical Vita on 2026-09-27 found 77
+Classic V1 rows and 40 Classic V2 rows, all from 01.18. V1 averages 34.68 guest
+frames/sec across its captured workload (10.99–58.94 per window) and ends near
+40; V2 averages 26.07 (9.99–48.95) and ends near 19. Both logs report zero
+frontend audio underruns and zero dropped audio frames. The workloads differ,
+so these figures are diagnostic evidence rather than a fair model benchmark;
+neither establishes audible fidelity or acceptable subjective smoothness.
 
 `tools/extract_cd_pack.py` recovers a user-supplied original CD CAP pack without
 running its Windows installer. The inspected pack contains 13 applications and

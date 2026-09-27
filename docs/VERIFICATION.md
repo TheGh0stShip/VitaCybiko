@@ -648,9 +648,19 @@ Capture helper:
 
 ## 2026-09-27 physical-checkpoint replays
 
-The 2026-09-20 Classic checkpoints pulled from the physical Vita were replayed
-deterministically with the matching recognized firmware. The replay runner now
-loads the frontend's `ram.dat` and `clock.dat` directly and rejects a bad model,
+The physical Vita was reachable read-only at `10.0.0.202:1337`. Its on-device
+01.18 logs contain 77 one-second Classic V1 windows and 40 Classic V2 windows.
+V1 averages 34.68 guest frames/sec over the captured workload and V2 averages
+26.07; both report zero frontend audio underruns and zero dropped audio frames. V1's
+maximum presentation gap was 75.416 ms with three late presents, while V2's was
+16.750 ms with none. These workloads differ and do not establish subjective
+smoothness or audio fidelity.
+
+The current Classic checkpoints were downloaded without modifying the device.
+Both `save.flash` files pass Classic CFS structure/page validation against their
+factory images. They were then replayed deterministically with the matching
+recognized firmware. The replay runner now loads the frontend's `ram.dat` and
+`clock.dat` directly and rejects a bad model,
 size, header checksum, RAM checksum, clock checksum or flash/RAM mismatch.
 Synthetic unit tests cover both accepted sidecars and these rejection paths.
 
@@ -661,10 +671,11 @@ Synthetic unit tests cover both accepted sidecars and these rejection paths.
 | Classic V2 Pinball Pro | Reached live Level 1 gameplay with a nonzero score; 1,800/1,800 frames remained running and emitted 1,440,000 audio samples |
 | Classic V2 Reversi 3 | Passed instructions, timeout and partner selection and reached the playable board; 4,200/4,200 frames remained running and emitted 3,360,000 audio samples |
 
-These are saved-state host compatibility checks, not fresh physical-Vita speed
-measurements or audible-fidelity claims. They establish real desktop/app
-progress rather than treating nonblank LCD activity as success. Fresh physical
-V1/V2 input, audio, suspend/resume and performance qualification is still open.
+These are saved-state host compatibility checks, not audible-fidelity claims.
+They establish real desktop/app progress rather than treating nonblank LCD
+activity as success. Installing the post-manifest build and then performing
+fresh physical V1/V2 input, audio and suspend/resume qualification is still
+open.
 
 ## Open acceptance items
 
