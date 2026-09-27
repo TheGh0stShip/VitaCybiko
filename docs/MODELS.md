@@ -88,8 +88,11 @@ checksums, file headers, part sequencing, duplicate parts/names and bounded data
 sizes. Classic V1's known legacy factory-checksum page is accepted only while
 that complete page remains byte-identical to the operator-supplied factory
 image. A failed check preserves the original file and stops startup.
-Saves use a temporary file and rename. Back up saves before testing an
-experimental core: guest firmware can modify the emulated flash.
+Saves use a temporary file and rename. After the first successful checkpoint,
+`session.dat` binds the exact `save.flash`, `ram.dat` and `clock.dat` contents;
+it is committed last, and a later interrupted or partially copied checkpoint is
+rejected without overwriting the files. Back up all four files together before
+testing an experimental core: guest firmware can modify the emulated flash.
 
 ## Accepted image identifiers
 
@@ -150,11 +153,13 @@ CyOS needs saved RAM calendar state as well as the RTC to preserve its displayed
 time; saving only flash and RTC is insufficient. `ram.dat` records the model, RAM length,
 header/payload CRCs and the matching flash CRC. A corrupt or mismatched pair
 stops loading instead of booting inconsistent cached data. Each file is replaced
-atomically, but the entire set is not one filesystem transaction: keep all three
-files together when backing up/restoring. After an interrupted multi-file save,
-restore a matching backup, or move `ram.dat` aside for an intentional cold boot
-that keeps flash documents but may reset the clock. An older installation without
-`ram.dat` likewise cold-boots once before creating its first RAM checkpoint.
+atomically and `session.dat` records a final commit over the complete set. Keep
+all four files together when backing up/restoring. After an interrupted
+multi-file save, restore a matching backup; removing `session.dat` bypasses
+cross-file validation and is only appropriate for an intentional legacy
+recovery. Moving `ram.dat` aside intentionally cold-boots while keeping flash
+documents, but may reset the clock. An older installation without `ram.dat`
+likewise cold-boots once before creating its first RAM checkpoint.
 
 Reproduce the read-only V2 diagnostic without touching source firmware:
 

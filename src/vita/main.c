@@ -1191,6 +1191,82 @@ static bool classic_ram_path(char path[MAX_PATH_CHARS])
     return n > 0 && n < MAX_PATH_CHARS;
 }
 
+/* A Classic checkpoint spans flash, battery-backed SRAM and RTC files.  The
+ * manifest is replaced last and binds the exact three files, so an interrupted
+ * later save is detected instead of booting a mixed checkpoint. */
+#define CLASSIC_SESSION_SIZE 36u
+
+static bool classic_session_path(char path[MAX_PATH_CHARS])
+{
+    int n = snprintf(path, MAX_PATH_CHARS, "%s/session.dat", runtime_root);
+    return n > 0 && n < MAX_PATH_CHARS;
+}
+
+static bool build_classic_session_manifest(cybiko_model_t model,
+                                           const uint8_t *storage, size_t storage_size,
+                                           const uint8_t *ram, size_t ram_size,
+                                           const uint8_t *clock, size_t clock_size,
+                                           uint8_t out[CLASSIC_SESSION_SIZE])
+{
+    if (model == CYBIKO_XTREME || !storage || !ram || !clock ||
+        storage_size > UINT32_MAX || ram_size > UINT32_MAX ||
+        clock_size > UINT32_MAX)
+        return false;
+    memset(out, 0, CLASSIC_SESSION_SIZE);
+    memcpy(out, "VCSN\1", 5);
+    out[5] = (uint8_t)model;
+    put_u32le(out + 8, (uint32_t)storage_size);
+    put_u32le(out + 12, cybiko_crc32(storage, storage_size));
+    put_u32le(out + 16, (uint32_t)ram_size);
+    put_u32le(out + 20, cybiko_crc32(ram, ram_size));
+    put_u32le(out + 24, (uint32_t)clock_size);
+    put_u32le(out + 28, cybiko_crc32(clock, clock_size));
+    put_u32le(out + 32, cybiko_crc32(out, 32));
+    return true;
+}
+
+static bool write_classic_session_manifest(cybiko_model_t model,
+                                           const uint8_t *storage, size_t storage_size,
+                                           const uint8_t *ram, size_t ram_size,
+                                           const uint8_t *clock, size_t clock_size)
+{
+    uint8_t manifest[CLASSIC_SESSION_SIZE];
+    char path[MAX_PATH_CHARS];
+    return classic_session_path(path) &&
+           build_classic_session_manifest(model, storage, storage_size,
+                                          ram, ram_size, clock, clock_size,
+                                          manifest) &&
+           write_file(path, manifest, sizeof(manifest));
+}
+
+static bool validate_classic_session_files(cybiko_model_t model)
+{
+    if (model == CYBIKO_XTREME) return true;
+    char manifest_path[MAX_PATH_CHARS], ram_path[MAX_PATH_CHARS], rtc_path[MAX_PATH_CHARS];
+    struct stat info;
+    if (!classic_session_path(manifest_path) || !classic_ram_path(ram_path) ||
+        !clock_path(rtc_path)) return false;
+    if (stat(manifest_path, &info) != 0) return errno == ENOENT; /* Legacy set. */
+
+    size_t manifest_size = 0, storage_size = 0, ram_size = 0, clock_size = 0;
+    uint8_t *manifest = load_file(manifest_path, &manifest_size, false);
+    uint8_t *storage = load_file(runtime_save_path, &storage_size, false);
+    uint8_t *ram = load_file(ram_path, &ram_size, false);
+    uint8_t *clock = load_file(rtc_path, &clock_size, false);
+    bool ok = manifest && manifest_size == CLASSIC_SESSION_SIZE &&
+        !memcmp(manifest, "VCSN\1", 5) && manifest[5] == model &&
+        !manifest[6] && !manifest[7] &&
+        get_u32le(manifest + 32) == cybiko_crc32(manifest, 32) &&
+        storage && get_u32le(manifest + 8) == storage_size &&
+        get_u32le(manifest + 12) == cybiko_crc32(storage, storage_size) &&
+        ram && get_u32le(manifest + 16) == ram_size &&
+        get_u32le(manifest + 20) == cybiko_crc32(ram, ram_size) &&
+        clock && get_u32le(manifest + 24) == clock_size &&
+        get_u32le(manifest + 28) == cybiko_crc32(clock, clock_size);
+    free(clock); free(ram); free(storage); free(manifest);
+    return ok;
+}
+
 static bool save_classic_ram(cybiko_emu_t *emu)
 {
     cybiko_model_t model = cybiko_get_model(emu);
@@ -1241,7 +1317,20 @@ static bool save_session(cybiko_emu_t *emu)
     bool storage_ok = save_nvram(emu);
     if (storage_ok) storage_ok = save_classic_ram(emu);
     bool clock_ok = save_clock(emu);
-    return storage_ok && clock_ok;
+    if (!storage_ok || !clock_ok) return false;
+    cybiko_model_t model = cybiko_get_model(emu);
+    if (model == CYBIKO_XTREME) return true;
+
+    char ram_path[MAX_PATH_CHARS], rtc_path[MAX_PATH_CHARS];
+    size_t storage_size = 0, ram_size = 0, clock_size = 0;
+    if (!classic_ram_path(ram_path) || !clock_path(rtc_path)) return false;
+    uint8_t *storage = load_file(runtime_save_path, &storage_size, false);
+    uint8_t *ram = load_file(ram_path, &ram_size, false);
+    uint8_t *clock = load_file(rtc_path, &clock_size, false);
+    bool ok = write_classic_session_manifest(model, storage, storage_size,
+                                             ram, ram_size, clock, clock_size);
+    free(clock); free(ram); free(storage);
+    return ok;
 }
 
 /* Diagnostic rows must not wait for SD2Vita storage on the game thread.
@@ -1292,7 +1381,8 @@ typedef struct {
     size_t storage_size, ram_size;
     uint8_t clock[36];
     char storage_path[MAX_PATH_CHARS], ram_path[MAX_PATH_CHARS];
-    char rtc_path[MAX_PATH_CHARS];
+    char rtc_path[MAX_PATH_CHARS], session_path[MAX_PATH_CHARS];
+    cybiko_model_t model;
     uint8_t *trace;
     size_t trace_size;
     char trace_path[MAX_PATH_CHARS];
@@ -1313,12 +1403,14 @@ static save_snapshot_t *capture_save_snapshot(cybiko_emu_t *emu)
     save_snapshot_t *job = calloc(1, sizeof(*job));
     if (!job) return NULL;
     cybiko_model_t model = cybiko_get_model(emu);
+    job->model = model;
     const uint8_t *storage = model == CYBIKO_XTREME ?
         cybiko_get_nvram(emu, &job->storage_size) :
         cybiko_get_dataflash(emu, &job->storage_size);
     time_t now = time(NULL);
     if (!storage || !job->storage_size || now < 0 ||
-        !clock_path(job->rtc_path) || !classic_ram_path(job->ram_path)) goto fail;
+        !clock_path(job->rtc_path) || !classic_ram_path(job->ram_path) ||
+        !classic_session_path(job->session_path)) goto fail;
     snprintf(job->storage_path, sizeof(job->storage_path), "%s", runtime_save_path);
     job->storage = malloc(job->storage_size);
     if (!job->storage) goto fail;
@@ -1370,6 +1462,14 @@ static int write_save_snapshot(void *opaque)
         job->ok = write_file(job->ram_path, job->ram, job->ram_size + 24);
     bool clock_ok = write_file(job->rtc_path, job->clock, sizeof(job->clock));
     job->ok = job->ok && clock_ok;
+    if (job->ok && job->ram) {
+        uint8_t manifest[CLASSIC_SESSION_SIZE];
+        job->ok = build_classic_session_manifest(job->model,
+                    job->storage, job->storage_size,
+                    job->ram, job->ram_size + 24,
+                    job->clock, sizeof(job->clock), manifest) &&
+                  write_file(job->session_path, manifest, sizeof(manifest));
+    }
     /* Diagnostics are secondary: a log failure must not discard a good save. */
     if (job->trace && !write_file(job->trace_path, job->trace, job->trace_size))
         fprintf(stderr, "background performance log write failed\n");
@@ -2713,6 +2813,13 @@ select_model:
         cybiko_destroy(emu);
         message_loop(ctx, "Clock save is invalid; original preserved",
                      "Back up the selected model's clock.dat before replacing it.", "");
+        goto select_model;
+    }
+    if (classic && !validate_classic_session_files(ctx->model)) {
+        cybiko_destroy(emu);
+        message_loop(ctx, "Classic checkpoint files do not belong together",
+                     "Restore matching save.flash, ram.dat, clock.dat and session.dat.",
+                     "Original files were preserved; no checkpoint was overwritten.");
         goto select_model;
     }
     snprintf(ctx->status, sizeof(ctx->status), classic ? "Classic / local device - wireless unavailable" : "%d imported file(s)", app_count);

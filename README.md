@@ -46,9 +46,10 @@ Tap keys directly, including numbers, function keys and Backspace. Touch SH/FN l
 
 Each model has independent saves. Autosave runs every minute, on focus/background transitions and clean exit. Focus loss pauses emulation and releases held keys. Sudden termination can lose changes since the last save. Back up saves before upgrades.
 
-Classic keeps battery-backed SRAM in `ram.dat` as well as flash and RTC state.
-Keep the complete model folder together when backing up. Short Classic taps are
-held through the guest's keyboard scan window. In Calculator, Esc once clears
+Classic keeps battery-backed SRAM in `ram.dat` as well as flash and RTC state;
+`session.dat` binds those files into one validated checkpoint. Keep the complete
+model folder together when backing up. Short Classic taps are held through the
+guest's keyboard scan window. In Calculator, Esc once clears
 and Esc twice exits; Pinball asks for quit confirmation.
 
 ## Build and test

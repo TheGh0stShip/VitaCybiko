@@ -807,9 +807,11 @@ static void test_async_save_snapshot(void)
         job->thread = SDL_CreateThread(write_save_snapshot, "snapshot-test", job);
         TEST_ASSERT(job->thread != NULL);
         char storage_path[MAX_PATH_CHARS], ram_path[MAX_PATH_CHARS], rtc_path[MAX_PATH_CHARS];
+        char session_path[MAX_PATH_CHARS];
         snprintf(storage_path, sizeof(storage_path), "%s", job->storage_path);
         snprintf(ram_path, sizeof(ram_path), "%s", job->ram_path);
         snprintf(rtc_path, sizeof(rtc_path), "%s", job->rtc_path);
+        snprintf(session_path, sizeof(session_path), "%s", job->session_path);
         bool ok = false; double elapsed = -1;
         TEST_CHECK(finish_async_save(&job, true, &ok, &elapsed));
         TEST_CHECK(ok && job == NULL && elapsed >= 0);
@@ -828,13 +830,35 @@ static void test_async_save_snapshot(void)
             TEST_CHECK(get_u32le(data + 20) == cybiko_crc32(data, 20));
             TEST_CHECK(cybiko_crc32(data + 24, size - 24) == ram_crc);
             free(data);
-            TEST_CHECK(remove(ram_path) == 0);
         }
         data = load_file(rtc_path, &size, false);
         TEST_ASSERT(data && size == 36);
         TEST_CHECK(!memcmp(data, "VRTC\1\0\0\0", 8));
         TEST_CHECK(get_u32le(data + 32) == cybiko_crc32(data, 32));
+        uint32_t clock_crc = cybiko_crc32(data, size);
         free(data);
+        if (model != CYBIKO_XTREME) {
+            data = load_file(session_path, &size, false);
+            TEST_ASSERT(data && size == CLASSIC_SESSION_SIZE);
+            TEST_CHECK(!memcmp(data, "VCSN\1", 5) && data[5] == model);
+            TEST_CHECK(get_u32le(data + 8) == DATAFLASH_SIZE);
+            TEST_CHECK(get_u32le(data + 12) == storage_crc);
+            TEST_CHECK(get_u32le(data + 28) == clock_crc);
+            TEST_CHECK(get_u32le(data + 32) == cybiko_crc32(data, 32));
+            free(data);
+            snprintf(runtime_root, sizeof(runtime_root), "%s", directory);
+            snprintf(runtime_save_path, sizeof(runtime_save_path), "%s", storage_path);
+            TEST_CHECK(validate_classic_session_files((cybiko_model_t)model));
+            data = load_file(rtc_path, &size, false);
+            TEST_ASSERT(data && size == 36);
+            data[24] ^= 1;
+            put_u32le(data + 32, cybiko_crc32(data, 32));
+            TEST_ASSERT(write_file(rtc_path, data, size));
+            free(data);
+            TEST_CHECK(!validate_classic_session_files((cybiko_model_t)model));
+            TEST_CHECK(remove(session_path) == 0);
+            TEST_CHECK(remove(ram_path) == 0);
+        }
         TEST_CHECK(remove(storage_path) == 0);
         TEST_CHECK(remove(rtc_path) == 0);
         data = load_file(trace_path, &size, false);

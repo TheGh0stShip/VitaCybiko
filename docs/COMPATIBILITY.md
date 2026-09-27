@@ -74,6 +74,8 @@ validated before loading. Validation detects corrupt pages, orphaned or
 duplicate parts, missing headers, duplicate names and invalid data sizes. Guest
 firmware can still write logically incorrect but structurally valid data if it
 encounters an emulation bug, so keep backups.
+Classic checkpoints also carry a commit manifest binding flash, SRAM and RTC;
+mixed files from an interrupted save or incomplete backup restore are rejected.
 Short Classic taps previously missed the guest scan window. v0.1.1-preview holds
 them for eight emulated frames; a 40 ms Vita3K touch now opens Pinball's quit
 dialog. Confirm Quit to return to Games. Calculator intentionally uses one Esc
