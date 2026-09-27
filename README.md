@@ -8,11 +8,11 @@ matching firmware is supplied, but they are not yet app-by-app verified and are
 slower than Classic V2. This is a **preview**, not complete 1:1 hardware
 emulation.
 
-Current package work is **01.18 preview**. It includes the 01.18 LiveArea/runtime
-version bump, Classic V2 smoke optimization, expanded Vita performance
-telemetry, post-01.16 H8S arithmetic defined-behavior fixes, the Xtreme
-BHI/BLS semantic branch fix and a retuned semantic-reject backoff. It is still
-**not 60 FPS qualified** across all firmware/apps.
+Current package work is **01.19 preview**. It adds structural validation for
+Classic serial-flash saves, a commit manifest binding flash/SRAM/RTC checkpoint
+files, direct validation/replay of Vita checkpoint sidecars, and corrected
+LiveArea version artwork. It retains the 01.18 execution fixes and performance
+telemetry. It is still **not 60 FPS qualified** across all firmware/apps.
 See the [optimization workbench and remaining gates](goals/OPTIMIZATION.md).
 
 [Download the VPK](https://github.com/TheGh0stShip/VitaCybiko/releases) · [Setup](docs/MODELS.md) · [Compatibility](docs/COMPATIBILITY.md) · [Test evidence](docs/VERIFICATION.md)
@@ -102,12 +102,14 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 
 - Classic V2 setup, desktop, Pinball gameplay/exit, Calculator arithmetic and Text Editor save/reopen were observed in Vita3K. Clock continuity survives restart. Not every bundled app has been tested.
 - Classic V1 reaches the stock desktop in Vita3K. Xtreme reaches the first-run setup dialog in Vita3K, and the current host smoke reaches the expected Xtreme setup path with active LCD frames. App-by-app behavior and physical performance are not yet validated for those two profiles.
-- Package `01.18` corrects IRQ timing during CyOS task switches, enables full
-  Classic battery readings, removes audio gap injection, optimizes timer
-  synchronization and H8S semantic fast-path probing, moves periodic saves off
-  the frame loop, logs per-window CPU fast-path counters in `performance.csv`,
-  and fixes sanitizer-detected signed-overflow undefined behavior in H8S long
-  INC/DEC/NEG semantics. It also fixes H8S semantic BHI/BLS branch conditions
+- Package `01.19` retains the IRQ, battery, audio, scheduling and semantic
+  execution work from 01.18 and adds Classic CFS/checkpoint integrity checks.
+  Package 01.18 corrected IRQ timing during CyOS task switches, enabled full
+  Classic battery readings, removed audio gap injection, optimized timer
+  synchronization and H8S semantic fast-path probing, moved periodic saves off
+  the frame loop, logged per-window CPU fast-path counters in `performance.csv`,
+  and fixed sanitizer-detected signed-overflow undefined behavior in H8S long
+  INC/DEC/NEG semantics. It also fixed H8S semantic BHI/BLS branch conditions
   that previously broke the Xtreme smoke path. Physical Vita smoothness remains
   unverified after the latest optimization pass; frame interpolation remains
   presentation-side only, not proof of full-speed guest execution.

@@ -6,8 +6,8 @@ is still the H8S core.
 
 ## Current release state
 
-- Latest published preview: `v0.1.18-preview`.
-- Version shown by package/runtime: `01.18`.
+- Latest release candidate: `v0.1.19-preview`.
+- Version shown by package/runtime: `01.19`.
 - Classic V2 is the deepest-tested path.
 - Classic V1 and Xtreme are supported as selectable profiles, but broad app
   coverage and physical smoothness are not complete.
@@ -29,10 +29,12 @@ playability gates:
    and the tested applications.
 6. No firmware bytes, task states or return addresses are patched to force boot.
 
-Current physical evidence is uneven: the captured 01.18 Classic V1 workload
-reports roughly 44–48 guest frames/sec, while Classic V2 only has an older 01.14
-capture around 16–18 guest frames/sec. A fresh Classic V2 physical run is the
-next required performance measurement; host smoke and Vita3K cannot replace it.
+Current on-device 01.18 logs contain 77 Classic V1 windows averaging 34.68 guest
+frames/sec and 40 Classic V2 windows averaging 26.07. Both report zero frontend
+audio underruns and dropped audio frames, but these are different workloads and
+do not prove subjective smoothness. Installing 01.19 and testing suspend/resume,
+audio and representative apps on the physical Vita is the next required gate;
+host replay and Vita3K cannot replace it.
 
 ## Non-negotiable finish criteria
 
@@ -53,11 +55,11 @@ The project is not “finished” until all of these are true:
 
 ## Current blocker
 
-For the active Classic milestone, the immediate evidence gap is a current
-physical Classic V2 performance/application run. Xtreme remains substantially
-slower, but that optimization no longer blocks the Classic milestone. Low guest
-throughput is not primarily an SDL audio queue, LiveArea, rear-touch, or
-cosmetic interpolation issue.
+For the active Classic milestone, the immediate evidence gap is an 01.19
+physical install followed by V1/V2 performance, input, audio, suspend/resume and
+application checks. Xtreme remains substantially slower, but that optimization
+does not block the Classic milestone. Low guest throughput is not primarily an
+SDL audio queue, LiveArea, rear-touch, or cosmetic interpolation issue.
 
 When a Classic workload is CPU-bound, the next engineering work must be one of:
 

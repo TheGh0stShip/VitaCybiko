@@ -409,6 +409,34 @@ semantic resolver treated BHI as `!C` and BLS as `C`; the interpreter uses
   is a real Xtreme correctness/boot-progress fix rather than a cosmetic timing
   change.
 
+## 01.19 preview candidate
+
+Vita package metadata is `01.19`. Candidate artifact hashes:
+
+```text
+a0ac44f78f1e3bdce768ccbb4230c7f68f7a408aa2f01d0330f36858afb26e93  VitaCybiko.vpk
+4a6e7fd955c466ef48fcc1c0c8fa8fe6b115f1261e68781e4215bb407dfeae05  VitaCybiko.self
+fad7de3fce90dac2f6ea15aec433a4872b19937e1b2c61c0a22615535c5ca1e7  VitaCybiko.velf
+e91204f3b8737109cf9acb21a17766b280c3c0a2b442ffb4e857d1d945cafbbf  VitaCybiko
+```
+
+- Package metadata and runtime UI report `01.19`; LiveArea `content-rev` is
+  `19`, and the corrected 280×158 startup bitmap visibly reports `v01.19`.
+- The VPK contains nine stored ZIP members for VitaShell compatibility;
+  `unzip -t` reports no corrupt member.
+- The packaged SFO contains `VitaCybiko 01.19`, version `01.19` and title ID
+  `VCYB00001`.
+- `scripts/verify_vita_abi.sh` verifies the linked executable as ELF32,
+  little-endian ARMv7-A application profile with the hard-float VFP-register
+  calling convention.
+- This candidate adds Classic CFS validation, coordinated checkpoint manifests,
+  complete-sidecar host replay and the focused corruption/mismatch tests
+  documented below. It contains no firmware, commercial applications or saves.
+
+Physical installation and post-install suspend/audio/performance qualification
+remain open; candidate packaging and host/Vita build validation do not prove
+those device behaviors.
+
 ## 01.18 preview candidate
 
 Vita package metadata is `01.18`. Candidate VPK SHA-256:
