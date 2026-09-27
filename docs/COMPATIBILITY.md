@@ -5,7 +5,7 @@
 | Model / feature | Evidence |
 | --- | --- |
 | Classic V2 / CyOS 1.3.58 | Genuine first-run setup, Main Desktop, Pinball gameplay/exit, Calculator 2 + 3 = 5, Text Editor save/reopen in Windows Vita3K; a deterministic replay of a physical-Vita checkpoint also reaches live Pinball gameplay and a playable Reversi board |
-| Classic V1 / original stock | Windows Vita3K reaches the stock desktop; a deterministic replay of a physical-Vita checkpoint remains stable for 3,600 frames and responds to desktop navigation, but app-by-app behavior is not yet validated |
+| Classic V1 / original stock | Windows Vita3K reaches the stock desktop; deterministic replay of a physical-Vita checkpoint remains stable for 3,600 frames, responds to desktop navigation and reaches active Lost in Labyrinth gameplay; broader app coverage remains open |
 | Xtreme / CyOS 1.5.08 | Matching firmware staged; Windows Vita3K ran an application and produced 01.14 timing logs, but only ~9.9 guest frames/sec; app-by-app behavior and performance remain open |
 | Physical Vita / PSTV | On-device 01.18 checkpoints and timing logs prove both Classic models ran on a physical Vita. A read-only 2026-09-27 pull found 77 V1 and 40 V2 one-second windows with no frontend audio underruns or dropped audio frames; post-checkpoint-fix install, suspend/resume and subjective smoothness still require confirmation |
 | Persistence | Setup, a created text document and clock continuity survive Vita3K restart; RAM/flash binding and corruption rejection tested on host |

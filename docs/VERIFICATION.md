@@ -666,7 +666,7 @@ Capture helper:
 
 ## Automated checks
 
-- 13 C test suites pass with AddressSanitizer, leak detection and UBSan.
+- 18 C test suites pass with AddressSanitizer, leak detection and UBSan.
 - Actual SDL frontend tests cover input-source isolation, focus/background
   handling, rendering, model selection, storage failures, save preservation,
   clock corruption handling, preferences and layout switching.
@@ -676,9 +676,8 @@ Capture helper:
 - A 1,200-frame run of the supplied Classic V2 firmware plus the test save passed
   ASan/UBSan; LCD activity was observed in 1,195 frames. This headless metric
   alone is not treated as boot proof.
-- Seven Python tests pass locally. Three CD integration tests require private
-  source media and skip in a clean public checkout; the other four use synthetic
-  fixtures. Proprietary fixtures are deliberately not distributed.
+- Eleven Python tests pass locally. Optional CD integration paths require
+  private source media; proprietary fixtures are deliberately not distributed.
 - Firmware staging identifies all supplied model images by size/SHA-1, stages
   recognized V1/V2/Xtreme ROMs without overwriting existing saves and reports
   each missing profile individually.
@@ -704,6 +703,7 @@ Synthetic unit tests cover both accepted sidecars and these rejection paths.
 | Replay | Result |
 | --- | --- |
 | Classic V1 desktop | 3,600/3,600 frames, 3,586 active, 149 changed, 2,880,000 audio samples; scripted directions visibly moved the desktop selection |
+| Classic V1 Lost in Labyrinth | Opened Games, launched the bundled application, dismissed both information dialogs and reached active gameplay; 4,200/4,200 frames remained running and emitted 3,360,000 audio samples |
 | Classic V2 desktop | 3,600/3,600 frames, 3,596 active, 140 changed, 2,880,000 audio samples; scripted directions visibly moved the desktop selection |
 | Classic V2 Pinball Pro | Reached live Level 1 gameplay with a nonzero score; 1,800/1,800 frames remained running and emitted 1,440,000 audio samples |
 | Classic V2 Reversi 3 | Passed instructions, timeout and partner selection and reached the playable board; 4,200/4,200 frames remained running and emitted 3,360,000 audio samples |
@@ -713,6 +713,9 @@ They establish real desktop/app progress rather than treating nonblank LCD
 activity as success. Installing the post-manifest build and then performing
 fresh physical V1/V2 input, audio and suspend/resume qualification is still
 open.
+
+The successful checkpoint-specific input sequences are retained under
+`tests/replays/` without proprietary firmware, saves or screenshots.
 
 ## Open acceptance items
 
