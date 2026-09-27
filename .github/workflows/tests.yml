@@ -7,7 +7,7 @@ jobs:
   release-host:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure release host build
         run: cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
       - name: Build release host tools and tests
@@ -18,7 +18,7 @@ jobs:
   host:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Dependencies
         run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-gfx-dev
       - name: Configure sanitizers
