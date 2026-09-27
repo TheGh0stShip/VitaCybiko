@@ -6,7 +6,7 @@ is still the H8S core.
 
 ## Current release state
 
-- Latest release candidate: `v0.1.19-preview`.
+- Latest published preview: `v0.1.19-preview`.
 - Version shown by package/runtime: `01.19`.
 - Classic V2 is the deepest-tested path.
 - Classic V1 and Xtreme are supported as selectable profiles, but broad app

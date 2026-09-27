@@ -432,6 +432,15 @@ e91204f3b8737109cf9acb21a17766b280c3c0a2b442ffb4e857d1d945cafbbf  VitaCybiko
 - This candidate adds Classic CFS validation, coordinated checkpoint manifests,
   complete-sidecar host replay and the focused corruption/mismatch tests
   documented below. It contains no firmware, commercial applications or saves.
+- The published `v0.1.19-preview` assets were downloaded again;
+  `sha256sum -c SHA256SUMS` reported `VitaCybiko.vpk: OK`, and the downloaded
+  VPK passed `unzip -t`.
+- GitHub Actions passed for the exact release commit on both
+  [main](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/36298136504)
+  and the [release tag](https://github.com/TheGh0stShip/VitaCybiko/actions/runs/36298178962).
+- The same VPK was staged without replacing the installed app at
+  `ux0:/VPK/VitaCybiko-01.19-preview.vpk`. FTP readback was byte-identical and
+  retained SHA-256 `a0ac44f78f1e3bdce768ccbb4230c7f68f7a408aa2f01d0330f36858afb26e93`.
 
 Physical installation and post-install suspend/audio/performance qualification
 remain open; candidate packaging and host/Vita build validation do not prove
