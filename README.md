@@ -130,3 +130,5 @@ and other dependencies retain their permissive upstream licenses; see the
 the source tree and VPK.
 
 Independent homebrew; not affiliated with Cybiko or Sony.
+
+[![Hits](https://hits.sh/github.com/TheGh0stShip/VitaCybiko.svg)](https://hits.sh/github.com/TheGh0stShip/VitaCybiko/)
