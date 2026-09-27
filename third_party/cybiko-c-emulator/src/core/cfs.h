@@ -23,5 +23,11 @@ bool     cfs_add_file(cfs_image_t *img, const char *name, const uint8_t *file_da
 bool     cfs_put_file(cfs_image_t *img, const char *name, const uint8_t *file_data, size_t len);
 int      cfs_list_files(const cfs_image_t *img, char names[][64], int max_files);
 uint16_t cfs_compute_crc16(const uint8_t *data, int length);
+bool     cfs_validate_classic(const uint8_t *data, size_t length);
+bool     cfs_validate_classic_with_reference(const uint8_t *data, size_t length,
+                                             const uint8_t *factory,
+                                             size_t factory_length);
+uint32_t cfs_classic_crc32(const uint8_t *data, size_t length);
+uint16_t cfs_classic_header_crc16(const uint8_t header[6]);
 
 #endif

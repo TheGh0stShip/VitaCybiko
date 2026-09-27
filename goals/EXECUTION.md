@@ -13,6 +13,27 @@ is still the H8S core.
   coverage and physical smoothness are not complete.
 - Firmware and commercial Cybiko data are not redistributed.
 
+## Active milestone: playable Classic
+
+Engineering priority is now Classic V1 and Classic V2. Xtreme must continue to
+boot and pass existing regression/smoke tests, but Xtreme throughput and broad
+application coverage are deferred until both Classic profiles satisfy these
+playability gates:
+
+1. Both Classic models reach their desktops from clean model folders.
+2. Pinball, Calculator, Text Editor and representative bundled games work.
+3. Controls and audible output behave correctly on physical hardware.
+4. Flash, SRAM and clock state survive restart and suspend/resume without
+   accepting corrupt or mismatched checkpoints.
+5. Physical Vita/PSTV performance is acceptable in startup, desktop navigation
+   and the tested applications.
+6. No firmware bytes, task states or return addresses are patched to force boot.
+
+Current physical evidence is uneven: the captured 01.18 Classic V1 workload
+reports roughly 44–48 guest frames/sec, while Classic V2 only has an older 01.14
+capture around 16–18 guest frames/sec. A fresh Classic V2 physical run is the
+next required performance measurement; host smoke and Vita3K cannot replace it.
+
 ## Non-negotiable finish criteria
 
 The project is not “finished” until all of these are true:
@@ -32,11 +53,13 @@ The project is not “finished” until all of these are true:
 
 ## Current blocker
 
-The repeated failures point at core throughput, especially Xtreme. The latest
-research and local measurements show this is not primarily an SDL audio queue,
-LiveArea, rear-touch, or cosmetic interpolation issue.
+For the active Classic milestone, the immediate evidence gap is a current
+physical Classic V2 performance/application run. Xtreme remains substantially
+slower, but that optimization no longer blocks the Classic milestone. Low guest
+throughput is not primarily an SDL audio queue, LiveArea, rear-touch, or
+cosmetic interpolation issue.
 
-The next engineering work must therefore be one of:
+When a Classic workload is CPU-bound, the next engineering work must be one of:
 
 - branch-aware cached interpretation for immutable ROM blocks;
 - an ARMv7-A translation tier for a tightly bounded, correctness-tested subset;

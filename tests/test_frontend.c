@@ -456,7 +456,20 @@ static void test_model_storage_isolation(void)
     cybiko_hal_t hal = {0};
     uint8_t *serial = malloc(DATAFLASH_SIZE);
     TEST_ASSERT(serial != NULL);
-    memset(serial, 0x45, DATAFLASH_SIZE);
+    memset(serial, 0xff, DATAFLASH_SIZE);
+    for (unsigned page = 0; page < DATAFLASH_SIZE / DATAFLASH_PAGE_SIZE; ++page) {
+        uint8_t *raw = serial + page * DATAFLASH_PAGE_SIZE;
+        if (page >= CFS_BOOT_BLOCKS) raw[8] = 0x7f;
+        uint32_t crc = cfs_classic_crc32(raw + 8,
+                                         page < CFS_BOOT_BLOCKS ? 250u : 254u);
+        raw[0] = (uint8_t)(crc >> 24);
+        raw[1] = (uint8_t)(crc >> 16);
+        raw[2] = (uint8_t)(crc >> 8);
+        raw[3] = (uint8_t)crc;
+        uint16_t header_crc = cfs_classic_header_crc16(raw);
+        raw[6] = (uint8_t)(header_crc >> 8);
+        raw[7] = (uint8_t)header_crc;
+    }
     for (int model = 0; model < CYBIKO_MODEL_COUNT; ++model) {
         TEST_ASSERT(select_model_paths((cybiko_model_t)model));
         TEST_CHECK(strstr(runtime_save_path, cybiko_machine((cybiko_model_t)model)->directory) != NULL);

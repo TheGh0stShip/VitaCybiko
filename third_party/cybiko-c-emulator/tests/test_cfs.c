@@ -3,6 +3,41 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define CLASSIC_TEST_PAGE_SIZE 264u
+#define CLASSIC_TEST_PAGE_COUNT 2048u
+#define CLASSIC_TEST_SIZE (CLASSIC_TEST_PAGE_SIZE * CLASSIC_TEST_PAGE_COUNT)
+
+static void put_be16(uint8_t *data, uint16_t value) {
+    data[0] = (uint8_t)(value >> 8);
+    data[1] = (uint8_t)value;
+}
+
+static void put_be32(uint8_t *data, uint32_t value) {
+    data[0] = (uint8_t)(value >> 24);
+    data[1] = (uint8_t)(value >> 16);
+    data[2] = (uint8_t)(value >> 8);
+    data[3] = (uint8_t)value;
+}
+
+static void update_classic_page(uint8_t *image, unsigned page) {
+    uint8_t *raw = image + page * CLASSIC_TEST_PAGE_SIZE;
+    size_t length = page < CFS_BOOT_BLOCKS ? 250u : 254u;
+    put_be32(raw, cfs_classic_crc32(raw + 8, length));
+    put_be16(raw + 6, cfs_classic_header_crc16(raw));
+}
+
+static uint8_t *make_classic_image(void) {
+    uint8_t *image = malloc(CLASSIC_TEST_SIZE);
+    if (!image) return NULL;
+    memset(image, 0xff, CLASSIC_TEST_SIZE);
+    for (unsigned page = 0; page < CLASSIC_TEST_PAGE_COUNT; ++page) {
+        uint8_t *block = image + page * CLASSIC_TEST_PAGE_SIZE + 8;
+        if (page >= CFS_BOOT_BLOCKS) block[0] = 0x7f;
+        update_classic_page(image, page);
+    }
+    return image;
+}
+
 static void test_crc16_deterministic(void) {
     uint8_t data[256];
     memset(data, 0, sizeof(data));
@@ -45,6 +80,44 @@ static void test_validate_detects_corruption(void) {
     img->data[CFS_BOOT_BLOCKS * CFS_PAGE_SIZE + 17] ^= 0x80;
     TEST_CHECK(!cfs_validate(img));
     free(img);
+}
+
+static void test_classic_integrity(void) {
+    uint8_t *image = make_classic_image();
+    TEST_ASSERT(image != NULL);
+    TEST_ASSERT(cfs_validate_classic(image, CLASSIC_TEST_SIZE));
+
+    unsigned page = CFS_BOOT_BLOCKS;
+    uint8_t *block = image + page * CLASSIC_TEST_PAGE_SIZE + 8;
+    memset(block, 0, 254);
+    block[0] = 0x80;
+    block[1] = 3;
+    put_be16(block + 2, 0);
+    put_be16(block + 4, 0);
+    block[6] = 0x00;
+    memcpy(block + 7, "ok.app", 7);
+    memcpy(block + 78, "app", 3);
+    block[252] = block[253] = 0xff;
+    update_classic_page(image, page);
+    TEST_CHECK(cfs_validate_classic(image, CLASSIC_TEST_SIZE));
+
+    block[80] ^= 1;
+    TEST_CHECK(!cfs_validate_classic(image, CLASSIC_TEST_SIZE));
+    uint8_t *factory = malloc(CLASSIC_TEST_SIZE);
+    TEST_ASSERT(factory != NULL);
+    memcpy(factory, image, CLASSIC_TEST_SIZE);
+    TEST_CHECK(cfs_validate_classic_with_reference(image, CLASSIC_TEST_SIZE,
+                                                    factory, CLASSIC_TEST_SIZE));
+    factory[page * CLASSIC_TEST_PAGE_SIZE + 8 + 80] ^= 1;
+    TEST_CHECK(!cfs_validate_classic_with_reference(image, CLASSIC_TEST_SIZE,
+                                                     factory, CLASSIC_TEST_SIZE));
+    free(factory);
+    block[80] ^= 1;
+    update_classic_page(image, page);
+    block[4] = 0; block[5] = 1; /* Orphaned continuation part. */
+    update_classic_page(image, page);
+    TEST_CHECK(!cfs_validate_classic(image, CLASSIC_TEST_SIZE));
+    free(image);
 }
 
 static void test_add_small_file(void) {
@@ -196,6 +269,7 @@ TEST_LIST = {
     { "crc16_sensitive_to_data",     test_crc16_sensitive_to_data },
     { "format_empty",                test_format_empty },
     { "validate_detects_corruption", test_validate_detects_corruption },
+    { "classic_integrity",          test_classic_integrity },
     { "add_small_file",              test_add_small_file },
     { "add_multiple_files",          test_add_multiple_files },
     { "add_large_file",              test_add_large_file },

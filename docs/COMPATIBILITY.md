@@ -69,8 +69,11 @@ The preview's clock-reset fault was caused by discarding Classic battery-backed
 SRAM. v0.1.1-preview restores RAM as well as RTC and flash, and clock continuity
 was verified across a Vita3K restart. RTC alarm modes remain unverified.
 
-Classic saves are size-checked, not fully CFS-integrity-validated. Guest firmware
-can still write incorrect data if it encounters an emulation bug. Keep backups.
+Classic saves are size-checked and CFS page checksums/file structure are
+validated before loading. Validation detects corrupt pages, orphaned or
+duplicate parts, missing headers, duplicate names and invalid data sizes. Guest
+firmware can still write logically incorrect but structurally valid data if it
+encounters an emulation bug, so keep backups.
 Short Classic taps previously missed the guest scan window. v0.1.1-preview holds
 them for eight emulated frames; a 40 ms Vita3K touch now opens Pinball's quit
 dialog. Confirm Quit to return to Games. Calculator intentionally uses one Esc

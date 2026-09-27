@@ -1436,9 +1436,22 @@ static bool load_classic_storage(cybiko_emu_t *emu)
     if (!saved && errno != ENOENT) return false;
     size_t size = 0;
     uint8_t *data = load_file(saved ? runtime_save_path : runtime_dataflash_path, &size, false);
+    size_t factory_size = 0;
+    uint8_t *factory = saved ?
+        load_file(runtime_dataflash_path, &factory_size, false) : NULL;
     /* Never format an absent Classic image: V1 stores the OS in this flash,
        and both Classics store their bundled apps here. */
-    bool ok = data && cybiko_load_dataflash(emu, data, size);
+    uint32_t image_crc = data ? cybiko_crc32(data, size) : 0;
+    bool known_factory = !saved &&
+        (image_crc == 0x3816d0abu || image_crc == 0xe485880fu);
+    bool integrity_ok = data &&
+        (known_factory ||
+         cfs_validate_classic_with_reference(data, size, factory, factory_size));
+    bool ok = integrity_ok &&
+              cybiko_load_dataflash(emu, data, size);
+    if (data && !ok)
+        fprintf(stderr, "Classic flash failed integrity checks; original preserved\n");
+    free(factory);
     free(data);
     return ok;
 }

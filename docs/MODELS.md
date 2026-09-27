@@ -83,7 +83,11 @@ together while the application is closed; retain a backup of the old save.
 
 Each Classic save must be exactly 540672 bytes. An unreadable or wrong-size
 existing save stops loading; it does not silently reset to the factory image.
-Content/checksum validation of modified Classic CFS pages is not implemented.
+Classic factory images and saves are checked at startup for AT45DB041 page
+checksums, file headers, part sequencing, duplicate parts/names and bounded data
+sizes. Classic V1's known legacy factory-checksum page is accepted only while
+that complete page remains byte-identical to the operator-supplied factory
+image. A failed check preserves the original file and stops startup.
 Saves use a temporary file and rename. Back up saves before testing an
 experimental core: guest firmware can modify the emulated flash.
 

@@ -113,6 +113,8 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 - The exact original retail Classic launch bundle remains unverified.
 - Wireless chat/multiplayer, CyWIG, original PC synchronization and USB/MP3 accessories are not implemented end-to-end.
 - CPU timing is approximate; some instructions/peripheral modes remain incomplete. Classic external app installation is not implemented.
+- Classic saves receive page-checksum and file-structure validation before
+  loading; `cybiko-validate-cfs` can inspect a local image without modifying it.
 
 See the [release goals](docs/RELEASE-PLAN.md), not an implied promise of completed hardware equivalence.
 

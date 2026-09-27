@@ -6,6 +6,8 @@
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
+static uint16_t read_be16(const uint8_t *src);
+
 /* CRC16 algorithm from MAME cybikoxt.cpp */
 uint16_t cfs_compute_crc16(const uint8_t *data, int length)
 {
@@ -15,6 +17,134 @@ uint16_t cfs_compute_crc16(const uint8_t *data, int length)
         val = val | ((val >> 16) & 0x0001);
     }
     return (uint16_t)(val & 0xFFFF);
+}
+
+/* Classic AT45DB041 CFS pages are 264 bytes:
+ * CRC32[4], write count[2], header CRC16[2], payload[254].  The final two
+ * payload bytes are the erased 0xffff trailer.  CyOS uses a shorter CRC32
+ * span for its five boot pages. */
+#define CLASSIC_PAGE_SIZE 264u
+#define CLASSIC_PAGE_COUNT 2048u
+#define CLASSIC_BOOT_PAGES 5u
+#define CLASSIC_PAYLOAD_OFFSET 8u
+#define CLASSIC_PAYLOAD_SIZE 254u
+#define CLASSIC_FIRST_CAPACITY 176u
+#define CLASSIC_CONT_CAPACITY 248u
+
+uint32_t cfs_classic_crc32(const uint8_t *data, size_t length)
+{
+    uint32_t crc = 0xffffffffu;
+    for (size_t i = 0; i < length; ++i) {
+        crc ^= data[i];
+        for (unsigned bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+
+uint16_t cfs_classic_header_crc16(const uint8_t header[6])
+{
+    uint16_t value = (uint16_t)(0xaf17u ^ read_be16(header) ^
+                                read_be16(header + 2) ^ read_be16(header + 4));
+    return (uint16_t)((value << 8) | (value >> 8));
+}
+
+static uint32_t read_be32(const uint8_t *src)
+{
+    return ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
+           ((uint32_t)src[2] << 8) | src[3];
+}
+
+bool cfs_validate_classic_with_reference(const uint8_t *data, size_t length,
+                                         const uint8_t *factory,
+                                         size_t factory_length)
+{
+    if (!data || length != CLASSIC_PAGE_COUNT * CLASSIC_PAGE_SIZE)
+        return false;
+    if (factory && factory_length != length) return false;
+
+    uint16_t part_count[CLASSIC_PAGE_COUNT] = {0};
+    uint16_t max_part[CLASSIC_PAGE_COUNT] = {0};
+    uint8_t header_count[CLASSIC_PAGE_COUNT] = {0};
+
+    for (unsigned page = 0; page < CLASSIC_PAGE_COUNT; ++page) {
+        const uint8_t *raw = data + page * CLASSIC_PAGE_SIZE;
+        /* Classic V1 retail boot pages carry a legacy CRC32 value while V2
+         * boot pages use the later calculation.  CyOS verifies file pages;
+         * the header CRC16 still protects both boot formats. */
+        bool reference_page = factory &&
+            memcmp(raw, factory + page * CLASSIC_PAGE_SIZE,
+                   CLASSIC_PAGE_SIZE) == 0;
+        if (((page >= CLASSIC_BOOT_PAGES &&
+              read_be32(raw) != cfs_classic_crc32(raw + CLASSIC_PAYLOAD_OFFSET,
+                                                   CLASSIC_PAYLOAD_SIZE)) ||
+             read_be16(raw + 6) != cfs_classic_header_crc16(raw)) &&
+            !reference_page)
+            return false;
+
+        const uint8_t *block = raw + CLASSIC_PAYLOAD_OFFSET;
+        /* Retail Classic images use the five boot pages for CFS metadata;
+         * their checksums are authoritative, but their payload is not erased. */
+        if (page < CLASSIC_BOOT_PAGES) continue;
+        if (!(block[0] & 0x80)) continue;
+
+        uint16_t file_id = read_be16(block + 2);
+        uint16_t part_id = read_be16(block + 4);
+        if (file_id >= CLASSIC_PAGE_COUNT - CLASSIC_BOOT_PAGES ||
+            part_id >= CLASSIC_PAGE_COUNT - CLASSIC_BOOT_PAGES)
+            return false;
+        if ((part_id == 0 && block[1] > CLASSIC_FIRST_CAPACITY) ||
+            (part_id != 0 && block[1] > CLASSIC_CONT_CAPACITY))
+            return false;
+
+        ++part_count[file_id];
+        if (part_id > max_part[file_id]) max_part[file_id] = part_id;
+        if (part_id == 0) {
+            /* Classic retail pages use byte 6 as 0x00; unlike Xtreme they do
+             * not carry the 0x20 header marker there. */
+            if (++header_count[file_id] != 1 || block[6] != 0x00 || block[7] == 0)
+                return false;
+            bool terminated = false;
+            for (unsigned i = 7; i < 65; ++i)
+                if (block[i] == 0) { terminated = true; break; }
+            if (!terminated) return false;
+        }
+
+        /* Reject duplicate part numbers immediately. */
+        for (unsigned earlier = CLASSIC_BOOT_PAGES; earlier < page; ++earlier) {
+            const uint8_t *other = data + earlier * CLASSIC_PAGE_SIZE +
+                                   CLASSIC_PAYLOAD_OFFSET;
+            if ((other[0] & 0x80) && read_be16(other + 2) == file_id &&
+                read_be16(other + 4) == part_id)
+                return false;
+        }
+    }
+
+    for (unsigned file_id = 0;
+         file_id < CLASSIC_PAGE_COUNT - CLASSIC_BOOT_PAGES; ++file_id) {
+        if (part_count[file_id] &&
+            (header_count[file_id] != 1 ||
+             part_count[file_id] != (unsigned)max_part[file_id] + 1u))
+            return false;
+    }
+
+    /* CyOS cannot disambiguate duplicate on-disk names. */
+    for (unsigned page = CLASSIC_BOOT_PAGES; page < CLASSIC_PAGE_COUNT; ++page) {
+        const uint8_t *block = data + page * CLASSIC_PAGE_SIZE + CLASSIC_PAYLOAD_OFFSET;
+        if (!(block[0] & 0x80) || read_be16(block + 4) != 0) continue;
+        for (unsigned later = page + 1; later < CLASSIC_PAGE_COUNT; ++later) {
+            const uint8_t *other = data + later * CLASSIC_PAGE_SIZE + CLASSIC_PAYLOAD_OFFSET;
+            if ((other[0] & 0x80) && read_be16(other + 4) == 0 &&
+                strncmp((const char *)block + 7, (const char *)other + 7, 58) == 0)
+                return false;
+        }
+    }
+    return true;
+}
+
+bool cfs_validate_classic(const uint8_t *data, size_t length)
+{
+    return cfs_validate_classic_with_reference(data, length, NULL, 0);
 }
 
 /* Return pointer to the start of page N within the image */
