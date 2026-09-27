@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 param(
     [string]$Vita3KPath = 'D:\Vita3k\Vita3K.exe',
     [ValidateSet('classic-v1', 'classic-v2', 'xtreme')][string]$Model = 'classic-v1',

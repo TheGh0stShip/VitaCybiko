@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "motion.h"
 #include <limits.h>
 #include <stdlib.h>
@@ -336,9 +337,12 @@ MOTION_INLINE int warped_local(const uint8_t *image, const motion_vector_t *vect
 MOTION_INLINE void copy_scaled(const uint8_t *image, int scale, uint8_t *out)
 {
     if (scale == 1) { memcpy(out, image, MOTION_PIXELS); return; }
-    for (unsigned y = 0; y < MOTION_H * scale; ++y)
-        for (unsigned x = 0; x < MOTION_W * scale; ++x)
-            out[y * MOTION_W * scale + x] = image[(y / scale) * MOTION_W + x / scale];
+    const unsigned scaled_width = (unsigned)MOTION_W * (unsigned)scale;
+    const unsigned scaled_height = (unsigned)MOTION_H * (unsigned)scale;
+    for (unsigned y = 0; y < scaled_height; ++y)
+        for (unsigned x = 0; x < scaled_width; ++x)
+            out[y * scaled_width + x] =
+                image[(y / (unsigned)scale) * MOTION_W + x / (unsigned)scale];
 }
 
 typedef struct { int lo, hi, fraction; bool valid; } axis_sample_t;

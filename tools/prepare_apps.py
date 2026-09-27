@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Inventory local Cybiko apps or stage a size-checked Vita installation set.
 
 No downloads or firmware are included. A catalog records provenance and hashes,

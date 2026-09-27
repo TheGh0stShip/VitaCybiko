@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /* Offline validation of the exact LCD motion code used by the Vita frontend.
  * Input/output: raw 160x100 gray8 at 60 Hz. Does not execute guest instructions.
  * Firmware-derived recordings remain local; do not bundle them with releases. */

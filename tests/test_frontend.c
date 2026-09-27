@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /* Exercise the actual event and storage code with host SDL; no firmware needed. */
 #define main vita_frontend_main
 #define DATA_DIR "runtime"

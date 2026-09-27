@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef VITACYBIKO_INPUT_H
 #define VITACYBIKO_INPUT_H
 

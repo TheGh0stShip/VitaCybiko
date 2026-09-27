@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 param([Parameter(Mandatory=$true)][int]$VitaProcessId, [Parameter(Mandatory=$true)][string]$OutputPath, [int[]]$Keys, [int]$Delay=300, [int]$TouchX=-1, [int]$TouchY=-1, [ValidateRange(20,3000)][int]$Hold=180, [switch]$BackgroundCapture, [ValidateRange(1,600)][int]$FrameCount=1, [ValidateRange(1,5000)][int]$Interval=100)
 $ErrorActionPreference = 'Stop'
 if ($BackgroundCapture -and ($Keys.Count -gt 0 -or $TouchX -ge 0 -or $TouchY -ge 0)) { throw 'Background capture cannot inject input' }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /* Deterministic, headless core benchmark. This intentionally includes internal
  * state, like test_scheduler, and is never linked into the Vita application.
  * Use the cybiko-smoke arguments/checkpoint environment variables. Optional:

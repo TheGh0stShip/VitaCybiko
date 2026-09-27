@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Host checks for the opt-in ARM trace decoder; no firmware is required."""
 import importlib.util
 from pathlib import Path

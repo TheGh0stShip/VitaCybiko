@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VITASDK})
@@ -92,6 +93,12 @@ if(VITA)
   )
 
   vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
+  add_custom_command(TARGET ${PROJECT_NAME}.self-self POST_BUILD
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_vita_abi.sh
+            ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.velf
+    COMMENT "Verifying Vita ARMv7-A ILP32 hard-float ABI"
+    VERBATIM
+  )
   vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
     VERSION ${VITA_VERSION}
     NAME ${VITA_APP_NAME}

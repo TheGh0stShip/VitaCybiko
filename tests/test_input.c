@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "acutest.h"
 #include "frontend/input.h"
 #include <string.h>

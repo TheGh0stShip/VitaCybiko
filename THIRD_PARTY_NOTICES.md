@@ -1,5 +1,10 @@
 # Third-party notices
 
+VitaCybiko's first-party code is distributed under GPL-3.0-or-later. The GPL
+does not replace the following third-party copyright notices or permissive
+licenses. The combined work is distributed under the GPL while these components
+remain available under their respective upstream terms.
+
 - The portable core in `third_party/cybiko-c-emulator` derives from
   [Dan Berkowitz's C emulator](https://github.com/daberkow/cybiko-c-emulator).
   Its MIT license and copyright notice are retained in that directory.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /* Compare event batching against the original cycle-by-cycle implementation.
  * Including the implementation exposes state only to this test executable. */
 #define CYBIKO_SCHEDULER_TEST 1

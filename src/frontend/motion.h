@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef VITACYBIKO_MOTION_H
 #define VITACYBIKO_MOTION_H
 

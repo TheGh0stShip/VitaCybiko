@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /* Included after SDL/event helpers. The boot selector stays in landscape. */
 static const cybiko_model_t menu_models[] = {CYBIKO_CLASSIC_V1, CYBIKO_CLASSIC_V2, CYBIKO_XTREME};
 typedef struct { int selected, pressed; bool finger_down; SDL_FingerID finger; } model_menu_state_t;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "core/h8s_block.h"
 #include <errno.h>
 #include <stdio.h>

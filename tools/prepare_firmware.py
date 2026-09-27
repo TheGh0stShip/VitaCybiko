@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Identify known, legally supplied firmware and copy it without overwriting.
 
 SOURCE is a directory of extracted files; DESTINATION is ux0/data/VitaCybiko.

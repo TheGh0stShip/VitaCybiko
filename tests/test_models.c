@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "acutest.h"
 #include "core/emulator.h"
 #include "core/address_bus.h"

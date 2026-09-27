@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*
  * VitaCybiko - PlayStation Vita / PSTV frontend for the Cybiko Xtreme core.
  *
@@ -30,6 +31,24 @@
 #include "core/speaker.h"
 #include "frontend/input.h"
 #include "frontend/motion.h"
+
+/* Vita is ARMv7-A ILP32. Keep host assumptions out of serialized/runtime
+ * boundaries, and fail the target build immediately if its ABI ever drifts. */
+#ifdef VITA
+_Static_assert(sizeof(int) == 4, "Vita requires 32-bit int");
+_Static_assert(sizeof(long) == 4, "Vita requires 32-bit long");
+_Static_assert(sizeof(void *) == 4, "Vita requires 32-bit pointers");
+_Static_assert(sizeof(size_t) == 4, "Vita requires 32-bit size_t");
+#if !defined(__arm__) || defined(__aarch64__)
+#error "Vita builds require 32-bit ARM, not AArch64"
+#endif
+#if !defined(__ARM_ARCH_7A__)
+#error "Vita builds require ARMv7-A"
+#endif
+#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#error "Vita builds require little-endian byte order"
+#endif
+#endif
 
 #ifndef VITACYBIKO_VERSION
 #define VITACYBIKO_VERSION "dev"

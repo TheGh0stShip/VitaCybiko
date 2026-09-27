@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Compare deterministic core replays; host timings are not Vita FPS evidence."""
 import argparse
 import csv

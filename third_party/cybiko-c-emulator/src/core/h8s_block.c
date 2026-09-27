@@ -2331,23 +2331,6 @@ static bool static_plain_memory_operand(const h8s_block_instruction_t *insn,
     return true;
 }
 
-static bool execute_one_semantic_instruction(const h8s_block_instruction_t *insn,
-                                             h8s_block_cpu_state_t *state)
-{
-    h8s_block_t single = {
-        .start = state->pc,
-        .bytes = insn->bytes,
-        .instructions = 1,
-        .stop = H8S_BLOCK_STOP_LIMIT,
-        .stop_pc = state->pc + insn->bytes,
-        .executable_prefix_instructions = 1,
-        .executable = true
-    };
-    single.decoded[0] = *insn;
-    return h8s_semantic_block_supported(&single) &&
-           h8s_execute_semantic_block(&single, state);
-}
-
 bool h8s_mixed_plain_block_supported(const h8s_block_t *block)
 {
     if (!block) return false;

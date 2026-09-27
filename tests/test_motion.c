@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "frontend/motion.h"
 #include "acutest.h"
 #include <stdlib.h>

@@ -116,4 +116,12 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 
 See the [release goals](docs/RELEASE-PLAN.md), not an implied promise of completed hardware equivalence.
 
-MIT-licensed frontend and modified portable core. [Third-party notices](THIRD_PARTY_NOTICES.md). Independent homebrew; not affiliated with Cybiko or Sony.
+## License
+
+VitaCybiko's first-party code is licensed under the
+[GNU General Public License v3.0 or later](LICENSE). The vendored portable core
+and other dependencies retain their permissive upstream licenses; see the
+[third-party notices](THIRD_PARTY_NOTICES.md) and the license files shipped in
+the source tree and VPK.
+
+Independent homebrew; not affiliated with Cybiko or Sony.

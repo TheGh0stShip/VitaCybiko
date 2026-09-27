@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /* Headless firmware smoke test. LCD activity is not proof of a complete boot. */
 #include <errno.h>
 #include <stdio.h>

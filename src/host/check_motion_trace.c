@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /* Recompute opt-in ARM presentation records using the host implementation.
  * This checks CPU synthesis, not Vita3K GPU output or physical panel scanout. */
 #include "frontend/motion.h"

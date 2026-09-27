@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Rewrite a VPK/ZIP with stored entries.
 
 vita-pack-vpk creates a valid ZIP archive, but some physical VitaShell install

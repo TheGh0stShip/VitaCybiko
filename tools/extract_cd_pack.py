@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Recover the Xtreme CD's CAP v1 files without running its Windows installer.
 
 Format derived from CyCAP.dll supplied with the same CD. Only file entries are
