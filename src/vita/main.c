@@ -1208,7 +1208,7 @@ static bool build_classic_session_manifest(cybiko_model_t model,
                                            const uint8_t *clock, size_t clock_size,
                                            uint8_t out[CLASSIC_SESSION_SIZE])
 {
-    if (model == CYBIKO_XTREME || !storage || !ram || !clock ||
+    if (model == CYBIKO_XTREME || !storage || !ram || !clock || clock_size < 4 ||
         storage_size > UINT32_MAX || ram_size > UINT32_MAX ||
         clock_size > UINT32_MAX)
         return false;
@@ -1220,7 +1220,9 @@ static bool build_classic_session_manifest(cybiko_model_t model,
     put_u32le(out + 16, (uint32_t)ram_size);
     put_u32le(out + 20, cybiko_crc32(ram, ram_size));
     put_u32le(out + 24, (uint32_t)clock_size);
-    put_u32le(out + 28, cybiko_crc32(clock, clock_size));
+    /* clock.dat ends with its own CRC.  Including that field produces the
+     * constant CRC residue for every valid clock file, so bind its payload. */
+    put_u32le(out + 28, cybiko_crc32(clock, clock_size - 4));
     put_u32le(out + 32, cybiko_crc32(out, 32));
     return true;
 }
@@ -1261,8 +1263,8 @@ static bool validate_classic_session_files(cybiko_model_t model)
         get_u32le(manifest + 12) == cybiko_crc32(storage, storage_size) &&
         ram && get_u32le(manifest + 16) == ram_size &&
         get_u32le(manifest + 20) == cybiko_crc32(ram, ram_size) &&
-        clock && get_u32le(manifest + 24) == clock_size &&
-        get_u32le(manifest + 28) == cybiko_crc32(clock, clock_size);
+        clock && clock_size >= 4 && get_u32le(manifest + 24) == clock_size &&
+        get_u32le(manifest + 28) == cybiko_crc32(clock, clock_size - 4);
     free(clock); free(ram); free(storage); free(manifest);
     return ok;
 }

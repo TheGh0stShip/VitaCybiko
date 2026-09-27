@@ -835,7 +835,7 @@ static void test_async_save_snapshot(void)
         TEST_ASSERT(data && size == 36);
         TEST_CHECK(!memcmp(data, "VRTC\1\0\0\0", 8));
         TEST_CHECK(get_u32le(data + 32) == cybiko_crc32(data, 32));
-        uint32_t clock_crc = cybiko_crc32(data, size);
+        uint32_t clock_crc = cybiko_crc32(data, size - 4);
         free(data);
         if (model != CYBIKO_XTREME) {
             data = load_file(session_path, &size, false);
