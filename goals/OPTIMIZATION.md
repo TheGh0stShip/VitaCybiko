@@ -707,6 +707,23 @@ all three models.
 
 Result: accepted, −3.8% (V1), −3.1% (V2), −3.4% (Xtreme).
 
+### Physical Vita result (2026-10-03, build `d6b0fe8`)
+
+First on-device run after Goal F and its follow-ups, same device as the 01.18
+logs (`performance.csv`, one row per ~1 s window):
+
+| Model | 01.18 mean / median fps | `d6b0fe8` mean / median fps | Windows ≥59 fps |
+| --- | --- | --- | --- |
+| Classic V1 | 34.7 / 37.0 (77 windows) | 54.0 / 54.9 (134) | 0 → 42 |
+| Classic V2 | 26.1 / 18.0 (40 windows) | 58.2 / 59.9 (68) | 0 → 46 |
+
+Core time is under 50% of wall time on both. Remaining sub-60 windows come
+from individual guest frames costing 15–19 ms against the 16.7 ms vsync
+budget, not from average core cost. Audio underruns rose from 0 to 1,561 (V1)
+and 332 (V2), concentrated in the sub-60 windows: audio is produced per guest
+frame, so a missed frame starves the queue. Frame pacing/audio is the next
+target; subjective smoothness is still not established.
+
 ## Goal D — Peripheral-event cost reduction
 
 Status: partial — disabled timers now skip event-query calls in `5216028`;

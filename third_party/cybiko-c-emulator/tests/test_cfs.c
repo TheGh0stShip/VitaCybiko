@@ -82,6 +82,30 @@ static void test_validate_detects_corruption(void) {
     free(img);
 }
 
+/* CyOS boot records checksum only the first 250 payload bytes. They are
+ * valid on boot pages, but never as a substitute for a file page's CRC. */
+static void test_validate_accepts_boot_record_crc(void) {
+    cfs_image_t *img = calloc(1, sizeof(cfs_image_t));
+    TEST_ASSERT(img != NULL);
+    cfs_format(img);
+    uint8_t *page = img->data + 2 * CFS_PAGE_SIZE;
+    memset(page, 0xff, CFS_PAGE_SIZE);
+    page[2 + 100] = 0xfc; page[2 + 101] = 0xe8; page[2 + 246] = 0x3e;
+    uint16_t crc = cfs_compute_crc16(page + 2, CFS_BOOT_RECORD_CRC_BYTES);
+    page[0] = (uint8_t)(crc >> 8); page[1] = (uint8_t)crc;
+    TEST_CHECK(cfs_validate(img));
+    page[2 + 100] ^= 1;
+    TEST_CHECK(!cfs_validate(img));
+    page[2 + 100] ^= 1;
+    /* A file page with only a 250-byte CRC (bytes past it corrupted) fails. */
+    uint8_t *file_page = img->data + CFS_BOOT_BLOCKS * CFS_PAGE_SIZE;
+    crc = cfs_compute_crc16(file_page + 2, CFS_BOOT_RECORD_CRC_BYTES);
+    file_page[2 + 255] ^= 0x5a;
+    file_page[0] = (uint8_t)(crc >> 8); file_page[1] = (uint8_t)crc;
+    TEST_CHECK(!cfs_validate(img));
+    free(img);
+}
+
 static void test_classic_integrity(void) {
     uint8_t *image = make_classic_image();
     TEST_ASSERT(image != NULL);
@@ -264,6 +288,7 @@ static void test_put_failure_is_atomic(void) {
 }
 
 TEST_LIST = {
+    {"validate_accepts_boot_record_crc", test_validate_accepts_boot_record_crc},
     { "crc16_deterministic",         test_crc16_deterministic },
     { "crc16_all_ff",                test_crc16_all_ff },
     { "crc16_sensitive_to_data",     test_crc16_sensitive_to_data },

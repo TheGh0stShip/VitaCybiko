@@ -270,7 +270,13 @@ bool cfs_validate(const cfs_image_t *img)
                 }
             }
         }
-        if (!erased_boot_page && stored_crc != computed_crc) {
+        /* CyOS writes its boot records with the same CRC taken over only
+         * the first 250 payload bytes (observed on a physical-Vita Xtreme
+         * save that boots normally). Accept that form on boot pages only. */
+        bool boot_record = page < CFS_BOOT_BLOCKS &&
+            stored_crc == cfs_compute_crc16(block_data_const(img, page),
+                                            CFS_BOOT_RECORD_CRC_BYTES);
+        if (!erased_boot_page && !boot_record && stored_crc != computed_crc) {
             return false;
         }
     }
