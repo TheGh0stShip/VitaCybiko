@@ -680,6 +680,33 @@ Result: accepted, −19.5% (V1), −17.7% (V2), −21.0% (Xtreme) against the
 timing-change build. Forced inlining grows the run loop; Cortex-A9 I-cache
 behaviour still needs an on-device measurement.
 
+### Follow-up: sync-free serial status polls and batched backoff counters
+
+A line-level profile of the Classic V1 boot showed 830k on-chip I/O reads per
+300 frames, each forcing a full peripheral sync (about 235 host instructions
+per read). Most were CyOS polling the SCI1 serial-flash status/data registers
+(0xFFFF84/85: 553k V1, 220k V2, 252k Xtreme) and SCI2 status (0xFFFF8C,
+~230k on Classic). SCI1 values change only on CPU writes, and SCI0/SCI2 status
+changes only when a transmit countdown ends. Batches already stop before the
+next peripheral event, so a sync on these reads only flushed debt early. They
+now skip it (SCI0/SCI2 only while no transmit is in flight).
+
+The semantic-backoff loop also decremented the backoff and incremented the
+skip counter per instruction; only reset and the semantic probe change them,
+and neither runs inside that loop, so both are now updated once per batch.
+
+Per-frame guest fingerprints are identical (22,203 frames across the three
+replays and the Xtreme boot) and firmware scheduler equivalence passes for
+all three models.
+
+| Workload | Inline fetch | Backoff batch | + SCI1 | + idle SCI0/2 |
+| --- | ---: | ---: | ---: | ---: |
+| Classic V1 boot, 300 frames | 2.768B | 2.751B | 2.674B | 2.663B |
+| Classic V2 boot, 300 frames | 1.724B | 1.715B | 1.684B | 1.671B |
+| Xtreme boot, 120 frames | 2.821B | 2.802B | 2.725B | 2.726B |
+
+Result: accepted, −3.8% (V1), −3.1% (V2), −3.4% (Xtreme).
+
 ## Goal D — Peripheral-event cost reduction
 
 Status: partial — disabled timers now skip event-query calls in `5216028`;

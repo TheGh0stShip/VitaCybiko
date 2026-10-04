@@ -2927,24 +2927,30 @@ bool h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
 int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
                 int *timer_debt, int *completion_debt, bool *io_access) {
     int done = 0;
+    address_bus_t *bus = cpu->bus;
+    speaker_t *speaker = bus->speaker;
     while (done < limit) {
         if (cpu->semantic_reject_backoff) {
+            /* Only the semantic probe and reset change the backoff, and
+             * neither runs inside this loop: count it once per batch. */
             int backoff_cycles = cpu->semantic_reject_backoff;
-            for (int i = 0; i < backoff_cycles && done < limit; ++i) {
-                cpu->bus->speaker->frame_cycle = frame_cycle + done;
-                cpu->semantic_reject_backoff--;
-                cpu->semantic_fast_backoff_skips++;
+            int executed = 0;
+            while (executed < backoff_cycles && done < limit) {
+                speaker->frame_cycle = frame_cycle + done;
                 int states = h8s_cpu_take_instruction_states(cpu);
                 *timer_debt += states;
-                if (done + states >= limit && cpu->bus->sync_peripherals)
-                    cpu->bus->sync_peripherals(cpu->bus->sync_ctx);
+                if (done + states >= limit && bus->sync_peripherals)
+                    bus->sync_peripherals(bus->sync_ctx);
                 execute_step(cpu);
                 *completion_debt += states;
                 done += states;
-                if (cpu->bus->scheduler_dirty)
+                ++executed;
+                if (bus->scheduler_dirty)
                     *io_access = true;
                 if (CPU_UNLIKELY(*io_access || cpu->halted)) break;
             }
+            cpu->semantic_reject_backoff = (uint16_t)(backoff_cycles - executed);
+            cpu->semantic_fast_backoff_skips += (uint64_t)executed;
             if (CPU_UNLIKELY(*io_access || cpu->halted) || done >= limit)
                 break;
         }

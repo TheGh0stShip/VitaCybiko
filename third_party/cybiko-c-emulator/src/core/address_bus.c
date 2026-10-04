@@ -521,7 +521,19 @@ static uint8_t read_on_chip8(address_bus_t *bus, uint32_t address)
 {
     if (address < 0xFFFC00)
         return memory_read8(&bus->on_chip_ram, on_chip_offset(bus, address));
-    if (address >= 0xFFFC00) sync_peripherals_for_io(bus);
+    /* SCI1 is the serial-flash SPI link: its status and data change only on
+     * CPU writes, never with timers or completion countdowns. CyOS polls it
+     * hundreds of thousands of times a second, so skip the peripheral sync.
+     * Batches already end before the next peripheral event, so the sync
+     * would only flush debt early. */
+    if (address == 0xFFFF84)
+        return SSR_TDRE | SSR_TEND | (bus->sci1_rdrf ? SSR_RDRF : 0);
+    if (address == 0xFFFF85) { bus->sci1_rdrf = false; return bus->sci1_rdr; }
+    /* SCI0/SCI2 status changes only when a transmit countdown ends; with
+     * nothing in flight, advancing the peripherals cannot change it. */
+    if (address == 0xFFFF7C && !bus->sci_tx_delay[0]) return bus->sci_tx_status[0];
+    if (address == 0xFFFF8C && !bus->sci_tx_delay[2]) return bus->sci_tx_status[2];
+    sync_peripherals_for_io(bus);
     /* Timer16 channels (non-contiguous, check first) */
     int t16 = route_timer16_read8(bus, address);
     if (t16 >= 0) return (uint8_t)t16;
@@ -542,8 +554,6 @@ static uint8_t read_on_chip8(address_bus_t *bus, uint32_t address)
 
     /* SCI SSR registers - always report transmit ready */
     if (address == 0xFFFF7C) return bus->sci_tx_status[0];
-    if (address == 0xFFFF84) return SSR_TDRE | SSR_TEND | (bus->sci1_rdrf ? SSR_RDRF : 0);
-    if (address == 0xFFFF85) { bus->sci1_rdrf = false; return bus->sci1_rdr; }
     if (address == 0xFFFF8C) return bus->sci_tx_status[2];
 
     /* DMA registers (XT) */
