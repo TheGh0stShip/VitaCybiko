@@ -17,7 +17,6 @@ typedef struct address_bus address_bus_t;
 
 #define MAX_PENDING_IRQS 32
 
-#define H8S_ROM_FETCH_BLOCK_WORDS 16
 #define H8S_SEMANTIC_REJECT_CACHE_ENTRIES 512
 #define H8S_MUTABLE_REJECT_CACHE_ENTRIES 256
 /* Optional semantic ROM fast-path probes are expensive at hot unsupported PCs.
@@ -71,10 +70,6 @@ typedef struct h8s_cpu {
     const uint8_t *fetch_data;
     uint32_t fetch_base, fetch_end;
     bool fetch_immutable;
-    uint32_t rom_block_base;
-    uint16_t rom_block_words[H8S_ROM_FETCH_BLOCK_WORDS];
-    uint8_t rom_block_count;
-    bool rom_block_valid;
     h8s_block_cache_t semantic_block_cache;
     h8s_mutable_block_cache_t mutable_block_cache;
     h8s_branch_edge_cache_t semantic_edge_cache;

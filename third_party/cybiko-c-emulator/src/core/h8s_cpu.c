@@ -513,69 +513,31 @@ static void cache_instruction_memory(h8s_cpu_t *cpu, uint32_t pc) {
     cpu->fetch_base = base;
     cpu->fetch_end = memory ? base + (uint32_t)memory->size : 0;
     cpu->fetch_immutable = memory == &b->boot_rom || memory == &b->flash_rom;
-    cpu->rom_block_valid = false;
     if (memory == &b->on_chip_ram && cpu->fetch_end > 0xFFFC00)
         cpu->fetch_end = 0xFFFC00;
 }
 
-static inline uint16_t fetch16(h8s_cpu_t *cpu) {
+static uint16_t fetch16_slow(h8s_cpu_t *cpu);
+
+/* Firmware executes in long contiguous runs from ROM/RAM, so the cached
+ * region read is the hot path. Keep it inline in the run loop: GCC otherwise
+ * outlines the whole function and pays a call per guest fetch. Peripheral
+ * addresses never enter the region and still use the bus path. */
+CPU_INLINE uint16_t fetch16(h8s_cpu_t *cpu) {
     uint32_t pc = cpu->pc & 0xffffff;
-    if (CPU_LIKELY(cpu->fetch_immutable && cpu->rom_block_valid &&
-                   pc >= cpu->rom_block_base)) {
-        uint32_t delta = pc - cpu->rom_block_base;
-        unsigned index = delta >> 1;
-        if ((delta & 1u) == 0 && index < cpu->rom_block_count) {
-            cpu->pc = (pc + 2) & 0xffffff;
-            return cpu->rom_block_words[index];
-        }
-    }
-    /* Firmware executes in long contiguous runs from ROM/RAM. Prefer the
-     * validated region cache before looking up a 4 KiB bus page; peripheral
-     * addresses never enter this range and still use the bus path below. */
-    if (CPU_LIKELY(cpu->fetch_data && pc >= cpu->fetch_base && pc + 1 < cpu->fetch_end)) {
+    if (CPU_LIKELY(cpu->fetch_data &&
+                   pc >= cpu->fetch_base && pc + 1 < cpu->fetch_end)) {
         const uint8_t *p = cpu->fetch_data + (pc - cpu->fetch_base);
         cpu->pc = (pc + 2) & 0xffffff;
-        uint16_t val = (uint16_t)((p[0] << 8) | p[1]);
-        if (cpu->fetch_immutable) {
-            uint32_t base = pc & ~(uint32_t)(H8S_ROM_FETCH_BLOCK_WORDS * 2 - 1);
-            if (base >= cpu->fetch_base && base + 1 < cpu->fetch_end) {
-                unsigned count = (cpu->fetch_end - base) / 2;
-                if (count > H8S_ROM_FETCH_BLOCK_WORDS) count = H8S_ROM_FETCH_BLOCK_WORDS;
-                const uint8_t *block = cpu->fetch_data + (base - cpu->fetch_base);
-                if (CPU_LIKELY(count == H8S_ROM_FETCH_BLOCK_WORDS)) {
-                    cpu->rom_block_words[0] = (uint16_t)((block[0] << 8) | block[1]);
-                    cpu->rom_block_words[1] = (uint16_t)((block[2] << 8) | block[3]);
-                    cpu->rom_block_words[2] = (uint16_t)((block[4] << 8) | block[5]);
-                    cpu->rom_block_words[3] = (uint16_t)((block[6] << 8) | block[7]);
-                    cpu->rom_block_words[4] = (uint16_t)((block[8] << 8) | block[9]);
-                    cpu->rom_block_words[5] = (uint16_t)((block[10] << 8) | block[11]);
-                    cpu->rom_block_words[6] = (uint16_t)((block[12] << 8) | block[13]);
-                    cpu->rom_block_words[7] = (uint16_t)((block[14] << 8) | block[15]);
-                    cpu->rom_block_words[8] = (uint16_t)((block[16] << 8) | block[17]);
-                    cpu->rom_block_words[9] = (uint16_t)((block[18] << 8) | block[19]);
-                    cpu->rom_block_words[10] = (uint16_t)((block[20] << 8) | block[21]);
-                    cpu->rom_block_words[11] = (uint16_t)((block[22] << 8) | block[23]);
-                    cpu->rom_block_words[12] = (uint16_t)((block[24] << 8) | block[25]);
-                    cpu->rom_block_words[13] = (uint16_t)((block[26] << 8) | block[27]);
-                    cpu->rom_block_words[14] = (uint16_t)((block[28] << 8) | block[29]);
-                    cpu->rom_block_words[15] = (uint16_t)((block[30] << 8) | block[31]);
-                } else {
-                    for (unsigned i = 0; i < count; ++i)
-                        cpu->rom_block_words[i] = (uint16_t)((block[i * 2] << 8) | block[i * 2 + 1]);
-                }
-                cpu->rom_block_base = base;
-                cpu->rom_block_count = (uint8_t)count;
-                cpu->rom_block_valid = true;
-            }
-        }
-        return val;
+        return (uint16_t)((p[0] << 8) | p[1]);
     }
-    const uint8_t *page = cpu->bus->read_pages[pc >> 12];
-    unsigned offset = pc & 4095;
-    if (page && offset <= 4094) {
-        cpu->pc = (pc + 2) & 0xffffff;
-        return (uint16_t)((page[offset] << 8) | page[offset + 1]);
-    }
+    return fetch16_slow(cpu);
+}
+
+/* Region-cache miss: switch the cached region to the new PC (for example
+ * after a jump between ROM and RAM), else fall back to the bus. */
+static __attribute__((noinline)) uint16_t fetch16_slow(h8s_cpu_t *cpu) {
+    uint32_t pc = cpu->pc & 0xffffff;
     if (pc < cpu->fetch_base || pc + 1 >= cpu->fetch_end)
         cache_instruction_memory(cpu, pc);
     uint16_t val;
@@ -2454,9 +2416,6 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->fetch_data = NULL;
     cpu->fetch_base = cpu->fetch_end = 0;
     cpu->fetch_immutable = false;
-    cpu->rom_block_base = 0;
-    cpu->rom_block_count = 0;
-    cpu->rom_block_valid = false;
     h8s_block_cache_clear(&cpu->semantic_block_cache);
     h8s_mutable_block_cache_clear(&cpu->mutable_block_cache);
     if (cpu->bus) bus_clear_code_watches(cpu->bus);

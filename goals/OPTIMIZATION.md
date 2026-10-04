@@ -655,6 +655,31 @@ Result: accepted. This is the largest measured host-cost reduction in the
 ledger and also makes guest timing closer to hardware. Physical Vita
 smoothness still requires an on-device run before any claim.
 
+### Follow-up: inline region fetch
+
+After the timing change, callgrind showed `fetch16` at 28–30% of host time
+as an out-of-line call (20.6M calls on the Classic V1 boot): the larger run
+loop made GCC stop inlining it. The fetch is now a forced-inline cached-region
+read with an out-of-line miss path. With the read inline, the 16-word ROM
+fetch block (`27aeb68`, unrolled refill in `e5699c5`) only added a copy per
+32 bytes, so it was removed and ROM is read directly like RAM. The miss path
+now re-caches the region before falling back to the bus, so code that jumps
+between ROM and RAM stops taking the page-table path for every fetch.
+
+Guest behaviour is unchanged: per-frame PC, register, RAM, LCD, audio and
+cycle fingerprints are identical to the previous build across the three
+checkpoint replays and a 1,800-frame Xtreme boot (22,203 frames).
+
+| Workload | Timing change | + inline fetch | + no ROM block | + re-cache first |
+| --- | ---: | ---: | ---: | ---: |
+| Classic V1 boot, 300 frames | 3.438B | 3.159B | 2.857B | 2.768B |
+| Classic V2 boot, 300 frames | 2.094B | 1.971B | 1.786B | 1.724B |
+| Xtreme boot, 120 frames | 3.571B | 3.303B | 2.789B | 2.821B |
+
+Result: accepted, −19.5% (V1), −17.7% (V2), −21.0% (Xtreme) against the
+timing-change build. Forced inlining grows the run loop; Cortex-A9 I-cache
+behaviour still needs an on-device measurement.
+
 ## Goal D — Peripheral-event cost reduction
 
 Status: partial — disabled timers now skip event-query calls in `5216028`;
