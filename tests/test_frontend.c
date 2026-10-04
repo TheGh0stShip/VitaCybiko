@@ -1075,7 +1075,7 @@ static void test_interpolated_lcd_render(void)
     motion_presenter_accept(&ctx->motion, pair, presentation_microseconds() + 1000);
     render_frame(ctx);
     TEST_CHECK(ctx->motion_trace_count == MOTION_TRACE_CAPACITY / 2);
-    ctx->validation_frame = 1100;
+    ctx->validation_frame = VALIDATION_LEFT_FRAME;
     motion_presenter_accept(&ctx->motion, pair, presentation_microseconds() + 2000);
     render_frame(ctx);
     TEST_CHECK(ctx->motion_trace_count == MOTION_TRACE_CAPACITY / 2 + 1);
