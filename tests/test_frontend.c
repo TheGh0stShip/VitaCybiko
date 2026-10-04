@@ -35,6 +35,9 @@ static void test_touch_hold_survives_controller_poll(void)
     bool running = true;
     TEST_ASSERT(SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) == 0);
     touch_key(&ctx, 3, 9, true); /* Enter */
+    /* Touch must not hand the D-pad/Cross over to keyboard navigation. */
+    TEST_CHECK(!ctx.keyboard_mode);
+    TEST_CHECK(ctx.vk_row == 3 && ctx.vk_col == 9);
     for (int frame = 0; frame < 30; ++frame) {
         update_controller_input(&ctx, &running);
         TEST_CHECK(read_column(&ctx, 4) & 8);

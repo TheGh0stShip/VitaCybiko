@@ -500,7 +500,9 @@ static void handle_portrait_touch(app_ctx_t *ctx, int portrait_x, int portrait_y
         return;
     }
 
-    ctx->keyboard_mode = true;
+    /* Touch never switches the physical controls into keyboard navigation:
+     * on device that silently took the D-pad and Cross away from the guest.
+     * Remember the key so Select starts navigation from it. */
     ctx->vk_row = row;
     ctx->vk_col = col;
 
@@ -2190,7 +2192,7 @@ static void render_portrait_cache(app_ctx_t *ctx)
 
     stringRGBA(ctx->renderer, 30, 30, cybiko_machine(ctx->model)->name, 230, 238, 232, 255);
     stringRGBA(ctx->renderer, 30, 44,
-               ctx->keyboard_mode ? "TOUCH KEYS" : "CONTROLLER RUN",
+               ctx->keyboard_mode ? "KEY SELECT - O EXITS" : "CONTROLLER RUN",
                150, 166, 172, 255);
 
     roundedBoxRGBA(ctx->renderer,

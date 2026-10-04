@@ -42,7 +42,7 @@ The upright landscape view has a 3× LCD and full touch keyboard. Portrait mode,
 | Select + Triangle | Switch landscape/portrait |
 | Select + L or R | Change shell color |
 
-Tap keys directly, including numbers, function keys and Backspace. Touch SH/FN latch modifiers; tap again to release. In keyboard-navigation mode the D-pad moves the highlight and Cross presses that key; Circle or Select leaves this mode. Layout and skin also have touch buttons.
+Tap keys directly, including numbers, function keys and Backspace. Touching the keyboard never takes the D-pad or face buttons away from the Cybiko; only Select enters keyboard navigation (shown as KEY SELECT). Touch SH/FN latch modifiers; tap again to release. In keyboard-navigation mode the D-pad moves the highlight and Cross presses that key; Circle or Select leaves this mode. Layout and skin also have touch buttons.
 
 Each model has independent saves. Autosave runs every minute, on focus/background transitions and clean exit. Focus loss pauses emulation and releases held keys. Sudden termination can lose changes since the last save. Back up saves before upgrades.
 
