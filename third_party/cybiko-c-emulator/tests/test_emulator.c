@@ -187,9 +187,13 @@ static void test_timer_starts_during_frame(void)
         size_t len;
         const uint8_t *data = cybiko_get_nvram(emu, &len);
         TEST_ASSERT(data && len >= 2);
-        TEST_CHECK_(data[0] == (timer16 ? 65 : 8),
+        /* 65 and 68 boot-ROM instructions elapse before the two reads; each
+         * advances the timers by the model's on-chip instruction cost. */
+        unsigned half = cybiko_machine(model)->on_chip_half_states;
+        unsigned first = 65 * half / 2, stopped = 68 * half / 2;
+        TEST_CHECK_(data[0] == (uint8_t)(timer16 ? first : first / 8),
                     "model %d timer16=%d first-frame count %u", model, timer16, data[0]);
-        TEST_CHECK_(data[1] == (timer16 ? 68 : 8),
+        TEST_CHECK_(data[1] == (uint8_t)(timer16 ? stopped : stopped / 8),
                     "model %d timer16=%d stopped count %u", model, timer16, data[1]);
         free(boot);
         cybiko_destroy(emu);

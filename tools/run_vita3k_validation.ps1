@@ -2,7 +2,7 @@
 param(
     [string]$Vita3KPath = 'D:\Vita3k\Vita3K.exe',
     [ValidateSet('classic-v1', 'classic-v2', 'xtreme')][string]$Model = 'classic-v1',
-    [ValidateRange(1,3600)][int]$Seconds = 45,
+    [ValidateRange(1,3600)][int]$Seconds = 75,
     [string]$ConfigPath,
     [switch]$MenuTrace
 )

@@ -298,7 +298,11 @@ static void test_classic_spi_bus_and_dtc(void)
     TEST_CHECK(bus_read16(&bus, 0xFFFBD8) == 0);
     TEST_CHECK((bus_read8(&bus, 0xFFFF34) & 2) == 0);
     TEST_CHECK(cpu.pending_irq_count == 0);
-    for (int i = 0; i < 5; ++i) bus_tick_dma_completion(&bus);
+    /* The transfer completes about five external instructions later. */
+    int completion_states = 5 * bus.machine->external_half_states / 2;
+    for (int i = 1; i < completion_states; ++i) bus_tick_dma_completion(&bus);
+    TEST_CHECK(cpu.pending_irq_count == 0);
+    bus_tick_dma_completion(&bus);
     TEST_CHECK(cpu.pending_irq_count == 1);
     TEST_CHECK(cpu.pending_irqs[0] == 85);
     free(bus.dataflash);

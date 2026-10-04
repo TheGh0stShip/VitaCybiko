@@ -2435,6 +2435,8 @@ void h8s_cpu_init(h8s_cpu_t *cpu, address_bus_t *bus) {
     memset(cpu, 0, sizeof(*cpu));
     cpu->bus = bus;
     cpu->ccr = 0x80;
+    /* One state per instruction until a machine profile supplies costs. */
+    memset(cpu->region_half_states, 2, sizeof(cpu->region_half_states));
     h8s_block_cache_init(&cpu->semantic_block_cache, H8S_BLOCK_MAX_INSTRUCTIONS);
     h8s_mutable_block_cache_init(&cpu->mutable_block_cache, H8S_BLOCK_MAX_INSTRUCTIONS);
     h8s_branch_edge_cache_init(&cpu->semantic_edge_cache);
@@ -2446,6 +2448,7 @@ void h8s_cpu_reset(h8s_cpu_t *cpu) {
     cpu->exr = 0;
     cpu->halted = false;
     cpu->cycle_count = 0;
+    cpu->half_state_carry = 0;
     cpu->irq_deferred = false;
     cpu->pending_irq_count = 0;
     cpu->fetch_data = NULL;
@@ -2968,18 +2971,17 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
     while (done < limit) {
         if (cpu->semantic_reject_backoff) {
             int backoff_cycles = cpu->semantic_reject_backoff;
-            int remaining = limit - done;
-            if (backoff_cycles > remaining) backoff_cycles = remaining;
-            for (int i = 0; i < backoff_cycles; ++i) {
+            for (int i = 0; i < backoff_cycles && done < limit; ++i) {
                 cpu->bus->speaker->frame_cycle = frame_cycle + done;
                 cpu->semantic_reject_backoff--;
                 cpu->semantic_fast_backoff_skips++;
-                ++*timer_debt;
-                if (done + 1 == limit && cpu->bus->sync_peripherals)
+                int states = h8s_cpu_take_instruction_states(cpu);
+                *timer_debt += states;
+                if (done + states >= limit && cpu->bus->sync_peripherals)
                     cpu->bus->sync_peripherals(cpu->bus->sync_ctx);
                 execute_step(cpu);
-                ++*completion_debt;
-                ++done;
+                *completion_debt += states;
+                done += states;
                 if (cpu->bus->scheduler_dirty)
                     *io_access = true;
                 if (CPU_UNLIKELY(*io_access || cpu->halted)) break;
@@ -2990,24 +2992,34 @@ int h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
         cpu->bus->speaker->frame_cycle = frame_cycle + done;
         int fast_cycles = 0;
         int remaining = limit - done;
+        /* A block stays in one memory region, so every instruction in it has
+         * the same cost. With a peripheral sync pending at the limit, the
+         * block must end before the instruction that reaches the limit. */
+        unsigned half = cpu->region_half_states[(cpu->pc >> 20) & 15u];
+        bool sync_at_limit = cpu->bus->sync_peripherals != NULL;
+        int budget = (2 * remaining - (int)cpu->half_state_carry -
+                      (sync_at_limit ? 1 : 0)) / (int)half;
         bool can_skip_mid_block_sync =
-            !cpu->bus->sync_peripherals ||
-            remaining > (H8S_BLOCK_MAX_INSTRUCTIONS + 1);
+            !sync_at_limit || budget > (H8S_BLOCK_MAX_INSTRUCTIONS + 1);
         if (can_skip_mid_block_sync &&
-            h8s_cpu_try_execute_semantic_rom_block(cpu, remaining, &fast_cycles)) {
-            *timer_debt += fast_cycles;
-            *completion_debt += fast_cycles;
-            done += fast_cycles;
+            h8s_cpu_try_execute_semantic_rom_block(cpu, budget, &fast_cycles)) {
+            unsigned block_half = (unsigned)fast_cycles * half + cpu->half_state_carry;
+            int states = (int)(block_half >> 1);
+            cpu->half_state_carry = (uint8_t)(block_half & 1u);
+            *timer_debt += states;
+            *completion_debt += states;
+            done += states;
             if (CPU_UNLIKELY(*io_access || cpu->halted)) break;
             continue;
         }
 
-        ++*timer_debt;
-        if (done + 1 == limit && cpu->bus->sync_peripherals)
+        int states = h8s_cpu_take_instruction_states(cpu);
+        *timer_debt += states;
+        if (done + states >= limit && cpu->bus->sync_peripherals)
             cpu->bus->sync_peripherals(cpu->bus->sync_ctx);
         execute_step(cpu);
-        ++*completion_debt;
-        ++done;
+        *completion_debt += states;
+        done += states;
         if (cpu->bus->scheduler_dirty)
             *io_access = true;
         if (CPU_UNLIKELY(*io_access || cpu->halted)) break;

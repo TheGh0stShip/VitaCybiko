@@ -658,7 +658,7 @@ static void test_classic_input_timing_after_reset(void)
     TEST_CHECK(ctx.physical_input.classic && ctx.virtual_input.classic);
     touch_key(&ctx, 4, 3, true); /* Esc, a deliberately very short tap. */
     touch_key(&ctx, 4, 3, false);
-    for (int frame = 0; frame < 8; ++frame) {
+    for (int frame = 0; frame < 12; ++frame) {
         TEST_CHECK(read_column(&ctx, 0) & 2);
         tick_inputs(&ctx);
     }
@@ -942,7 +942,7 @@ static void test_guest_worker_handoff(void)
     process_sdl_events(ctx, &running);
     TEST_CHECK(running);
     for (int i = 0; i < 12; ++i) render_frame(ctx);
-    TEST_CHECK(ctx->physical_input.keys[6][12].hold == 8);
+    TEST_CHECK(ctx->physical_input.keys[6][12].hold == 12);
     TEST_CHECK(!(gate.sampled[4] & 1));
     TEST_CHECK(!collect_guest_frame(ctx, false, true));
     SDL_SemPost(gate.release);
@@ -953,16 +953,16 @@ static void test_guest_worker_handoff(void)
     TEST_CHECK(!collect_guest_frame(ctx, false, true));
 
     /* Hold duration advances per dispatched guest frame, not per UI poll. */
-    for (int frame = 0; frame < 9; ++frame) {
+    for (int frame = 0; frame < 13; ++frame) {
         dispatch_guest_frame(ctx);
         TEST_ASSERT(SDL_SemWaitTimeout(gate.entered, 5000) == 0);
-        TEST_CHECK(!!(gate.sampled[4] & 1) == (frame < 8));
+        TEST_CHECK(!!(gate.sampled[4] & 1) == (frame < 12));
         SDL_SemPost(gate.release);
         TEST_CHECK(collect_guest_frame(ctx, true, false));
     }
     ctx->validation_menu = true;
     input_reset(&ctx->validation_input, ctx->model);
-    ctx->validation_frame = 950;
+    ctx->validation_frame = VALIDATION_RIGHT_FRAME;
     dispatch_guest_frame(ctx);
     TEST_ASSERT(SDL_SemWaitTimeout(gate.entered, 5000) == 0);
     TEST_CHECK(gate.sampled[4] & 1);
@@ -1035,7 +1035,7 @@ static void test_interpolated_lcd_render(void)
     memset(pair->row_dx, 6, sizeof(pair->row_dx));
     ctx->motion_trace = calloc(MOTION_TRACE_CAPACITY, sizeof(*ctx->motion_trace));
     TEST_ASSERT(ctx->motion_trace != NULL);
-    ctx->validation_frame = 950;
+    ctx->validation_frame = VALIDATION_RIGHT_FRAME;
     upload_lcd(ctx, pair->before, 160, 100);
     uint64_t now = presentation_microseconds();
     motion_presenter_accept(&ctx->motion, pair, now - 300000);

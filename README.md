@@ -116,6 +116,11 @@ No firmware is needed for these tests. The host `cybiko-smoke` runner can also r
 - The exact original retail Classic launch bundle remains unverified.
 - Wireless chat/multiplayer, CyWIG, original PC synchronization and USB/MP3 accessories are not implemented end-to-end.
 - CPU timing is approximate; some instructions/peripheral modes remain incomplete. Classic external app installation is not implemented.
+- Since 01.19 the core charges each instruction the clock states its memory
+  bus implies (per model, on-chip versus external code) instead of one state.
+  Guest timers and audio now run at roughly hardware instruction rate and the
+  host executes 44–57% fewer instructions per guest frame; physical Vita
+  smoothness is still unverified.
 - Classic saves receive page-checksum and file-structure validation before
   loading; `cybiko-validate-cfs` can inspect a local image without modifying it.
 

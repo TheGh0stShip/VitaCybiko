@@ -352,7 +352,13 @@ static bool timer16_match_a_observable(const timer16_t *t)
     if ((t->tier & TIER_TGIEA) && !(t->tsr & TSR_TGFA))
         return true;
     int new_a = tior_match_level(t->tior & 0x0F, t->output_a_level);
-    return new_a >= 0 && new_a != t->output_a_level;
+    if (new_a >= 0 && new_a != t->output_a_level)
+        return true;
+    /* PWM: a clearing match A returns output B to its initial level. */
+    if (((t->tcr >> 5) & 0x03) != 1)
+        return false;
+    int initial_b = tior_initial_level((t->tior >> 4) & 0x0F);
+    return initial_b >= 0 && initial_b != t->output_b_level;
 }
 
 static bool timer16_match_b_observable(const timer16_t *t)
@@ -387,9 +393,13 @@ int timer16_cycles_until_cpu_event(timer16_t *t) {
 
     int clear_mode = (t->tcr >> 5) & 0x03;
     int cycles = 0;
-    if (clear_mode == 1 && !obs_a && dist_a <= best) cycles = 0;
-    else if (clear_mode == 2 && !obs_b && dist_b <= best) cycles = 0;
-    else if (best != INT_MAX) cycles = first_tick + (best - 1) * t->cached_divisor;
+    if (clear_mode == 1 && !obs_a && dist_a <= best) {
+        /* The counter clears unobserved first; match B can follow from 0. */
+        best = obs_b && t->tgrb <= t->tgra ? dist_a + t->tgrb : INT_MAX;
+    } else if (clear_mode == 2 && !obs_b && dist_b <= best) {
+        best = obs_a && t->tgra <= t->tgrb ? dist_b + t->tgra : INT_MAX;
+    }
+    if (best != INT_MAX) cycles = first_tick + (best - 1) * t->cached_divisor;
     if (cycles > 0) {
         t->cached_cpu_event_cycles = cycles;
         t->cached_cpu_event_valid = true;

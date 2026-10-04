@@ -11,6 +11,9 @@ typedef struct {
     uint32_t boot_end, keyboard_end, boot_crc, flash_crc;
     int timer_channels, keyboard_columns;
     uint8_t rtc_sda;
+    /* Average instruction cost in half clock states, for code executing from
+     * on-chip memory and from the external bus respectively. */
+    uint8_t on_chip_half_states, external_half_states;
 } cybiko_machine_t;
 
 const cybiko_machine_t *cybiko_machine(cybiko_model_t model);

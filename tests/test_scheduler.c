@@ -6,6 +6,27 @@
 #include "acutest.h"
 #include <time.h>
 
+/* The speaker is output-only. Batching may stamp an edge a few instructions
+ * away from the reference (12 clock states at most in the local firmware
+ * runs); one 48 kHz sample spans at least 230. Everything else must match
+ * exactly. */
+#define SPEAKER_EDGE_TOLERANCE 32
+static void compare_speaker(const speaker_t *a, const speaker_t *b)
+{
+    TEST_CHECK(a->current_level == b->current_level);
+    TEST_CHECK(a->frame_start_level == b->frame_start_level);
+    TEST_CHECK(a->cycle_fraction == b->cycle_fraction);
+    TEST_CHECK(a->transition_count == b->transition_count);
+    if (a->transition_count != b->transition_count) return;
+    for (int i = 0; i < a->transition_count; ++i) {
+        int skew = a->transitions[i].cycle - b->transitions[i].cycle;
+        TEST_CHECK(a->transitions[i].level == b->transitions[i].level);
+        TEST_CHECK_(skew >= -SPEAKER_EDGE_TOLERANCE && skew <= SPEAKER_EDGE_TOLERANCE,
+                    "speaker edge %d batch=%d reference=%d", i,
+                    a->transitions[i].cycle, b->transitions[i].cycle);
+    }
+}
+
 static void compare_state(cybiko_emu_t *a, cybiko_emu_t *b)
 {
     TEST_CHECK(a->cpu.pc == b->cpu.pc);
@@ -29,6 +50,8 @@ static void compare_state(cybiko_emu_t *a, cybiko_emu_t *b)
     for (int i = 0; i < 2; ++i) {
         timer8_t x = a->timer8[i], y = b->timer8[i];
         x.cpu = y.cpu = NULL;
+        x.cached_cpu_event_cycles = y.cached_cpu_event_cycles = 0;
+        x.cached_cpu_event_valid = y.cached_cpu_event_valid = false;
         TEST_CHECK(!memcmp(&x, &y, sizeof(x)));
     }
     for (int i = 0; i < a->bus.machine->timer_channels; ++i) {
@@ -39,7 +62,7 @@ static void compare_state(cybiko_emu_t *a, cybiko_emu_t *b)
         x.cached_cpu_event_valid = y.cached_cpu_event_valid = false;
         TEST_CHECK(!memcmp(&x, &y, sizeof(x)));
     }
-    TEST_CHECK(!memcmp(&a->speaker, &b->speaker, sizeof(a->speaker)));
+    compare_speaker(&a->speaker, &b->speaker);
     TEST_CHECK(!memcmp(&a->lcd, &b->lcd, sizeof(a->lcd)));
 }
 

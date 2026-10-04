@@ -59,6 +59,10 @@ typedef struct h8s_cpu {
 
     address_bus_t *bus;
     uint64_t cycle_count;
+    /* Average instruction cost in half clock states, indexed by the 1 MiB
+     * region of the program counter, plus the carried half state. */
+    uint8_t  region_half_states[16];
+    uint8_t  half_state_carry;
 
     bool     tracing;
     uint32_t last_start_pc;
@@ -123,8 +127,18 @@ bool     h8s_cpu_get_immutable_fetch_window(h8s_cpu_t *cpu, const uint8_t **data
                                             uint32_t *base, uint32_t *size);
 bool     h8s_cpu_try_execute_semantic_rom_block(h8s_cpu_t *cpu, int limit,
                                                 int *cycles);
-/* Execute an event-bounded Classic batch without a host call per guest
- * instruction. Debts and I/O exits preserve the single-step ordering. */
+/* Clock states charged to the instruction at the current PC. Call exactly
+ * once per executed instruction; it carries the half state forward. */
+static inline int h8s_cpu_take_instruction_states(h8s_cpu_t *cpu) {
+    unsigned half = (unsigned)cpu->region_half_states[(cpu->pc >> 20) & 15u] +
+                    cpu->half_state_carry;
+    cpu->half_state_carry = (uint8_t)(half & 1u);
+    return (int)(half >> 1);
+}
+/* Execute an event-bounded batch without a host call per guest instruction.
+ * The limit, the return value and both debts are clock states; the batch
+ * ends with the instruction that reaches the limit. Debts and I/O exits
+ * preserve the single-step ordering. */
 int      h8s_cpu_run(h8s_cpu_t *cpu, int limit, int frame_cycle,
                      int *timer_debt, int *completion_debt, bool *io_access);
 void     h8s_cpu_request_interrupt(h8s_cpu_t *cpu, int vector);

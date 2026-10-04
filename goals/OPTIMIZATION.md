@@ -591,6 +591,70 @@ block exits for timer/DMA/IRQ deadlines and invalidate safely if a block ever
 references mutable memory. The first translation tier remains immutable-ROM
 only.
 
+## Goal F — Hardware instruction timing
+
+Status: implemented after 01.19.
+
+Every emulated instruction used to advance timers, serial/DMA/ADC completion
+and the frame budget by exactly one clock state. A real H8S instruction takes
+several states, so guest firmware ran several times faster than hardware in
+emulated time and the host executed several times more guest instructions per
+60 Hz frame than a physical Cybiko does. This, not the interpreter, was the
+largest single source of host CPU load.
+
+The firmware programs its own bus controller during boot (Classic V1/V2:
+ABWCR=0x7F, ASTCR=0xFD/0xFC; Xtreme: ABWCR=0x73, ASTCR=0xF1). Classic RAM and
+flash are on an 8-bit two-state bus; Xtreme RAM and flash on a 16-bit
+two-state bus; on-chip ROM/RAM take one state per access. Applying those access
+costs to instrumented fetch and data traffic of each boot workload gave:
+
+| Model | On-chip code | External code | Whole boot |
+| --- | ---: | ---: | ---: |
+| Classic V1 | 2.57 | 7.72 | 5.89 |
+| Classic V2 | 1.93 | 7.82 | 4.85 |
+| Xtreme | 1.51 | 3.61 | 2.46 |
+
+(states per instruction, bus accesses only.) A single per-model factor was
+rejected: at 5 states Classic V2 drew generic placeholder icons in the Games
+folder, which the reference and factors 1–4 did not, because the code that
+runs from on-chip ROM was charged external-bus cost. The accepted model
+charges each instruction by the 1 MiB PC region it runs from, in half states:
+on-chip 2.5/2.0/1.5 and external 7.5/7.5/3.5 for V1/V2/Xtreme. The CPU run
+loop counts states, carries half states and the instruction that crosses a
+frame boundary into the next frame, and keeps semantic blocks inside the batch
+budget. The DTC completion delay keeps its five-instruction meaning.
+
+Correctness gates:
+
+- All 18 host test groups pass; tests that encoded one state per instruction
+  now derive expectations from the machine costs.
+- Batched-vs-reference firmware scheduler equivalence passes for all three
+  models over 600 frames. This exposed and fixed a pre-existing event-query
+  defect: when TGRA cleared the counter in PWM mode, `timer16` ignored that
+  the clear returns TIOCB to its initial level and skipped the following
+  compare-B event, so batched audio edges diverged from the reference. The
+  test now ignores only timer deadline caches and allows speaker edges within
+  32 states (observed maximum 12; one 48 kHz sample is at least 230).
+- Classic V1/V2 boot to their desktops and Xtreme reaches first-run setup.
+  Checkpoint replays reach Lost in Labyrinth gameplay, Pinball Pro Level 1 and
+  a playable Reversi 3 board with retimed key scripts; the V2 Games folder
+  shows real application icons.
+- Classic V1 missed some 8-frame desktop navigation taps at the new timing.
+  The Classic frontend tap hold is now 12 guest frames; 10 and 12 were
+  recognised at every tested phase.
+
+Same-command callgrind instruction counts, identical guest frames:
+
+| Workload | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Classic V1 boot, 300 frames | 8.077B | 3.438B | −57% |
+| Classic V2 boot, 300 frames | 4.805B | 2.094B | −56% |
+| Xtreme boot, 120 frames | 6.363B | 3.571B | −44% |
+
+Result: accepted. This is the largest measured host-cost reduction in the
+ledger and also makes guest timing closer to hardware. Physical Vita
+smoothness still requires an on-device run before any claim.
+
 ## Goal D — Peripheral-event cost reduction
 
 Status: partial — disabled timers now skip event-query calls in `5216028`;

@@ -648,7 +648,9 @@ static void execute_spi_dtc(address_bus_t *bus, uint8_t scr)
     bool receive = mode == 0x20 && (scr & 0x50) == 0x50;
     bool transmit = mode == 0x80 && (scr & 0xA0) == 0xA0;
     if (!count || (!receive && !transmit)) return;
-    bus->dtc_completion_delay = 5; /* Also prevents recursive mapped-I/O transfers. */
+    /* About five external instructions; a pending delay also prevents
+     * recursive mapped-I/O transfers. */
+    bus->dtc_completion_delay = 5 * bus->machine->external_half_states / 2;
     /* Clear enable before memory accesses to prevent recursive I/O triggers. */
     memory_write8(&bus->on_chip_ram, enable, dtcer & ~2);
     for (unsigned i = 0; i < count; ++i) {

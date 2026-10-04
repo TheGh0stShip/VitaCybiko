@@ -95,6 +95,9 @@ _Static_assert(sizeof(size_t) == 4, "Vita requires 32-bit size_t");
 #define AUTOSAVE_INTERVAL_MS 60000u
 #define AUDIO_DEVICE_SAMPLES 512
 #define AUDIO_FRAME_SAMPLES (SPEAKER_SAMPLE_RATE / CYBIKO_FPS)
+/* --validate-menu key script. At hardware instruction timing a Classic V1
+ * checkpoint needs about 2,000 guest frames to reach its desktop. */
+enum { VALIDATION_RIGHT_FRAME = 2700, VALIDATION_LEFT_FRAME = 2850 };
 #define AUDIO_TARGET_QUEUE_FRAMES 4u
 #define AUDIO_MAX_QUEUE_FRAMES 12u
 #define AUDIO_CONVERT_MAX_SAMPLES 8192
@@ -1885,8 +1888,10 @@ static void dispatch_guest_frame(app_ctx_t *ctx)
         /* Explicit, bounded test mode only. Uses the same input mapping and
          * guest mailbox as physical controls; no Windows key injection. */
         unsigned frame = ctx->validation_frame++;
-        input_key(&ctx->validation_input, 6, 0x1000, frame >= 950 && frame < 958);
-        input_key(&ctx->validation_input, 6, 0x4000, frame >= 1100 && frame < 1108);
+        input_key(&ctx->validation_input, 6, 0x1000,
+                  frame >= VALIDATION_RIGHT_FRAME && frame < VALIDATION_RIGHT_FRAME + 8);
+        input_key(&ctx->validation_input, 6, 0x4000,
+                  frame >= VALIDATION_LEFT_FRAME && frame < VALIDATION_LEFT_FRAME + 8);
         merge(&ctx->validation_input, worker->keys, CYBIKO_KEYBOARD_COLUMNS);
         input_tick(&ctx->validation_input);
     }
@@ -2295,9 +2300,9 @@ static void render_frame(app_ctx_t *ctx)
             }
             ctx->motion_presented_phase = phase;
             ctx->motion_presented_pair = ctx->motion.selected_end_us;
-            if (ctx->motion_trace && ctx->validation_frame >= 950 &&
+            if (ctx->motion_trace && ctx->validation_frame >= VALIDATION_RIGHT_FRAME &&
                 (ctx->motion_trace_count < MOTION_TRACE_CAPACITY / 2 ||
-                 ctx->validation_frame >= 1100) &&
+                 ctx->validation_frame >= VALIDATION_LEFT_FRAME) &&
                 ctx->motion_trace_count < MOTION_TRACE_CAPACITY) {
                 motion_trace_record_t *r = &ctx->motion_trace[ctx->motion_trace_count++];
                 const motion_pair_t *p = &ctx->motion.pair;

@@ -166,6 +166,7 @@ struct cybiko_emu {
     uint32_t frame_count;
     int pending_timer_cycles;
     int pending_completion_cycles;
+    int frame_cycle_carry;   /* States the last instruction ran past its frame. */
     bool peripheral_access;
 #ifdef CYBIKO_SCHEDULER_TEST
     bool reference_scheduler;
@@ -251,6 +252,12 @@ cybiko_emu_t *cybiko_create_model(const cybiko_hal_t *hal, cybiko_model_t model)
 
     /* Initialize CPU (needs bus already wired) */
     h8s_cpu_init(&emu->cpu, &emu->bus);
+    /* Boot ROM (region 0) and on-chip RAM (region 15) are on-chip memory;
+     * everything between is reached through the external bus. */
+    memset(emu->cpu.region_half_states, m->external_half_states,
+           sizeof(emu->cpu.region_half_states));
+    emu->cpu.region_half_states[0] = m->on_chip_half_states;
+    emu->cpu.region_half_states[15] = m->on_chip_half_states;
 
     /* Wire CPU back into bus (for interrupt delivery, etc.) */
     emu->bus.cpu = &emu->cpu;
@@ -333,6 +340,7 @@ bool cybiko_load_nvram(cybiko_emu_t *emu, const uint8_t *data, size_t len) {
 
 void cybiko_reset(cybiko_emu_t *emu) {
     h8s_cpu_reset(&emu->cpu);
+    emu->frame_cycle_carry = 0;
 }
 
 /* ---------- main frame loop ---------- */
@@ -426,7 +434,8 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
     /* Execute one frame worth of CPU cycles. While the guest CPU is in SLEEP,
      * skip directly to the next timer/DMA event instead of calling the CPU
      * halt fast path once per emulated cycle. */
-    for (int cycle = 0; cycle < frame_cycles;) {
+    int cycle = emu->frame_cycle_carry;
+    while (cycle < frame_cycles) {
         if (emu->cpu.halted && emu->cpu.pending_irq_count == 0) {
             int chunk = frame_cycles - cycle;
             int next_event_source = 0;
@@ -449,12 +458,19 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
 #endif
         ) {
             emu->speaker.frame_cycle = cycle;
-            timer8_tick(&emu->timer8[0]);
-            timer8_tick(&emu->timer8[1]);
-            for (int i = 0; i < m->timer_channels; ++i) timer16_tick(&emu->timer16[i]);
+            /* A halted CPU idles one state at a time; an executing one is
+             * charged its instruction's states before and after the step. */
+            int states = emu->cpu.halted ? 1 :
+                         h8s_cpu_take_instruction_states(&emu->cpu);
+            for (int state = 0; state < states; ++state) {
+                timer8_tick(&emu->timer8[0]);
+                timer8_tick(&emu->timer8[1]);
+                for (int i = 0; i < m->timer_channels; ++i) timer16_tick(&emu->timer16[i]);
+            }
             h8s_cpu_step(&emu->cpu);
-            bus_tick_dma_completion(&emu->bus);
-            ++cycle;
+            for (int state = 0; state < states; ++state)
+                bus_tick_dma_completion(&emu->bus);
+            cycle += states;
             continue;
         }
         /* Batch until an observable event or I/O access. The latter can
@@ -473,6 +489,7 @@ void cybiko_run_frame(cybiko_emu_t *emu) {
         cycle += ran;
         sync_peripherals(emu);
     }
+    emu->frame_cycle_carry = cycle - frame_cycles;
     emu->total_steps += (uint64_t)frame_cycles;
 
     /* Render the frame via HAL */

@@ -95,7 +95,7 @@ static void test_classic_scan_duration(void)
     input_key(&state, 5, 0x400, false);
     input_number(&state, 3, 2, true); /* Dedicated 1 */
     input_number(&state, 3, 2, false);
-    for (int frame = 0; frame < 8; ++frame) {
+    for (int frame = 0; frame < 12; ++frame) {
         uint16_t matrix[CYBIKO_KEYBOARD_COLUMNS] = {0};
         input_merge_classic(&state, matrix, CYBIKO_KEYBOARD_COLUMNS);
         TEST_CHECK(matrix[0] == 2 && matrix[3] == 2);

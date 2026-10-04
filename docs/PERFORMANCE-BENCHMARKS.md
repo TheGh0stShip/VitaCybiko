@@ -68,3 +68,20 @@ tools/benchmark_models.sh \
   vita_runtime_pull/current/xtreme/roms/boot.bin \
   vita_runtime_pull/current/xtreme/roms/flash.bin
 ```
+
+## Hardware instruction timing
+
+After 01.19 the core charges per-model instruction state costs instead of one
+state per instruction (see Goal F in `goals/OPTIMIZATION.md`). Guest frames
+now contain the hardware's instruction count, so the same number of guest
+frames costs far less host work. Deterministic callgrind instruction counts:
+
+| Workload | Before | After |
+| --- | ---: | ---: |
+| Classic V1 boot, 300 frames | 8.077B | 3.438B |
+| Classic V2 boot, 300 frames | 4.805B | 2.094B |
+| Xtreme boot, 120 frames | 6.363B | 3.571B |
+
+Boot and replay workloads also need more guest frames to reach the same screen,
+because the guest no longer runs faster than hardware. Physical Vita frame
+rates must be re-measured on device.
